@@ -1,6 +1,6 @@
-# Contributing to LumenX Studio
+# Contributing to ManjuForge Studio
 
-Thank you for your interest in contributing to LumenX Studio! We welcome contributions from the community.
+Thank you for your interest in contributing to ManjuForge Studio! We welcome contributions from the community.
 
 ## 🌟 Ways to Contribute
 
@@ -298,8 +298,8 @@ For feature requests, please describe:
 
 ## 📄 License
 
-By contributing to LumenX Studio, you agree that your contributions will be licensed under the [MIT License](LICENSE).
+By contributing to ManjuForge Studio, you agree that your contributions will be licensed under the [MIT License](LICENSE).
 
 ---
 
-Thank you for contributing to LumenX Studio! 🎉
+Thank you for contributing to ManjuForge Studio! 🎉

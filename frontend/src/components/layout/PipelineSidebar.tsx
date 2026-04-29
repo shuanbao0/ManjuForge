@@ -6,7 +6,7 @@ import {
     ChevronLeft
 } from "lucide-react";
 import clsx from "clsx";
-import LumenXBranding from "./LumenXBranding";
+import ManjuForgeBranding from "./ManjuForgeBranding";
 import type { BreadcrumbSegment } from "./BreadcrumbBar";
 
 interface Step {
@@ -89,7 +89,7 @@ export default function PipelineSidebar({ activeStep, onStepChange, steps, bread
                         )}
                     </div>
                 ) : (
-                    <LumenXBranding size="sm" />
+                    <ManjuForgeBranding size="sm" />
                 )}
             </div>
 

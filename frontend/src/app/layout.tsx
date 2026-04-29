@@ -9,7 +9,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <title>LumenX Studio</title>
+        <title>ManjuForge Studio</title>
         <meta name="description" content="AI-Native Motion Comic Creation Platform" />
       </head>
       <body className="font-sans bg-background text-foreground antialiased">

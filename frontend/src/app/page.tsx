@@ -299,7 +299,7 @@ function EpisodeBreadcrumbWrapper({ seriesId, episodeId }: { seriesId: string; e
   }, [seriesId, episodeId]);
 
   const segments = [
-    { label: "LumenX", hash: "#/" },
+    { label: "ManjuForge", hash: "#/" },
     { label: seriesTitle || "系列", hash: `#/series/${seriesId}` },
     { label: episodeNumber != null ? `第${episodeNumber}集` : "集数" },
   ];

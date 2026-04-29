@@ -4,14 +4,14 @@ This file gives Claude Code (claude.ai/code) the orientation it needs to work in
 
 ## Project Overview
 
-**LumenX Studio** (package name `lumenx`, repo currently named `ManjuForge`) is an **AI-native short comic / micro-drama production platform**. It turns a novel-style script into a finished video by chaining: *script analysis → art direction → asset generation → storyboard scripting → storyboard image generation → motion (i2v/r2v) generation → assembly + audio mixing*.
+**ManjuForge Studio** (npm package name `manju-forge`, repo `ManjuForge`, originally LumenX Studio upstream) is an **AI-native short comic / micro-drama production platform**. It turns a novel-style script into a finished video by chaining: *script analysis → art direction → asset generation → storyboard scripting → storyboard image generation → motion (i2v/r2v) generation → assembly + audio mixing*.
 
 The product ships in three forms:
 - **Local dev**: FastAPI backend + Next.js frontend running side-by-side (`npm run dev`).
 - **Desktop app**: PyInstaller bundle that boots the FastAPI server in a thread and renders the built frontend inside a `pywebview` window (`main.py`, `build_mac.sh`, `build_windows.ps1`).
 - **Docker**: separate `Dockerfile.backend` / `Dockerfile.frontend`, wired by `docker-compose.yml`.
 
-User data (logs, config, projects) lives under `~/.lumen-x/` regardless of platform.
+User data (logs, config, projects) lives under `~/.manju-forge/` (legacy `~/.lumen-x/` is auto-migrated on first startup).
 
 ## Architecture
 
@@ -57,7 +57,7 @@ This is the heart of the product. Files map roughly to pipeline stages:
 
 ### Provider routing (critical concept)
 
-LumenX is **DashScope-first** but supports vendor-direct routing per model family.
+ManjuForge is **DashScope-first** but supports vendor-direct routing per model family.
 
 - `src/utils/provider_registry.py` defines `ProviderFamilyConfig` for each model family (`wan2.6-`, `kling-`, `vidu`, `pixverse-`). Each family declares: `backend_default`, `backend_env_key`, `credential_sources`, supported modalities, and `image_input_mode` / `audio_input_mode` / `reference_video_input_mode` per backend.
 - `resolve_provider_backend(model_name, env)` reads the family's env key (e.g. `KLING_PROVIDER_MODE`) and returns `"dashscope"` or `"vendor"`.
@@ -139,7 +139,7 @@ cd frontend && npm run lint
 ### Desktop packaging
 
 ```bash
-./build_mac.sh         # produces dist_mac/LumenX Studio.app + .dmg
+./build_mac.sh         # produces dist_mac/ManjuForge Studio.app + .dmg
 ./build_windows.ps1    # Windows equivalent
 ```
 
@@ -155,7 +155,7 @@ docker compose up -d --build
 
 ## Configuration
 
-Configuration is driven entirely by environment variables, loaded via `python-dotenv` from `.env` at the project root. The desktop app additionally writes to `~/.lumen-x/config.json` and the in-app Settings page persists changes back to `.env` via `POST /config/env`.
+Configuration is driven entirely by environment variables, loaded via `python-dotenv` from `.env` at the project root. The desktop app additionally writes to `~/.manju-forge/config.json` and the in-app Settings page persists changes back to `.env` via `POST /config/env`.
 
 Four supported runtime modes (see README §"运行模式与必填配置" / USER_MANUAL.md):
 

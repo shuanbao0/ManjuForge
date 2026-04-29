@@ -67,7 +67,7 @@ export default function ProjectClient({ id, breadcrumbSegments }: { id: string; 
         );
     }
 
-    const segments = breadcrumbSegments || [{ label: "LumenX", hash: "#/" }, { label: currentProject.title }];
+    const segments = breadcrumbSegments || [{ label: "ManjuForge", hash: "#/" }, { label: currentProject.title }];
 
     const settingsActions = (
         <>

@@ -110,7 +110,7 @@ export default function SeriesSidebar({
             >
               <ChevronLeft size={16} />
             </button>
-            <span className="text-xs text-gray-500 truncate">LumenX</span>
+            <span className="text-xs text-gray-500 truncate">ManjuForge</span>
           </div>
 
           {/* Editable title */}

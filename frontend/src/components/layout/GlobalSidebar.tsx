@@ -2,7 +2,7 @@
 
 import { FolderOpen, Library, Settings } from "lucide-react";
 import clsx from "clsx";
-import LumenXBranding from "./LumenXBranding";
+import ManjuForgeBranding from "./ManjuForgeBranding";
 
 export type GlobalTab = "workspace" | "library" | "settings";
 
@@ -27,7 +27,7 @@ export default function GlobalSidebar({ activeTab, onTabChange }: GlobalSidebarP
     <aside className="w-56 flex-shrink-0 h-full border-r border-glass-border bg-black/40 backdrop-blur-xl flex flex-col">
       {/* Branding */}
       <div className="p-5 border-b border-glass-border">
-        <LumenXBranding size="sm" />
+        <ManjuForgeBranding size="sm" />
       </div>
 
       {/* Navigation */}
