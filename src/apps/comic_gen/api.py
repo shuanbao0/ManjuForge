@@ -677,7 +677,7 @@ def get_user_config_path() -> str:
     from ...utils import get_user_data_dir
     
     # Check if running in packaged mode (e.g., via environment variable or frozen check)
-    is_packaged = os.getenv("LUMEN_X_PACKAGED", "false").lower() == "true" or getattr(sys, 'frozen', False)
+    is_packaged = os.getenv("MANJU_FORGE_PACKAGED", "false").lower() == "true" or getattr(sys, 'frozen', False)
     
     if is_packaged:
         # Use user home directory for packaged app
@@ -772,7 +772,7 @@ load_user_config()
 async def get_config_info():
     """Returns information about the current config storage mode."""
     config_path = get_user_config_path()
-    is_packaged = os.getenv("LUMEN_X_PACKAGED", "false").lower() == "true" or getattr(sys, 'frozen', False)
+    is_packaged = os.getenv("MANJU_FORGE_PACKAGED", "false").lower() == "true" or getattr(sys, 'frozen', False)
     return {
         "mode": "packaged" if is_packaged else "development",
         "config_path": config_path,
