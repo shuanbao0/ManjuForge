@@ -1,0 +1,110 @@
+name: Build & Push Docker images
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag (also published as `latest`)"
+        required: true
+        default: "v0.1.0"
+        type: string
+      target:
+        description: "Which image(s) to build"
+        required: true
+        default: "both"
+        type: choice
+        options:
+          - both
+          - backend
+          - frontend
+      push:
+        description: "Push to Docker Hub (uncheck to dry-run build only)"
+        required: true
+        default: true
+        type: boolean
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAMESPACE: shuanbaoai
+
+jobs:
+  build:
+    name: build-${{ matrix.component }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: backend
+            dockerfile: Dockerfile.backend
+            image: manjuforge-backend
+          - component: frontend
+            dockerfile: Dockerfile.frontend
+            image: manjuforge-frontend
+
+    steps:
+      - name: Skip if not selected
+        id: gate
+        run: |
+          if [[ "${{ inputs.target }}" == "both" || "${{ inputs.target }}" == "${{ matrix.component }}" ]]; then
+            echo "run=true"  >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping ${{ matrix.component }} (target=${{ inputs.target }})"
+          fi
+
+      - name: Checkout
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        if: steps.gate.outputs.run == 'true'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        if: steps.gate.outputs.run == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: steps.gate.outputs.run == 'true' && inputs.push == true
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        if: steps.gate.outputs.run == 'true'
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.image }}
+          tags: |
+            type=raw,value=${{ inputs.tag }}
+            type=raw,value=latest
+            type=sha,format=short,prefix=sha-
+
+      - name: Build and push
+        if: steps.gate.outputs.run == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: ${{ inputs.push }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+
+      - name: Image digest
+        if: steps.gate.outputs.run == 'true' && inputs.push == true
+        run: |
+          echo "### ${{ matrix.image }} pushed" >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Tags:' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.meta.outputs.tags }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
