@@ -2,10 +2,32 @@ import logging
 import sys
 import os
 
+_USER_DATA_DIRNAME = ".manju-forge"
+_LEGACY_USER_DATA_DIRNAME = ".lumen-x"
+
+
 # User data directory for logs, config, and data
 def get_user_data_dir() -> str:
-    """Returns the user data directory for the application."""
-    return os.path.join(os.path.expanduser("~"), ".lumen-x")
+    """Returns the user data directory for the application.
+
+    On first invocation, transparently migrates the legacy ``~/.lumen-x``
+    directory to ``~/.manju-forge`` if the new path does not yet exist.
+    Existing installations therefore keep their logs, config, projects,
+    and webview storage without manual intervention.
+    """
+    home = os.path.expanduser("~")
+    new_path = os.path.join(home, _USER_DATA_DIRNAME)
+    legacy_path = os.path.join(home, _LEGACY_USER_DATA_DIRNAME)
+
+    if not os.path.exists(new_path) and os.path.isdir(legacy_path):
+        try:
+            os.rename(legacy_path, new_path)
+        except OSError:
+            # Cross-device or permission issue — keep using legacy path so
+            # the user still sees their data, even if migration failed.
+            return legacy_path
+
+    return new_path
 
 
 def get_log_dir() -> str:

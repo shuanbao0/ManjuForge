@@ -87,7 +87,7 @@ async def debug_config():
     return {
         "oss_configured": uploader.is_configured,
         "oss_bucket_initialized": uploader.bucket is not None,
-        "oss_base_path": os.getenv("OSS_BASE_PATH", "lumenx"),
+        "oss_base_path": os.getenv("OSS_BASE_PATH", "manju-forge"),
         "output_dir_exists": os.path.exists("output"),
         "output_contents": os.listdir("output") if os.path.exists("output") else [],
         "cwd": os.getcwd(),
@@ -672,7 +672,7 @@ def get_user_config_path() -> str:
     """
     Returns the path to the user config file.
     - Development mode: Uses .env in project root
-    - Packaged app mode: Uses ~/.lumen-x/config.json
+    - Packaged app mode: Uses ~/.manju-forge/config.json (auto-migrated from ~/.lumen-x/)
     """
     from ...utils import get_user_data_dir
     

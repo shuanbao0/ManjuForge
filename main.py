@@ -22,9 +22,10 @@ else:
 cwd = application_path
 
 from starlette.staticfiles import StaticFiles
+from src.utils import get_user_data_dir
 
-# 切换到用户数据目录
-path = os.path.expanduser("~/.lumen-x")
+# 切换到用户数据目录（首次启动时会自动从旧的 ~/.lumen-x 迁移到 ~/.manju-forge）
+path = get_user_data_dir()
 os.makedirs(path, exist_ok=True)
 os.chdir(path)
 
@@ -110,7 +111,7 @@ def open_webview():
 
     # 创建 pywebview 窗口
     window = webview.create_window(
-        title="LumenX Studio",
+        title="ManjuForge Studio",
         url=f"http://127.0.0.1:17177/static/index.html?timestamp={datetime.now().timestamp()}",
         width=1280,
         height=800,
@@ -120,19 +121,20 @@ def open_webview():
     )
 
     # 启动 webview(阻塞式调用)
+    webview_storage = os.path.join(get_user_data_dir(), "webview_storage")
     if sys.platform == 'win32':
         # gui='edgechromium': 使用 Edge Chromium 引擎(Windows 推荐),替代已弃用的 MSHTML
         webview.start(
             gui='edgechromium',
             private_mode=False,
-            storage_path=os.path.expanduser("~/.lumen-x/webview_storage")
+            storage_path=webview_storage
         )
     else:
         # private_mode=False: 禁用隐私模式,允许保存 cookies 和 localStorage
         # storage_path: 指定持久化存储路径,确保 localStorage 数据不会丢失
         webview.start(
             private_mode=False,
-            storage_path=os.path.expanduser("~/.lumen-x/webview_storage")
+            storage_path=webview_storage
         )
 
     # WebView 关闭后，退出整个进程
