@@ -1,0 +1,199 @@
+# CLAUDE.md
+
+This file gives Claude Code (claude.ai/code) the orientation it needs to work in this repository.
+
+## Project Overview
+
+**LumenX Studio** (package name `lumenx`, repo currently named `ManjuForge`) is an **AI-native short comic / micro-drama production platform**. It turns a novel-style script into a finished video by chaining: *script analysis → art direction → asset generation → storyboard scripting → storyboard image generation → motion (i2v/r2v) generation → assembly + audio mixing*.
+
+The product ships in three forms:
+- **Local dev**: FastAPI backend + Next.js frontend running side-by-side (`npm run dev`).
+- **Desktop app**: PyInstaller bundle that boots the FastAPI server in a thread and renders the built frontend inside a `pywebview` window (`main.py`, `build_mac.sh`, `build_windows.ps1`).
+- **Docker**: separate `Dockerfile.backend` / `Dockerfile.frontend`, wired by `docker-compose.yml`.
+
+User data (logs, config, projects) lives under `~/.lumen-x/` regardless of platform.
+
+## Architecture
+
+### Top-level layout
+
+```
+ManjuForge/
+├── main.py                 # Desktop entrypoint: spawns uvicorn thread + pywebview window
+├── src/                    # Python backend
+│   ├── apps/comic_gen/     # The actual product surface (FastAPI app + pipeline)
+│   ├── models/             # AI provider clients (Wanx, Doubao, Kling, Vidu, Qwen-VL, Image)
+│   ├── audio/tts.py        # Text-to-speech
+│   ├── utils/              # OSS, provider routing, media refs, system check, logging
+│   └── config.py           # YAML + env config loader
+├── frontend/               # Next.js 14 + React 18 + TypeScript + Tailwind
+│   ├── src/app/page.tsx    # Single-page hash router (Library / Series / Project / Settings)
+│   ├── src/components/     # canvas, common, layout, library, modals, modules, project, series, settings
+│   ├── src/lib/api.ts      # Backend HTTP client (~28 KB; wraps every backend route)
+│   └── src/store/projectStore.ts  # Zustand store
+├── tests/                  # Pytest suites (provider routing, media refs, cross-phase, series, ...)
+├── scripts/                # Dev helpers + OSS migration utilities
+├── docker/, Dockerfile.*   # Containerised deployment
+├── build_mac.sh / build_windows.ps1  # Desktop packaging via PyInstaller
+└── docs/images/            # Product screenshots referenced by README
+```
+
+### Backend (`src/apps/comic_gen`)
+
+This is the heart of the product. Files map roughly to pipeline stages:
+
+| File | Responsibility |
+|------|----------------|
+| `api.py` | The single FastAPI app. ~80+ routes for series/projects/assets/storyboard/video/audio/export. Mounts `/files/*` aliases for `output/`. Hosts `/debug/config`, `/system/check`, `/upload`, `/config/env`. |
+| `models.py` | Pydantic models — `Script`, `Series`, `VideoTask`, `ImageAsset`, `AssetUnit`, `ProviderRoutingConfig`, etc. |
+| `pipeline.py` | `ComicGenPipeline` — top-level orchestrator that composes the per-stage generators. Persists state to `output/projects.json`. Includes path-traversal hardening (`_safe_resolve_path`, `_validate_safe_id`). |
+| `llm.py`, `llm_adapter.py` | Script processing, entity extraction, prompt polishing (Qwen/OpenAI-compatible). |
+| `assets.py` | Character / scene / prop image generation. |
+| `storyboard.py` | Storyboard frame extraction + per-frame image generation. |
+| `video.py` | i2v / r2v video generation, dispatches to provider clients. |
+| `audio.py` | Voice acting + SFX synthesis. |
+| `export.py` | Final video stitching via FFmpeg. |
+| `style_presets.json` | Built-in art-direction presets. |
+
+### Provider routing (critical concept)
+
+LumenX is **DashScope-first** but supports vendor-direct routing per model family.
+
+- `src/utils/provider_registry.py` defines `ProviderFamilyConfig` for each model family (`wan2.6-`, `kling-`, `vidu`, `pixverse-`). Each family declares: `backend_default`, `backend_env_key`, `credential_sources`, supported modalities, and `image_input_mode` / `audio_input_mode` / `reference_video_input_mode` per backend.
+- `resolve_provider_backend(model_name, env)` reads the family's env key (e.g. `KLING_PROVIDER_MODE`) and returns `"dashscope"` or `"vendor"`.
+- `src/utils/provider_media.py` translates a `media_ref` (the project-side stable handle) into the `resolved_media_input` payload the chosen provider actually wants (DashScope multimodal message / temp file URL / vendor base64 / vendor URL).
+- `src/utils/media_refs.py` defines the `media_ref` abstraction (local relative path or OSS object key).
+
+When touching provider code, **preserve these invariants** (also called out in `CONTRIBUTING.md`):
+1. **Local-first storage** — every uploaded/generated asset is written to `output/` first; that is the durable project source.
+2. **OSS is optional** — purely a mirror + signed-URL service; no feature should hard-require it.
+3. **DashScope-first** — default backend for every supported family.
+4. **Vendor-direct stays available** — Kling/Vidu/Pixverse direct APIs remain when the user opts in.
+
+Vocabulary used consistently across code, PRs, and docs:
+- `storage_mode`: `local_only` | `local_plus_oss`
+- `provider_backend`: `dashscope` | `vendor`
+- `media_ref`: stable project-side reference
+- `resolved_media_input`: provider-ready request payload
+
+### Frontend (`frontend/`)
+
+- **Next.js 14 App Router**, mostly client-rendered. The whole product lives behind a hash router in `src/app/page.tsx` that switches between Library / Series detail / Project / Settings / Asset Library views.
+- **State**: a single Zustand store at `src/store/projectStore.ts` (~23 KB).
+- **Backend client**: `src/lib/api.ts` (~28 KB) wraps every FastAPI route. Dev rewrites `/api-proxy/*` → backend (`next.config.mjs`).
+- **Build target**: in production, `next build` outputs to `../static/` with `basePath: '/static'` so the FastAPI server can serve it directly from the desktop bundle. The Docker build sets `DOCKER_BUILD=true` to flip to a standalone `out/` dir served by nginx.
+- **Three.js / R3F** is used in `components/canvas/` for the creative canvas; `framer-motion` and `lucide-react` cover motion + icons.
+- Tests use **Vitest** with two configs (`vitest.config.mts` for headless, `vitest.ui.config.mts` for UI-component tests).
+
+## Common Commands
+
+### Local development (the easy way)
+
+```bash
+# From the repo root — concurrently runs backend, frontend, and opens the browser
+npm install
+npm run dev
+```
+
+This is wired by `package.json` → `scripts/dev-setup.js` + `scripts/start-backend.js` + `scripts/open-browser.js`.
+
+### Run pieces individually
+
+```bash
+# Backend (port 17177, with reload)
+./start_backend.sh
+# equivalent to:  python -m uvicorn src.apps.comic_gen.api:app --reload --port 17177 --host 0.0.0.0
+
+# Frontend (port 3000)
+./start_frontend.sh
+# equivalent to:  cd frontend && npm install && npm run dev
+```
+
+The default ports differ between modes: dev backend uses **17177**, desktop bundle also uses **17177**, but the README's quick-start references **8000** — the actual binding is 17177.
+
+### Tests
+
+```bash
+# Python tests (pytest config in pyproject.toml — testpaths = tests/)
+pytest
+pytest tests/test_provider_registry.py        # one file
+pytest --cov=src tests/                       # with coverage
+
+# Frontend tests (Vitest)
+cd frontend && npm test
+cd frontend && npm run test:ui                # UI/jsdom variant
+cd frontend && npm run test:all               # both
+```
+
+### Lint / format
+
+```bash
+# Python — black + isort + flake8 (configs in pyproject.toml)
+black src/
+flake8 src/
+
+# Frontend
+cd frontend && npm run lint
+```
+
+### Desktop packaging
+
+```bash
+./build_mac.sh         # produces dist_mac/LumenX Studio.app + .dmg
+./build_windows.ps1    # Windows equivalent
+```
+
+The Mac script also builds the frontend into `static/` and bundles `bin/ffmpeg`. **Do not commit** `static/`, `output/`, `dist_mac/`, `dist_windows/`, or `bin/` — they are all in `.gitignore`.
+
+### Docker
+
+```bash
+cp .env.example .env   # fill in DASHSCOPE_API_KEY (and OSS keys if needed)
+docker compose up -d --build
+# backend :17177, frontend (nginx) :3000
+```
+
+## Configuration
+
+Configuration is driven entirely by environment variables, loaded via `python-dotenv` from `.env` at the project root. The desktop app additionally writes to `~/.lumen-x/config.json` and the in-app Settings page persists changes back to `.env` via `POST /config/env`.
+
+Four supported runtime modes (see README §"运行模式与必填配置" / USER_MANUAL.md):
+
+| Mode | Required env | Notes |
+|------|--------------|-------|
+| 1. DashScope-only | `DASHSCOPE_API_KEY` | Single-machine local creation, no OSS. |
+| 2. DashScope + OSS | + `ALIBABA_CLOUD_ACCESS_KEY_ID/SECRET`, `OSS_BUCKET_NAME`, `OSS_ENDPOINT` | Adds cloud mirror + signed URLs. |
+| 3. + Kling vendor | + `KLING_PROVIDER_MODE=vendor`, `KLING_ACCESS_KEY`, `KLING_SECRET_KEY` | Only Kling models route to vendor API. |
+| 4. + Vidu vendor | + `VIDU_PROVIDER_MODE=vendor`, `VIDU_API_KEY` | Only Vidu models route to vendor API. |
+
+Optional LLM swap: set `LLM_PROVIDER=openai` plus `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` to use any OpenAI-compatible endpoint (DeepSeek, Ollama, etc.) for script processing — see `.env.example` for examples.
+
+International endpoints: override `DASHSCOPE_BASE_URL`, `KLING_BASE_URL`, `VIDU_BASE_URL` for overseas deployment.
+
+## Code Style
+
+From `pyproject.toml`:
+- **Python 3.11+**, line length **100**, formatted with **black** + **isort** (black profile), linted with **flake8** (`E203`, `W503` ignored).
+- Type hints expected on public functions; docstrings on public APIs.
+- `mypy` is configured but `disallow_untyped_defs = false` — typing is encouraged, not enforced.
+
+Frontend:
+- TypeScript strict, ESLint `next/core-web-vitals`. Prefer functional components + named exports. `npm run lint` (build does not block on lint/type errors — see `next.config.mjs`).
+
+Commit messages follow **Conventional Commits**: `feat(scope): ...`, `fix(scope): ...`, etc. Branch naming: `feature/...`, `fix/...`, `docs/...`, `refactor/...`, `test/...`. Details in `CONTRIBUTING.md`.
+
+## Things to Watch
+
+- **Storage layout**: `output/` is the source of truth. Subfolders include `output/uploads`, `output/video`, `output/assets`, `output/storyboard`, `output/audio`, `output/export`, `output/video_inputs`. Project state lives in `output/projects.json`.
+- **Static mounts**: `api.py` mounts several aliased paths (`/files/outputs/videos`, `/files/outputs/assets`, `/files/videos`, `/files/assets`, `/files`) to absorb legacy plural/singular paths in older `projects.json` entries. Don't simplify without checking project-data migration.
+- **PyInstaller hidden imports**: `build_mac.sh` and `build_windows.ps1` enumerate `--hidden-import` flags explicitly. New top-level dependencies usually need a corresponding entry, plus possibly a hook in `.pyinstaller-hooks/`.
+- **FFmpeg**: required at runtime for export. Bundled to `bin/ffmpeg` on Mac/Windows packaging; on Docker installed via apt; locally must be on `PATH`. Lookup logic lives in `src/utils/system_check.py::get_ffmpeg_path`.
+- **Proxy bypass**: `start_backend.sh`, `Dockerfile.backend`, and `docker-compose.yml` all set `NO_PROXY=*.aliyuncs.com,localhost,127.0.0.1`. macOS PAC rules can otherwise break DashScope/OSS traffic.
+- **Path-traversal**: when adding endpoints that accept user-supplied IDs or relative paths, use `pipeline._validate_safe_id` and `pipeline._safe_resolve_path` rather than ad-hoc `os.path.join`.
+
+## Useful Pointers
+
+- API surface: live Swagger UI at `http://localhost:17177/docs` once the backend is running.
+- Diagnostics: `GET /debug/config` shows OSS state + cwd; `GET /system/check` reports environment readiness.
+- Style presets: `src/apps/comic_gen/style_presets.json` (referenced by Art Direction stage).
+- User-facing docs: `README.md` (中文) / `README_EN.md` / `USER_MANUAL.md` / `CONTRIBUTING.md`.
