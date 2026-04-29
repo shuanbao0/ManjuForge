@@ -21,6 +21,8 @@ SQLAlchemy>=2.0.0
 bcrypt>=4.0.0
 cryptography>=42.0.0
 boto3>=1.34.0
+psycopg2-binary>=2.9.9
+redis>=5.0.0
 
 # Cloud Services
 alibabacloud-videoenhan20200320>=1.0.0

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import contextmanager
 from typing import Iterator
 
@@ -20,23 +21,54 @@ _engine: Engine | None = None
 _SessionLocal: sessionmaker | None = None
 
 
+def _resolve_database_url() -> str:
+    """Pick the SQLAlchemy URL.
+
+    Priority: explicit `DATABASE_URL` env (e.g. `postgresql+psycopg2://...`),
+    else SQLite at the instance data dir.
+    """
+    url = os.getenv("DATABASE_URL", "").strip()
+    if url:
+        # Common shorthand `postgres://` is rejected by SQLAlchemy 2.x.
+        if url.startswith("postgres://"):
+            url = "postgresql+psycopg2://" + url[len("postgres://"):]
+        elif url.startswith("postgresql://") and "+psycopg" not in url:
+            url = "postgresql+psycopg2://" + url[len("postgresql://"):]
+        return url
+    return f"sqlite:///{get_db_path()}"
+
+
 def _create_engine() -> Engine:
-    db_path = get_db_path()
-    url = f"sqlite:///{db_path}"
+    url = _resolve_database_url()
+    is_sqlite = url.startswith("sqlite")
+
+    if is_sqlite:
+        engine = create_engine(
+            url,
+            connect_args={"check_same_thread": False, "timeout": 30},
+            future=True,
+        )
+
+        @event.listens_for(engine, "connect")
+        def _set_sqlite_pragma(dbapi_conn, _record):  # noqa: ANN001
+            cur = dbapi_conn.cursor()
+            cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA foreign_keys=ON")
+            cur.execute("PRAGMA synchronous=NORMAL")
+            cur.close()
+
+        return engine
+
+    # Server-side databases (Postgres, MySQL, ...): use a real connection
+    # pool with pre-ping so dropped connections recover automatically.
     engine = create_engine(
         url,
-        connect_args={"check_same_thread": False, "timeout": 30},
+        pool_pre_ping=True,
+        pool_size=int(os.getenv("DATABASE_POOL_SIZE", "5")),
+        max_overflow=int(os.getenv("DATABASE_MAX_OVERFLOW", "10")),
+        pool_recycle=int(os.getenv("DATABASE_POOL_RECYCLE", "1800")),
         future=True,
     )
-
-    @event.listens_for(engine, "connect")
-    def _set_sqlite_pragma(dbapi_conn, _record):  # noqa: ANN001
-        cur = dbapi_conn.cursor()
-        cur.execute("PRAGMA journal_mode=WAL")
-        cur.execute("PRAGMA foreign_keys=ON")
-        cur.execute("PRAGMA synchronous=NORMAL")
-        cur.close()
-
     return engine
 
 
@@ -49,7 +81,12 @@ def get_engine() -> Engine:
         from . import models  # noqa: F401  (registers tables with Base)
 
         Base.metadata.create_all(_engine)
-        logger.info("Auth DB ready at %s", get_db_path())
+        # Hide credentials when logging the resolved URL.
+        try:
+            url_repr = str(_engine.url.render_as_string(hide_password=True))
+        except Exception:  # noqa: BLE001
+            url_repr = "<sqlalchemy url>"
+        logger.info("Auth DB ready at %s", url_repr)
     return _engine
 
 

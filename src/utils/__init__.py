@@ -4,7 +4,15 @@ import os
 
 # User data directory for logs, config, and data
 def get_user_data_dir() -> str:
-    """Returns the user data directory for the application."""
+    """Returns the user data directory for the application.
+
+    Honors `MANJU_FORGE_DATA_DIR` so containerised deployments can bind-mount
+    a single host path that holds the auth DB, instance secrets, and logs.
+    Falls back to `~/.manju-forge` for desktop / local-dev installs.
+    """
+    override = os.getenv("MANJU_FORGE_DATA_DIR")
+    if override:
+        return override
     return os.path.join(os.path.expanduser("~"), ".manju-forge")
 
 

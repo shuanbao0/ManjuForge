@@ -1,34 +1,184 @@
 version: "3.8"
 
-# Deployment compose file: pulls pre-built images from Docker Hub
-# (no local build context required).
+# Production-ready deployment compose: pulls pre-built images from Docker
+# Hub and brings up the middleware stack (Postgres + Redis + MinIO + Mailpit)
+# alongside the backend / frontend.
 #
-# Usage:
-#   cp .env.example .env   # fill in DASHSCOPE_API_KEY etc.
+# Usage (no .env required — provider keys are configured via the in-app
+# Settings page after the first admin signs up at /auth/setup):
 #   IMAGE_TAG=v0.1.0 docker compose -f docker-compose.deploy.yml pull
 #   IMAGE_TAG=v0.1.0 docker compose -f docker-compose.deploy.yml up -d
 #
-# IMAGE_TAG defaults to `latest` if not set.
+# Optional: drop a `.env` next to this file to override middleware defaults
+# (POSTGRES_PASSWORD, MINIO_ROOT_PASSWORD, IMAGE_TAG, etc.).
+#
+# Services:
+#   frontend  :3000 — Next.js static + nginx routing API → backend
+#   backend   :17177 — FastAPI app (auth + comic_gen)
+#   postgres  internal :5432 — auth/users database
+#   redis     internal :6379 — broker / cache / future rate-limit store
+#   minio     :9000/:9001 — S3-compatible object storage (API + console)
+#   mailpit   :8025 — SMTP catcher / dev mail UI (SMTP on internal :1025)
 
 services:
-  backend:
-    image: shuanbaoai/manju-forge-backend:${IMAGE_TAG:-latest}
-    container_name: manju-forge-backend
-    env_file:
-      - .env
-    environment:
-      - NO_PROXY=*.aliyuncs.com,localhost,127.0.0.1
-    volumes:
-      - ./output:/app/output
-    ports:
-      - "17177:17177"
-    restart: unless-stopped
-
   frontend:
     image: shuanbaoai/manju-forge-frontend:${IMAGE_TAG:-latest}
     container_name: manju-forge-frontend
+    restart: unless-stopped
     ports:
       - "3000:80"
     depends_on:
       - backend
+    networks:
+      - manju
+
+  backend:
+    image: shuanbaoai/manju-forge-backend:${IMAGE_TAG:-latest}
+    container_name: manju-forge-backend
     restart: unless-stopped
+    # No env_file — provider API keys (DashScope / Kling / Vidu / OSS) are
+    # configured per-user via the in-app Settings page and persisted (Fernet-
+    # encrypted) in the auth database. To override middleware defaults
+    # (Postgres / MinIO passwords, region, etc.), drop a `.env` next to this
+    # compose file — Docker auto-reads it for the `${VAR:-default}` substitutions
+    # below.
+    environment:
+      # Bypass corporate / system proxies for in-cluster + Aliyun traffic.
+      - NO_PROXY=*.aliyuncs.com,localhost,127.0.0.1,postgres,redis,minio,mailpit,frontend
+      # Persistent app data dir (auth DB fallback, instance.json, logs).
+      - MANJU_FORGE_DATA_DIR=/app/data
+      # Postgres connection — the SQLite fallback only triggers if DATABASE_URL is unset.
+      - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-manjuforge}:${POSTGRES_PASSWORD:-manjuforge}@postgres:5432/${POSTGRES_DB:-manjuforge}
+      # Redis (used by future Celery / rate-limit integrations).
+      - REDIS_URL=redis://redis:6379/0
+      # S3-compatible storage pointed at the in-cluster MinIO.
+      - STORAGE_PROVIDER=minio
+      - STORAGE_ENDPOINT=http://minio:9000
+      - STORAGE_ACCESS_KEY=${MINIO_ROOT_USER:-minioadmin}
+      - STORAGE_SECRET_KEY=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - STORAGE_BUCKET=${MINIO_BUCKET:-manju-forge}
+      - STORAGE_REGION=${STORAGE_REGION:-us-east-1}
+      # SMTP — Mailpit catches everything in dev; swap host/port for prod relay.
+      - SMTP_HOST=mailpit
+      - SMTP_PORT=1025
+    volumes:
+      - ./output:/app/output
+      - manju_app_data:/app/data
+    ports:
+      - "17177:17177"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    networks:
+      - manju
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: manju-forge-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-manjuforge}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-manjuforge}
+      - POSTGRES_DB=${POSTGRES_DB:-manjuforge}
+    volumes:
+      - manju_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-manjuforge} -d ${POSTGRES_DB:-manjuforge}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - manju
+
+  redis:
+    image: redis:7-alpine
+    container_name: manju-forge-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - manju_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - manju
+
+  minio:
+    image: minio/minio:latest
+    container_name: manju-forge-minio
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - manju_minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - manju
+
+  # One-shot init container that creates the bucket on first boot.
+  minio-init:
+    image: minio/mc:latest
+    container_name: manju-forge-minio-init
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-minioadmin}
+      - MINIO_BUCKET=${MINIO_BUCKET:-manju-forge}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        until /usr/bin/mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"; do
+          echo "waiting for minio..."
+          sleep 2
+        done
+        /usr/bin/mc mb --ignore-existing local/"$$MINIO_BUCKET"
+        echo "bucket $$MINIO_BUCKET ready"
+    networks:
+      - manju
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: manju-forge-mailpit
+    restart: unless-stopped
+    environment:
+      - MP_MAX_MESSAGES=5000
+      - MP_SMTP_AUTH_ACCEPT_ANY=1
+      - MP_SMTP_AUTH_ALLOW_INSECURE=1
+    ports:
+      # SMTP is internal-only; only expose the web UI to the host.
+      - "8025:8025"
+    networks:
+      - manju
+
+volumes:
+  manju_pg_data:
+  manju_redis_data:
+  manju_minio_data:
+  manju_app_data:
+
+networks:
+  manju:
+    driver: bridge
