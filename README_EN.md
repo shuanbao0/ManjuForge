@@ -220,7 +220,7 @@ For security and performance, it is recommended to configure Alibaba Cloud OSS f
 
 ### Config File Locations
 - **Development**: `.env` in project root
-- **Packaged App**: `~/.manju-forge/config.json` in user home directory (legacy `~/.lumen-x/` is auto-migrated on first launch)
+- **Packaged App**: `~/.manju-forge/config.json` in user home directory
 
 </details>
 
@@ -249,7 +249,7 @@ We welcome community contributions! Please read our [Contributing Guide](CONTRIB
 
 ## 👤 Maintainer
 
-This fork is maintained by **[shuanbao0](https://github.com/shuanbao0)**, based on upstream ManjuForge Studio (MIT).
+This fork is maintained by **[shuanbao0](https://github.com/shuanbao0)**, based on upstream LumenX Studio (MIT).
 
 For any feedback or questions, please reach out via [GitHub Issues](https://github.com/shuanbao0/ManjuForge/issues) or [Discussions](https://github.com/shuanbao0/ManjuForge/discussions).
 - **Email**: [lishuanbao0@gmail.com](mailto:lishuanbao0@gmail.com)

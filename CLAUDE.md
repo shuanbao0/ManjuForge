@@ -11,7 +11,7 @@ The product ships in three forms:
 - **Desktop app**: PyInstaller bundle that boots the FastAPI server in a thread and renders the built frontend inside a `pywebview` window (`main.py`, `build_mac.sh`, `build_windows.ps1`).
 - **Docker**: separate `Dockerfile.backend` / `Dockerfile.frontend`, wired by `docker-compose.yml`.
 
-User data (logs, config, projects) lives under `~/.manju-forge/` (legacy `~/.lumen-x/` is auto-migrated on first startup).
+User data (logs, config, projects) lives under `~/.manju-forge/` regardless of platform.
 
 ## Architecture
 

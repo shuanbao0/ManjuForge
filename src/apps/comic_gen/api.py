@@ -672,7 +672,7 @@ def get_user_config_path() -> str:
     """
     Returns the path to the user config file.
     - Development mode: Uses .env in project root
-    - Packaged app mode: Uses ~/.manju-forge/config.json (auto-migrated from ~/.lumen-x/)
+    - Packaged app mode: Uses ~/.manju-forge/config.json
     """
     from ...utils import get_user_data_dir
     

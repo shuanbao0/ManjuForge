@@ -25,18 +25,12 @@ count = 0
 exists_count = 0
 missing_count = 0
 
-# Recognise both the current default prefix (manju-forge/) and the legacy
-# prefix (lumenx/) so this verifier works on data created either before or
-# after the rename.
-_KEY_PREFIXES = (
-    f"{os.getenv('OSS_BASE_PATH', 'manju-forge').strip(chr(34) + chr(39) + '/ ')}/",
-    "lumenx/",
-)
+_KEY_PREFIX = f"{os.getenv('OSS_BASE_PATH', 'manju-forge').strip(chr(34) + chr(39) + '/ ')}/"
 
 
 def check_value(val):
     global count, exists_count, missing_count
-    if isinstance(val, str) and val.startswith(_KEY_PREFIXES):
+    if isinstance(val, str) and val.startswith(_KEY_PREFIX):
         count += 1
         if uploader.object_exists(val):
             exists_count += 1

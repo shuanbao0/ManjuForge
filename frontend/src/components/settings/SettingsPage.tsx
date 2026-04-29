@@ -78,10 +78,6 @@ const getValidationErrors = (env: EnvConfig): string[] => {
 
 const LS_KEY_MODEL = "manju_forge_default_model_settings";
 const LS_KEY_PROMPT = "manju_forge_default_prompt_config";
-// Legacy keys from the LumenX-branded build; read once and migrated forward
-// to the new keys so existing user defaults survive the rename.
-const LEGACY_LS_KEY_MODEL = "lumenx_default_model_settings";
-const LEGACY_LS_KEY_PROMPT = "lumenx_default_prompt_config";
 
 interface DefaultModelSettings {
   t2i_model: string;
@@ -99,21 +95,11 @@ interface DefaultPromptConfig {
   r2v_polish: string;
 }
 
-function loadFromLS<T>(key: string, fallback: T, legacyKey?: string): T {
+function loadFromLS<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
   try {
     const raw = localStorage.getItem(key);
-    if (raw !== null) return JSON.parse(raw);
-    if (legacyKey) {
-      const legacyRaw = localStorage.getItem(legacyKey);
-      if (legacyRaw !== null) {
-        // One-shot migration: copy legacy value to the new key, then clear legacy.
-        localStorage.setItem(key, legacyRaw);
-        localStorage.removeItem(legacyKey);
-        return JSON.parse(legacyRaw);
-      }
-    }
-    return fallback;
+    return raw ? JSON.parse(raw) : fallback;
   } catch {
     return fallback;
   }
@@ -137,12 +123,12 @@ export default function SettingsPage() {
       scene_aspect_ratio: "16:9",
       prop_aspect_ratio: "1:1",
       storyboard_aspect_ratio: "16:9",
-    }, LEGACY_LS_KEY_MODEL)
+    })
   );
 
   // ── Default Prompt Config ──
   const [promptConfig, setPromptConfig] = useState<DefaultPromptConfig>(() =>
-    loadFromLS(LS_KEY_PROMPT, { storyboard_polish: "", video_polish: "", r2v_polish: "" }, LEGACY_LS_KEY_PROMPT)
+    loadFromLS(LS_KEY_PROMPT, { storyboard_polish: "", video_polish: "", r2v_polish: "" })
   );
 
   useEffect(() => {

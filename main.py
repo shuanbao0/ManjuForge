@@ -24,7 +24,7 @@ cwd = application_path
 from starlette.staticfiles import StaticFiles
 from src.utils import get_user_data_dir
 
-# 切换到用户数据目录（首次启动时会自动从旧的 ~/.lumen-x 迁移到 ~/.manju-forge）
+# 切换到用户数据目录
 path = get_user_data_dir()
 os.makedirs(path, exist_ok=True)
 os.chdir(path)

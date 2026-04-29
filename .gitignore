@@ -79,7 +79,6 @@ frontend/.vercel
 # Logs
 *.log
 logs/
-.lumen-x/
 .manju-forge/
 
 # Secrets (extra safety)

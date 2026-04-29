@@ -220,7 +220,7 @@ ManjuForge 采用 **本地优先（local-first）** 的媒体存储逻辑：
 
 ### 配置文件路径
 - **开发模式**: 项目根目录 `.env`
-- **打包应用**: 用户主目录 `~/.manju-forge/config.json`（旧版 `~/.lumen-x/` 会在首次启动时自动迁移）
+- **打包应用**: 用户主目录 `~/.manju-forge/config.json`
 
 </details>
 
@@ -249,7 +249,7 @@ ManjuForge/
 
 ## 👤 维护者与联系方式
 
-本仓库由 **[shuanbao0](https://github.com/shuanbao0)** 维护，基于上游 ManjuForge Studio (MIT) fork 而来。
+本仓库由 **[shuanbao0](https://github.com/shuanbao0)** 维护，基于上游 LumenX Studio (MIT) fork 而来。
 
 如果您在使用过程中遇到问题，或有任何建议，欢迎通过以下方式联系：
 
