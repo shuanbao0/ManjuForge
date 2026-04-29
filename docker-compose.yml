@@ -8,11 +8,11 @@ version: "3.8"
 
 services:
   backend:
-    image: shuanbaoai/lumenx-backend:${IMAGE_TAG:-latest}
+    image: shuanbaoai/manju-forge-backend:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: Dockerfile.backend
-    container_name: lumenx-backend
+    container_name: manju-forge-backend
     env_file:
       - .env
     environment:
@@ -24,11 +24,11 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: shuanbaoai/lumenx-frontend:${IMAGE_TAG:-latest}
+    image: shuanbaoai/manju-forge-frontend:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: Dockerfile.frontend
-    container_name: lumenx-frontend
+    container_name: manju-forge-frontend
     ports:
       - "3000:80"
     depends_on:
