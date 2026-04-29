@@ -1,6 +1,6 @@
 # Lumen-X 用户手册
 
-> 作者：星莲(StarLotus，张钧贺)
+> 维护者：[shuanbao0](https://github.com/shuanbao0)（fork 自上游 LumenX Studio）
 
 ## 📋 目录
 
@@ -188,4 +188,4 @@ A: LumenX 使用阿里云灵积平台的 AI 模型进行图像和视频生成。
 
 ## 📞 获取帮助
 
-如有问题，请联系本项目开发者 星莲（StarLotus，张钧贺） 或查看项目 README 文档。
+如有问题，请通过 [GitHub Issues](https://github.com/shuanbao0/ManjuForge/issues) 联系维护者，或查看项目 README 文档。

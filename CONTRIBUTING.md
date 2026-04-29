@@ -4,7 +4,7 @@ Thank you for your interest in contributing to LumenX Studio! We welcome contrib
 
 ## 🌟 Ways to Contribute
 
-- **Bug Reports**: Submit detailed bug reports via [GitHub Issues](https://github.com/alibaba/lumenx/issues)
+- **Bug Reports**: Submit detailed bug reports via [GitHub Issues](https://github.com/shuanbao0/ManjuForge/issues)
 - **Feature Requests**: Propose new features through GitHub Issues
 - **Code Contributions**: Submit pull requests for bug fixes or new features
 - **Documentation**: Improve documentation, tutorials, or examples
@@ -16,11 +16,11 @@ Thank you for your interest in contributing to LumenX Studio! We welcome contrib
 
 ```bash
 # Fork the repository on GitHub, then clone your fork
-git clone https://github.com/YOUR_USERNAME/lumenx.git
-cd lumenx
+git clone https://github.com/YOUR_USERNAME/ManjuForge.git
+cd ManjuForge
 
 # Add upstream remote
-git remote add upstream https://github.com/alibaba/lumenx.git
+git remote add upstream https://github.com/shuanbao0/ManjuForge.git
 ```
 
 ### 2. Set Up Development Environment
@@ -293,8 +293,8 @@ For feature requests, please describe:
 
 ## 📞 Questions?
 
-- **Technical Questions**: [GitHub Discussions](https://github.com/alibaba/lumenx/discussions)
-- **Security Issues**: Email security@alibaba-inc.com (do not file public issues)
+- **Technical Questions**: [GitHub Discussions](https://github.com/shuanbao0/ManjuForge/discussions)
+- **Security Issues**: Email lishuanbao0@gmail.com (do not file public issues)
 
 ## 📄 License
 

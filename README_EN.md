@@ -13,7 +13,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![Node](https://img.shields.io/badge/node-18%2B-green)](https://nodejs.org/)
-[![GitHub Stars](https://img.shields.io/github/stars/alibaba/lumenx?style=social)](https://github.com/alibaba/lumenx)
+[![GitHub Stars](https://img.shields.io/github/stars/shuanbao0/ManjuForge?style=social)](https://github.com/shuanbao0/ManjuForge)
 
 [English](README_EN.md) | [中文](README.md) | [User Manual](USER_MANUAL.md) | [Contributing](CONTRIBUTING.md)
 
@@ -112,8 +112,8 @@ LumenX Studio utilizes a modern separated frontend/backend architecture for scal
 ### 2. Clone Repository
 
 ```bash
-git clone https://github.com/alibaba/lumenx.git
-cd lumenx
+git clone https://github.com/shuanbao0/ManjuForge.git
+cd ManjuForge
 ```
 
 ### 3. Configure API Keys
@@ -134,7 +134,7 @@ pip install -r requirements.txt
 # Create output directories
 mkdir -p output/uploads
 
-# Start service (http://localhost:8000)
+# Start service (http://localhost:17177)
 ./start_backend.sh
 ```
 
@@ -152,7 +152,7 @@ npm install && npm run dev
 ## 📖 Documentation
 
 - **[User Manual](USER_MANUAL.md)**: **Must-read** for first-time users.
-- **[API Documentation](http://localhost:8000/docs)**: Backend Swagger UI.
+- **[API Documentation](http://localhost:17177/docs)**: Backend Swagger UI.
 
 ---
 
@@ -229,7 +229,7 @@ For security and performance, it is recommended to configure Alibaba Cloud OSS f
 ## 📁 Directory Structure
 
 ```
-lumenx/
+ManjuForge/
 ├── frontend/          # Next.js Frontend
 ├── src/               # Python Backend Core
 │   ├── apps/         # Business Logic
@@ -244,15 +244,15 @@ lumenx/
 
 We welcome community contributions! Please read our [Contributing Guide](CONTRIBUTING.md) for code standards and submission process.
 
-- **Bug Reports**: Submit via [GitHub Issues](https://github.com/alibaba/lumenx/issues)
-- **Feature Requests**: Discuss in [Discussions](https://github.com/alibaba/lumenx/discussions)
+- **Bug Reports**: Submit via [GitHub Issues](https://github.com/shuanbao0/ManjuForge/issues)
+- **Feature Requests**: Discuss in [Discussions](https://github.com/shuanbao0/ManjuForge/discussions)
 
-## 👤 Author
+## 👤 Maintainer
 
-**StarLotus (星莲)** - *Lead Developer & Maintainer*
+This fork is maintained by **[shuanbao0](https://github.com/shuanbao0)**, based on upstream LumenX Studio (MIT).
 
-For any feedback or questions, please reach out via [GitHub Issues](https://github.com/alibaba/lumenx/issues) or [Discussions](https://github.com/alibaba/lumenx/discussions).
-- **Email**: [zhangjunhe.zjh@alibaba-inc.com](mailto:zhangjunhe.zjh@alibaba-inc.com)
+For any feedback or questions, please reach out via [GitHub Issues](https://github.com/shuanbao0/ManjuForge/issues) or [Discussions](https://github.com/shuanbao0/ManjuForge/discussions).
+- **Email**: [lishuanbao0@gmail.com](mailto:lishuanbao0@gmail.com)
 
 ---
 
@@ -263,5 +263,5 @@ This project is licensed under the [MIT License](LICENSE).
 ---
 
 <div align="center">
-  Made with ❤️ by Alibaba Group
+  Maintained with ❤️ by <a href="https://github.com/shuanbao0">shuanbao0</a>
 </div>

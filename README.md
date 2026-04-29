@@ -13,7 +13,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![Node](https://img.shields.io/badge/node-18%2B-green)](https://nodejs.org/)
-[![GitHub Stars](https://img.shields.io/github/stars/alibaba/lumenx?style=social)](https://github.com/alibaba/lumenx)
+[![GitHub Stars](https://img.shields.io/github/stars/shuanbao0/ManjuForge?style=social)](https://github.com/shuanbao0/ManjuForge)
 
 [English](README_EN.md) | [中文](README.md) | [用户手册](USER_MANUAL.md) | [贡献指南](CONTRIBUTING.md)
 
@@ -112,8 +112,8 @@ LumenX Studio 采用前后端分离的现代化架构，确保了扩展性与性
 ### 2. 克隆项目
 
 ```bash
-git clone https://github.com/alibaba/lumenx.git
-cd lumenx
+git clone https://github.com/shuanbao0/ManjuForge.git
+cd ManjuForge
 ```
 
 ### 3. 配置密钥
@@ -134,7 +134,7 @@ pip install -r requirements.txt
 # 创建输出目录
 mkdir -p output/uploads
 
-# 启动服务 (http://localhost:8000)
+# 启动服务 (http://localhost:17177)
 ./start_backend.sh
 ```
 
@@ -152,7 +152,7 @@ npm install && npm run dev
 ## 📖 文档中心
 
 - **[用户手册](USER_MANUAL.md)**: 必读！详细的功能使用说明。
-- **[API 文档](http://localhost:8000/docs)**: 后端接口定义的 Swagger UI。
+- **[API 文档](http://localhost:17177/docs)**: 后端接口定义的 Swagger UI。
 
 ---
 
@@ -229,7 +229,7 @@ LumenX 采用 **本地优先（local-first）** 的媒体存储逻辑：
 ## 📁 目录结构
 
 ```
-lumenx/
+ManjuForge/
 ├── frontend/          # Next.js 前端工程
 ├── src/               # Python 后端核心
 │   ├── apps/         # 业务逻辑
@@ -244,18 +244,18 @@ lumenx/
 
 我们非常欢迎社区贡献！请先阅读 [贡献指南](CONTRIBUTING.md) 了解代码规范和提交流程。
 
-- **Bug 反馈**: 请提交 [GitHub Issues](https://github.com/alibaba/lumenx/issues)
-- **功能建议**: 欢迎在 [Discussions](https://github.com/alibaba/lumenx/discussions) 中讨论
+- **Bug 反馈**: 请提交 [GitHub Issues](https://github.com/shuanbao0/ManjuForge/issues)
+- **功能建议**: 欢迎在 [Discussions](https://github.com/shuanbao0/ManjuForge/discussions) 中讨论
 
-## 👤 作者与联系方式
+## 👤 维护者与联系方式
 
-本项目由 **星莲 (StarLotus)** 主导开发与维护。
+本仓库由 **[shuanbao0](https://github.com/shuanbao0)** 维护，基于上游 LumenX Studio (MIT) fork 而来。
 
 如果您在使用过程中遇到问题，或有任何建议，欢迎通过以下方式联系：
 
-- **反馈与交流**: [GitHub Issues](https://github.com/alibaba/lumenx/issues)
-- **技术讨论**: [GitHub Discussions](https://github.com/alibaba/lumenx/discussions)
-- **邮件联系**: [zhangjunhe.zjh@alibaba-inc.com](mailto:zhangjunhe.zjh@alibaba-inc.com)
+- **反馈与交流**: [GitHub Issues](https://github.com/shuanbao0/ManjuForge/issues)
+- **技术讨论**: [GitHub Discussions](https://github.com/shuanbao0/ManjuForge/discussions)
+- **邮件联系**: [lishuanbao0@gmail.com](mailto:lishuanbao0@gmail.com)
 
 ---
 
@@ -266,5 +266,5 @@ lumenx/
 ---
 
 <div align="center">
-  Made with ❤️ by Alibaba Group
+  Maintained with ❤️ by <a href="https://github.com/shuanbao0">shuanbao0</a>
 </div>
