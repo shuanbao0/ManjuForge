@@ -10,7 +10,8 @@ class VideoGenerator:
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
         self.model = WanxModel(self.config.get('model', {}))
-        self.output_dir = self.config.get('output_dir', 'output/video')
+        self.data_root = self.config.get('data_root', 'output')
+        self.output_dir = self.config.get('output_dir', os.path.join(self.data_root, 'video'))
 
     def generate_i2v(self, image_url: str, prompt: str, duration: int = 5, audio_url: str = None) -> Dict[str, Any]:
         """
@@ -32,7 +33,7 @@ class VideoGenerator:
         # Handle local file paths
         img_path = None
         if image_url and not image_url.startswith("http"):
-            potential_path = os.path.join("output", image_url)
+            potential_path = os.path.join(self.data_root, image_url)
             if os.path.exists(potential_path):
                 img_path = os.path.abspath(potential_path)
             elif os.path.exists(image_url):
@@ -51,7 +52,7 @@ class VideoGenerator:
             )
             
             # Upload to OSS if configured
-            video_url = os.path.relpath(output_path, "output")
+            video_url = os.path.relpath(output_path, self.data_root)
             try:
                 from ...utils.oss_utils import OSSImageUploader
                 uploader = OSSImageUploader()
@@ -107,7 +108,7 @@ class VideoGenerator:
              # We need to prepend the output directory.
              
              # Assuming we are running from project root
-             potential_path = os.path.join("output", img_url)
+             potential_path = os.path.join(self.data_root, img_url)
              if os.path.exists(potential_path):
                  img_path = os.path.abspath(potential_path)
              else:
@@ -126,7 +127,7 @@ class VideoGenerator:
             )
             
             # Store relative path for frontend serving
-            rel_path = os.path.relpath(output_path, "output")
+            rel_path = os.path.relpath(output_path, self.data_root)
             frame.video_url = rel_path
             frame.status = GenerationStatus.COMPLETED
             

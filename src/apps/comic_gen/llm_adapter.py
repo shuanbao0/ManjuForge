@@ -5,17 +5,14 @@ Supports two providers:
   - dashscope (default): Alibaba Cloud DashScope via OpenAI-compatible endpoint
   - openai: Any OpenAI-compatible API (OpenAI, DeepSeek, Ollama, etc.)
 
-Configuration via environment variables:
-  LLM_PROVIDER=dashscope|openai
-  DASHSCOPE_API_KEY=...
-  OPENAI_API_KEY=...
-  OPENAI_BASE_URL=https://api.openai.com/v1
-  OPENAI_MODEL=gpt-4o
+Credentials are resolved per-request via :mod:`src.runtime` so each user
+has their own ``LLM_PROVIDER`` / ``DASHSCOPE_API_KEY`` / ``OPENAI_*``.
+Outside a request the helpers fall back to the process environment.
 """
-import os
 import logging
 from typing import Dict, List, Optional, Any
 
+from src.runtime import get_cred
 from ...utils.endpoints import get_provider_base_url
 
 logger = logging.getLogger(__name__)
@@ -25,42 +22,43 @@ class LLMAdapter:
     """Unified LLM call interface supporting DashScope and OpenAI-compatible APIs."""
 
     def __init__(self):
-        self.provider = os.getenv("LLM_PROVIDER", "dashscope").lower()
-        self._client = None
-        logger.info(f"LLM Adapter initialized with provider: {self.provider}")
+        # Nothing cached here: credentials are resolved on every call so
+        # users can update their keys without forcing a process restart.
+        logger.info("LLM Adapter initialized (credentials resolved per request)")
+
+    @property
+    def provider(self) -> str:
+        return (get_cred("LLM_PROVIDER") or "dashscope").lower()
 
     @property
     def is_configured(self) -> bool:
         if self.provider == "openai":
-            return bool(os.getenv("OPENAI_API_KEY"))
-        return bool(os.getenv("DASHSCOPE_API_KEY"))
+            return bool(get_cred("OPENAI_API_KEY"))
+        return bool(get_cred("DASHSCOPE_API_KEY"))
 
     def _get_client(self):
-        """Get or create the OpenAI-compatible client (lazy, cached)."""
-        if self._client is None:
-            try:
-                from openai import OpenAI
-            except ImportError:
-                raise RuntimeError(
-                    "openai package not installed. Run: pip install openai>=1.0.0"
-                )
+        """Build a fresh OpenAI-compatible client for the current request."""
+        try:
+            from openai import OpenAI
+        except ImportError:
+            raise RuntimeError(
+                "openai package not installed. Run: pip install openai>=1.0.0"
+            )
 
-            if self.provider == "openai":
-                self._client = OpenAI(
-                    api_key=os.getenv("OPENAI_API_KEY"),
-                    base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
-                )
-            else:
-                # DashScope uses OpenAI-compatible endpoint
-                self._client = OpenAI(
-                    api_key=os.getenv("DASHSCOPE_API_KEY"),
-                    base_url=f"{get_provider_base_url('DASHSCOPE')}/compatible-mode/v1",
-                )
-        return self._client
+        if self.provider == "openai":
+            return OpenAI(
+                api_key=get_cred("OPENAI_API_KEY"),
+                base_url=get_cred("OPENAI_BASE_URL") or "https://api.openai.com/v1",
+            )
+        # DashScope uses OpenAI-compatible endpoint
+        return OpenAI(
+            api_key=get_cred("DASHSCOPE_API_KEY"),
+            base_url=f"{get_provider_base_url('DASHSCOPE')}/compatible-mode/v1",
+        )
 
     def _get_default_model(self) -> str:
         if self.provider == "openai":
-            return os.getenv("OPENAI_MODEL", "gpt-4o")
+            return get_cred("OPENAI_MODEL") or "gpt-4o"
         return "qwen3.5-plus"
 
     def chat(

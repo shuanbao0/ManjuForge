@@ -2,9 +2,11 @@ import os
 import oss2
 import hashlib
 import time
+import threading
 from typing import Optional, Tuple
 from . import get_logger
 from .media_refs import classify_media_ref, MEDIA_REF_LOCAL_PATH, MEDIA_REF_OBJECT_KEY
+from src.runtime import current_user_id, get_cred
 
 logger = get_logger(__name__)
 
@@ -15,19 +17,20 @@ SIGN_URL_EXPIRES_API = 1800      # 30 minutes for AI API calls
 
 
 def is_oss_configured() -> bool:
-    """Check if OSS is properly configured."""
+    """Check if OSS is properly configured for the current request's user
+    (or the process environment outside a request)."""
     required = [
-        os.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID"),
-        os.getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET"),
-        os.getenv("OSS_ENDPOINT"),
-        os.getenv("OSS_BUCKET_NAME")
+        get_cred("ALIBABA_CLOUD_ACCESS_KEY_ID"),
+        get_cred("ALIBABA_CLOUD_ACCESS_KEY_SECRET"),
+        get_cred("OSS_ENDPOINT"),
+        get_cred("OSS_BUCKET_NAME"),
     ]
     return all(required)
 
 
 def get_oss_base_path() -> str:
-    """Get OSS base path from environment or use default."""
-    return os.getenv("OSS_BASE_PATH", DEFAULT_OSS_BASE_PATH).rstrip("/")
+    """Get OSS base path from current credentials / env, falling back to default."""
+    return (get_cred("OSS_BASE_PATH") or DEFAULT_OSS_BASE_PATH).rstrip("/")
 
 
 def is_object_key(value: str) -> bool:
@@ -57,25 +60,61 @@ class OSSImageUploader:
     - Support both private bucket access and AI API access
     """
     
-    _instance = None
-    
+    # Per-user singleton: each authenticated user has their own OSS keys, so
+    # we cache one OSSImageUploader per user_id (and a single None-keyed
+    # instance for non-request contexts: the startup log, scripts, tests).
+    _instances: dict = {}
+    _instances_lock = threading.RLock()
+
+    # Maximum number of (object_key, expires) pairs to remember per uploader
+    # before we start evicting the least-recently-inserted entry. Keeps the
+    # cache from growing unbounded across long-running processes.
+    _URL_CACHE_MAX = 1024
+
     def __new__(cls):
-        """Singleton pattern to reuse OSS connection."""
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-            cls._instance._url_cache = {}  # (object_key, expires) -> (signed_url, timestamp)
-        return cls._instance
-    
+        key = current_user_id()
+        with cls._instances_lock:
+            inst = cls._instances.get(key)
+            if inst is None:
+                inst = super().__new__(cls)
+                inst._initialized = False
+                # OrderedDict gives O(1) move-to-end for LRU touch.
+                from collections import OrderedDict
+                inst._url_cache = OrderedDict()
+                cls._instances[key] = inst
+            return inst
+
     def __init__(self):
         if self._initialized:
             return
-            
-        self.access_key_id = os.getenv("ALIBABA_CLOUD_ACCESS_KEY_ID")
-        self.access_key_secret = os.getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET")
-        self.endpoint = os.getenv("OSS_ENDPOINT")
-        self.bucket_name = os.getenv("OSS_BUCKET_NAME")
+
+        self.access_key_id = get_cred("ALIBABA_CLOUD_ACCESS_KEY_ID")
+        self.access_key_secret = get_cred("ALIBABA_CLOUD_ACCESS_KEY_SECRET")
+        self.endpoint = get_cred("OSS_ENDPOINT")
+        self.bucket_name = get_cred("OSS_BUCKET_NAME")
         self.base_path = get_oss_base_path()
+
+        # Prefer the S3-compatible backend when ``STORAGE_PROVIDER`` is
+        # explicitly set (minio / aliyun_oss). The legacy oss2 path below
+        # still runs as a fallback when the user has only the old
+        # ``OSS_*`` keys configured.
+        provider = (get_cred("STORAGE_PROVIDER") or "").strip().lower()
+        if provider in ("minio", "aliyun_oss"):
+            from .object_storage import ObjectStorageClient
+
+            self._s3_backend = ObjectStorageClient.for_current_user()
+            if self._s3_backend.is_configured:
+                self.bucket = self._s3_backend  # truthy + carries the bucket
+                self._initialized = True
+                logger.info(
+                    "OSS backend: %s (bucket=%s, prefix=%s)",
+                    provider,
+                    self._s3_backend.bucket,
+                    self._s3_backend.config.path_prefix,
+                )
+                return
+        else:
+            self._s3_backend = None
         
         # Debug prints for terminal
         print(f"DEBUG: OSS init - ID={'***' if self.access_key_id else 'None'}, Secret={'***' if self.access_key_secret else 'None'}, Endpoint={self.endpoint}, Bucket={self.bucket_name}, Base={self.base_path}")
@@ -105,9 +144,18 @@ class OSSImageUploader:
 
     
     @classmethod
-    def reset_instance(cls):
-        """Reset singleton instance (useful when credentials change)."""
-        cls._instance = None
+    def reset_instance(cls, user_id: Optional[int] = None):
+        """Reset cached uploader(s).
+
+        Without args, drops *all* per-user instances (used after global
+        config changes). With ``user_id`` set, drops only that user's
+        cache so subsequent requests rebuild with the new credentials.
+        """
+        with cls._instances_lock:
+            if user_id is None:
+                cls._instances.clear()
+            else:
+                cls._instances.pop(user_id, None)
     
     @property
     def is_configured(self) -> bool:
@@ -128,77 +176,82 @@ class OSSImageUploader:
     
     def upload_file(self, local_path: str, sub_path: str = "", custom_filename: str = None) -> Optional[str]:
         """
-        Upload a file to OSS and return the Object Key.
-        
+        Upload a file to object storage and return the Object Key.
+
         Args:
             local_path: Local file path to upload
             sub_path: Sub-directory path (e.g., "proj_123/assets/characters")
             custom_filename: Optional custom filename, defaults to original filename
-        
+
         Returns:
             Object Key (e.g., "manju-forge/proj_123/assets/characters/file.png") or None if failed
         """
         if not self.bucket:
             logger.warning("OSS not configured, cannot upload file.")
             return None
-        
+
         if not os.path.exists(local_path):
             logger.error(f"File not found: {local_path}")
             return None
-        
+
+        filename = custom_filename or os.path.basename(local_path)
+
+        # MinIO / S3-compatible backend
+        if self._s3_backend is not None:
+            rel_key = "/".join(p for p in [sub_path.strip("/"), filename] if p)
+            return self._s3_backend.upload_file(local_path, rel_key)
+
+        # Legacy oss2 path (Aliyun OSS via Aliyun SDK)
         try:
-            filename = custom_filename or os.path.basename(local_path)
             object_key = self._build_object_key(sub_path, filename)
-            
             logger.info(f"Uploading to OSS: {local_path} -> {object_key}")
-            
+
             with open(local_path, 'rb') as f:
                 result = self.bucket.put_object(object_key, f)
-            
+
             if result.status == 200:
                 logger.info(f"Upload success: {object_key}")
                 return object_key
-            else:
-                logger.error(f"Upload failed with status: {result.status}")
-                return None
-                
+            logger.error(f"Upload failed with status: {result.status}")
+            return None
         except Exception as e:
             logger.error(f"OSS upload error: {e}")
             return None
     
     def generate_signed_url(self, object_key: str, expires: int = SIGN_URL_EXPIRES_DISPLAY) -> str:
-        """
-        Generate a signed URL for accessing a private OSS object.
-        
-        Args:
-            object_key: The Object Key in OSS
-            expires: URL validity in seconds (default 2 hours)
-        
-        Returns:
-            Signed URL string
-        """
+        """Generate a signed GET URL valid for ``expires`` seconds."""
         if not self.bucket:
             logger.warning("OSS not configured, cannot generate signed URL.")
             return ""
-        
+
+        # Cache: reuse a signed URL while at least 10 minutes of validity remain.
+        cache_key = (object_key, expires)
+        now = time.time()
+        if cache_key in self._url_cache:
+            cached_url, timestamp = self._url_cache[cache_key]
+            if now - timestamp < (expires - 600):
+                self._url_cache.move_to_end(cache_key)  # LRU touch
+                return cached_url
+
+        def _remember(url_value: str) -> None:
+            self._url_cache[cache_key] = (url_value, now)
+            self._url_cache.move_to_end(cache_key)
+            while len(self._url_cache) > self._URL_CACHE_MAX:
+                self._url_cache.popitem(last=False)
+
+        # MinIO / S3-compatible backend
+        if self._s3_backend is not None:
+            url = self._s3_backend.presigned_get_url(object_key, expires_in=expires) or ""
+            if url:
+                _remember(url)
+            return url
+
+        # Legacy oss2 path
         try:
-            # Cache check: reuse signed URL if it's still valid (with 10 min buffer)
-            cache_key = (object_key, expires)
-            now = time.time()
-            if cache_key in self._url_cache:
-                cached_url, timestamp = self._url_cache[cache_key]
-                # If the URL was generated recently enough (at least 10 mins left before expiry)
-                if now - timestamp < (expires - 600):
-                    return cached_url
-
             url = self.bucket.sign_url('GET', object_key, expires, slash_safe=True)
-
-            # Ensure HTTPS - some AI APIs (e.g. DashScope wan2.6-i2v) require HTTPS
             if url.startswith("http://"):
                 url = "https://" + url[7:]
-
-            # Update cache
-            self._url_cache[cache_key] = (url, now)
+            _remember(url)
             return url
         except Exception as e:
             logger.error(f"Failed to generate signed URL for {object_key}: {e}")
@@ -220,9 +273,15 @@ class OSSImageUploader:
         """Check if an object exists in OSS."""
         if not self.bucket:
             return False
+        if self._s3_backend is not None:
+            try:
+                self._s3_backend._s3.head_object(Bucket=self._s3_backend.bucket, Key=object_key)
+                return True
+            except Exception:
+                return False
         try:
             return self.bucket.object_exists(object_key)
-        except:
+        except Exception:
             return False
     
     # Legacy methods for backward compatibility

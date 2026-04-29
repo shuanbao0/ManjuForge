@@ -48,17 +48,32 @@ def _safe_resolve_path(base_dir: str, untrusted_rel: str) -> str:
     return resolved
 
 class ComicGenPipeline:
-    def __init__(self, config: Dict[str, Any] = None):
+    # Shared default so instances created via ``__new__`` (used by some tests)
+    # still expose a sensible ``data_root`` even when ``__init__`` is skipped.
+    data_root: str = "output"
+
+    def __init__(self, config: Dict[str, Any] = None, data_root: str = "output"):
         self.config = config or {}
+        # Per-tenant data root. Each user's pipeline points at
+        # ``output/users/<uid>``; the legacy single-tenant default stays
+        # ``output``. All "output" path literals below are read off this
+        # field so multi-user instances can keep state physically isolated.
+        self.data_root = data_root
+        os.makedirs(self.data_root, exist_ok=True)
+
+        def _sub_config(name: str) -> Dict[str, Any]:
+            base = self.config.get(name, {}) or {}
+            return {**base, "data_root": self.data_root}
+
         self.script_processor = ScriptProcessor()
-        self.asset_generator = AssetGenerator(self.config.get('assets'))
-        self.storyboard_generator = StoryboardGenerator(self.config.get('storyboard'))
-        self.video_generator = VideoGenerator(self.config.get('video'))
-        self.audio_generator = AudioGenerator(self.config.get('audio'))
-        self.export_manager = ExportManager(self.config.get('export'))
-        
-        self.data_file = "output/projects.json"
-        self.series_data_file = "output/series.json"
+        self.asset_generator = AssetGenerator(_sub_config('assets'))
+        self.storyboard_generator = StoryboardGenerator(_sub_config('storyboard'))
+        self.video_generator = VideoGenerator(_sub_config('video'))
+        self.audio_generator = AudioGenerator(_sub_config('audio'))
+        self.export_manager = ExportManager(_sub_config('export'))
+
+        self.data_file = os.path.join(self.data_root, "projects.json")
+        self.series_data_file = os.path.join(self.data_root, "series.json")
         self._save_lock = threading.RLock()  # Reentrant lock to prevent concurrent file writes
         self.scripts: Dict[str, Script] = self._load_data()
         self.series_store: Dict[str, Series] = self._load_series_data()
@@ -1306,7 +1321,7 @@ class ComicGenPipeline:
                 if is_object_key(url) or url.startswith("http"):
                     ref_image_paths.append(url)
                 else:
-                    potential_path = _safe_resolve_path("output", url)
+                    potential_path = _safe_resolve_path(self.data_root, url)
                     if os.path.exists(potential_path):
                         ref_image_paths.append(potential_path)
             
@@ -1316,7 +1331,7 @@ class ComicGenPipeline:
                     if ref_image_url not in ref_image_paths:
                         ref_image_paths.append(ref_image_url)
                 else:
-                    potential_path = _safe_resolve_path("output", ref_image_url)
+                    potential_path = _safe_resolve_path(self.data_root, ref_image_url)
                     if os.path.exists(potential_path):
                         if potential_path not in ref_image_paths:
                             ref_image_paths.append(potential_path)
@@ -1411,10 +1426,10 @@ class ComicGenPipeline:
             # Resolve source path
             if image_url and not image_url.startswith("http"):
                 # Assume relative to output dir
-                src_path = _safe_resolve_path("output", image_url)
+                src_path = _safe_resolve_path(self.data_root, image_url)
                 if os.path.exists(src_path) and os.path.isfile(src_path):
                     # Create snapshot dir
-                    snapshot_dir = os.path.join("output", "video_inputs")
+                    snapshot_dir = os.path.join(self.data_root, "video_inputs")
                     os.makedirs(snapshot_dir, exist_ok=True)
 
                     # Define snapshot path
@@ -1486,7 +1501,7 @@ class ComicGenPipeline:
         # Resolve video path
         video_path = video_task.video_url
         if not video_path.startswith("/") and not video_path.startswith("http"):
-            video_path = _safe_resolve_path("output", video_path)
+            video_path = _safe_resolve_path(self.data_root, video_path)
 
         if video_path.startswith("http"):
             # Download to temp file first
@@ -1500,7 +1515,7 @@ class ComicGenPipeline:
         if not ffmpeg_path:
             raise RuntimeError("FFmpeg is required for frame extraction but was not found.")
 
-        output_dir = os.path.join("output", "storyboard")
+        output_dir = os.path.join(self.data_root, "storyboard")
         os.makedirs(output_dir, exist_ok=True)
         _validate_safe_id(frame_id, "frame_id")
         output_filename = f"frame_{frame_id}_lastframe_{uuid.uuid4().hex[:8]}.jpg"
@@ -1528,7 +1543,7 @@ class ComicGenPipeline:
         from ...utils.oss_utils import OSSImageUploader
         uploader = OSSImageUploader()
         oss_url = uploader.upload_image(output_path)
-        image_url = oss_url if oss_url else os.path.relpath(output_path, "output")
+        image_url = oss_url if oss_url else os.path.relpath(output_path, self.data_root)
 
         # Create new variant
         variant = ImageVariant(
@@ -1557,7 +1572,7 @@ class ComicGenPipeline:
         from .models import ImageVariant, ImageAsset
 
         # Validate that image_path is inside the output directory
-        safe_path = _safe_resolve_path("output", os.path.relpath(image_path, "output") if os.path.isabs(image_path) else image_path)
+        safe_path = _safe_resolve_path(self.data_root, os.path.relpath(image_path, self.data_root) if os.path.isabs(image_path) else image_path)
 
         script = self.get_script(script_id)
         if not script:
@@ -1571,7 +1586,7 @@ class ComicGenPipeline:
         from ...utils.oss_utils import OSSImageUploader
         uploader = OSSImageUploader()
         oss_url = uploader.upload_image(safe_path)
-        image_url = oss_url if oss_url else os.path.relpath(safe_path, "output")
+        image_url = oss_url if oss_url else os.path.relpath(safe_path, self.data_root)
 
         # Create new variant
         variant = ImageVariant(
@@ -1601,7 +1616,7 @@ class ComicGenPipeline:
         
         # If it's a local file path (relative to output)
         if not url.startswith("http"):
-            local_path = _safe_resolve_path("output", url)
+            local_path = _safe_resolve_path(self.data_root, url)
             if os.path.exists(local_path):
                 return local_path
                 
@@ -1709,14 +1724,14 @@ class ComicGenPipeline:
         logger.info(f"[MERGE] Found {len(video_paths)} videos to merge")
             
         # Create file list for ffmpeg
-        list_path = _safe_resolve_path("output", f"merge_list_{script_id}.txt")
+        list_path = _safe_resolve_path(self.data_root, f"merge_list_{script_id}.txt")
         abs_video_paths = []
 
         with open(list_path, "w") as f:
             for path in video_paths:
                 # Resolve to absolute path
                 if not path.startswith("http"):
-                    abs_path = _safe_resolve_path("output", path)
+                    abs_path = _safe_resolve_path(self.data_root, path)
                     if os.path.exists(abs_path):
                         f.write(f"file '{abs_path}'\n")
                         abs_video_paths.append(abs_path)
@@ -1732,7 +1747,7 @@ class ComicGenPipeline:
 
         # Output path
         output_filename = f"merged_{script_id}_{int(time.time())}.mp4"
-        output_path = _safe_resolve_path(os.path.join("output", "video"), output_filename)
+        output_path = _safe_resolve_path(os.path.join(self.data_root, "video"), output_filename)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         
         logger.debug(f"[MERGE] Output path: {output_path}")
@@ -1981,7 +1996,7 @@ class ComicGenPipeline:
             
             # Generate video
             output_filename = f"video_{task_id}.mp4"
-            output_path = os.path.join("output", "video", output_filename)
+            output_path = os.path.join(self.data_root, "video", output_filename)
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             
             # Handle Audio Logic
@@ -2077,7 +2092,7 @@ class ComicGenPipeline:
                     subject_motion=None
                 )
             
-            task.video_url = os.path.relpath(output_path, "output")
+            task.video_url = os.path.relpath(output_path, self.data_root)
             task.status = "completed"
             
             # Sync with asset if this is an asset video
@@ -2162,9 +2177,9 @@ class ComicGenPipeline:
         snapshot_url = image_url
         try:
             if not image_url.startswith("http"):
-                src_path = os.path.join("output", image_url)
+                src_path = os.path.join(self.data_root, image_url)
                 if os.path.exists(src_path):
-                    snapshot_dir = os.path.join("output", "video_inputs")
+                    snapshot_dir = os.path.join(self.data_root, "video_inputs")
                     os.makedirs(snapshot_dir, exist_ok=True)
                     ext = os.path.splitext(image_url)[1] or ".png"
                     snapshot_filename = f"{task_id}{ext}"
@@ -2242,7 +2257,7 @@ class ComicGenPipeline:
         # Try to delete the video file
         try:
             if video_task_to_delete and video_task_to_delete.video_url:
-                video_path = os.path.join("output", video_task_to_delete.video_url)
+                video_path = os.path.join(self.data_root, video_task_to_delete.video_url)
                 if os.path.exists(video_path):
                     os.remove(video_path)
                     logger.info(f"Deleted video file: {video_path}")

@@ -42,7 +42,11 @@ def _is_under(path: Path, parent: Path) -> bool:
 
 
 def _normalized_oss_base_path(oss_base_path: Optional[str] = None) -> str:
-    value = oss_base_path if oss_base_path is not None else os.getenv("OSS_BASE_PATH", "manju-forge")
+    if oss_base_path is None:
+        from src.runtime import get_cred  # avoid cycle at module load
+        value = get_cred("OSS_BASE_PATH") or "manju-forge"
+    else:
+        value = oss_base_path
     return str(value).strip().strip("'\"/ ")
 
 

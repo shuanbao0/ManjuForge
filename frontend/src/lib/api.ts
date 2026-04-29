@@ -1,4 +1,5 @@
 import axios from "axios";
+import { clearSession, getToken, type SetupStatus, type TokenResponse, type CurrentUser, persistSession, persistUser } from "./auth";
 
 // Dynamic API URL detection:
 // 1. In packaged app (Electron): Frontend is served by backend, use same origin
@@ -25,7 +26,71 @@ const getApiUrl = (): string => {
 
 export const API_URL = getApiUrl();
 
+// ── Global auth interceptors ──────────────────────────────────────────────
+// All `axios.X(${API_URL}/...)` calls below benefit automatically from these
+// interceptors on the default axios instance.
+
+const AUTH_FREE_PATHS = ["/auth/setup", "/auth/setup-status", "/auth/login"];
+
+let _interceptorsInstalled = false;
+function installAuthInterceptors() {
+    if (_interceptorsInstalled || typeof window === "undefined") return;
+    _interceptorsInstalled = true;
+
+    axios.interceptors.request.use((config) => {
+        const url = (config.url ?? "").toString();
+        if (!url.startsWith(API_URL)) return config; // leave third-party requests alone
+        const path = url.slice(API_URL.length);
+        if (AUTH_FREE_PATHS.some((p) => path.startsWith(p))) return config;
+        const token = getToken();
+        if (token) {
+            config.headers = config.headers ?? {};
+            (config.headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
+        }
+        return config;
+    });
+
+    axios.interceptors.response.use(
+        (resp) => resp,
+        (error) => {
+            const status = error?.response?.status;
+            const url = (error?.config?.url ?? "").toString();
+            if (status === 401 && url.startsWith(API_URL)) {
+                const path = url.slice(API_URL.length);
+                if (!AUTH_FREE_PATHS.some((p) => path.startsWith(p))) {
+                    clearSession();
+                    if (window.location.hash !== "#/login") {
+                        window.location.hash = "#/login";
+                    }
+                }
+            }
+            return Promise.reject(error);
+        }
+    );
+}
+
+installAuthInterceptors();
+
+/** Wrap raw fetch() with the same Authorization header behavior. */
+export async function authedFetch(input: string, init: RequestInit = {}): Promise<Response> {
+    const token = typeof window === "undefined" ? null : getToken();
+    const headers = new Headers(init.headers ?? {});
+    const isAuthFree = AUTH_FREE_PATHS.some((p) => input.startsWith(`${API_URL}${p}`));
+    if (token && input.startsWith(API_URL) && !isAuthFree) {
+        headers.set("Authorization", `Bearer ${token}`);
+    }
+    const resp = await fetch(input, { ...init, headers });
+    if (resp.status === 401 && input.startsWith(API_URL) && !isAuthFree && typeof window !== "undefined") {
+        clearSession();
+        if (window.location.hash !== "#/login") {
+            window.location.hash = "#/login";
+        }
+    }
+    return resp;
+}
+
 export type ProviderMode = "dashscope" | "vendor";
+export type LLMProvider = "dashscope" | "openai";
 
 export interface EnvConfigPayload {
     DASHSCOPE_API_KEY?: string;
@@ -40,6 +105,12 @@ export interface EnvConfigPayload {
     KLING_ACCESS_KEY?: string;
     KLING_SECRET_KEY?: string;
     VIDU_API_KEY?: string;
+    LLM_PROVIDER?: LLMProvider;
+    OPENAI_API_KEY?: string;
+    OPENAI_BASE_URL?: string;
+    OPENAI_MODEL?: string;
+    API_HOST?: string;
+    API_PORT?: string;
     endpoint_overrides?: Record<string, string>;
     [key: string]: string | Record<string, string> | undefined;
 }
@@ -64,6 +135,167 @@ export interface VideoTask {
     generation_mode?: string;
     reference_video_urls?: string[];
 }
+
+// ── Per-user credentials ─────────────────────────────────────────────────
+
+export interface MyCredentialsOut {
+    values: Record<string, string>;
+    masked: boolean;
+}
+
+export const me = {
+    getCredentials: async (reveal = false): Promise<MyCredentialsOut> => {
+        const res = await axios.get<MyCredentialsOut>(`${API_URL}/me/credentials`, {
+            params: { reveal },
+        });
+        return res.data;
+    },
+    replaceCredentials: async (values: Record<string, string>): Promise<MyCredentialsOut> => {
+        const res = await axios.put<MyCredentialsOut>(`${API_URL}/me/credentials`, { values });
+        return res.data;
+    },
+    patchCredentials: async (values: Record<string, string>): Promise<MyCredentialsOut> => {
+        const res = await axios.patch<MyCredentialsOut>(`${API_URL}/me/credentials`, { values });
+        return res.data;
+    },
+    deleteCredential: async (key: string): Promise<void> => {
+        await axios.delete(`${API_URL}/me/credentials/${encodeURIComponent(key)}`);
+    },
+    listCredentialKeys: async (): Promise<string[]> => {
+        const res = await axios.get<string[]>(`${API_URL}/me/credentials/keys`);
+        return res.data;
+    },
+};
+
+// ── Admin / auth typed responses ──────────────────────────────────────────
+
+export interface AdminStats {
+    user_count: number;
+    active_user_count: number;
+    admin_count: number;
+    disabled_user_count: number;
+    last_login_at: string | null;
+}
+
+export interface AdminSettings {
+    registration_enabled: boolean;
+    invitation_required: boolean;
+    default_user_role: "admin" | "user";
+}
+
+export interface AuditLogEntry {
+    id: number;
+    action: string;
+    actor_user_id: number | null;
+    actor_email: string;
+    target_user_id: number | null;
+    target_email: string;
+    detail: string;
+    ip: string;
+    created_at: string;
+}
+
+export const auth = {
+    setupStatus: async (): Promise<SetupStatus> => {
+        const res = await axios.get<SetupStatus>(`${API_URL}/auth/setup-status`);
+        return res.data;
+    },
+    setup: async (email: string, password: string, displayName?: string): Promise<TokenResponse> => {
+        const res = await axios.post<TokenResponse>(`${API_URL}/auth/setup`, {
+            email, password, display_name: displayName ?? "",
+        });
+        persistSession(res.data);
+        return res.data;
+    },
+    login: async (email: string, password: string): Promise<TokenResponse> => {
+        const res = await axios.post<TokenResponse>(`${API_URL}/auth/login`, { email, password });
+        persistSession(res.data);
+        return res.data;
+    },
+    logout: async (): Promise<void> => {
+        try {
+            await axios.post(`${API_URL}/auth/logout`);
+        } catch {
+            // Even if server-side rejected (already revoked), drop client state.
+        } finally {
+            clearSession();
+        }
+    },
+    me: async (): Promise<CurrentUser> => {
+        const res = await axios.get<CurrentUser>(`${API_URL}/auth/me`);
+        persistUser(res.data);
+        return res.data;
+    },
+    changePassword: async (currentPassword: string, newPassword: string): Promise<TokenResponse> => {
+        const res = await axios.post<TokenResponse>(`${API_URL}/auth/password`, {
+            current_password: currentPassword, new_password: newPassword,
+        });
+        persistSession(res.data);
+        return res.data;
+    },
+};
+
+export const admin = {
+    listUsers: async (): Promise<CurrentUser[]> => {
+        const res = await axios.get<CurrentUser[]>(`${API_URL}/admin/users`);
+        return res.data;
+    },
+    getUser: async (id: number): Promise<CurrentUser> => {
+        const res = await axios.get<CurrentUser>(`${API_URL}/admin/users/${id}`);
+        return res.data;
+    },
+    createUser: async (payload: {
+        email: string;
+        password: string;
+        role?: "admin" | "user";
+        display_name?: string;
+    }): Promise<CurrentUser> => {
+        const res = await axios.post<CurrentUser>(`${API_URL}/admin/users`, {
+            email: payload.email,
+            password: payload.password,
+            role: payload.role ?? "user",
+            display_name: payload.display_name ?? "",
+        });
+        return res.data;
+    },
+    updateUser: async (
+        id: number,
+        payload: Partial<{
+            role: "admin" | "user";
+            status: "active" | "disabled";
+            display_name: string;
+            new_password: string;
+        }>
+    ): Promise<CurrentUser> => {
+        const res = await axios.patch<CurrentUser>(`${API_URL}/admin/users/${id}`, payload);
+        return res.data;
+    },
+    deleteUser: async (id: number): Promise<void> => {
+        await axios.delete(`${API_URL}/admin/users/${id}`);
+    },
+    forceLogout: async (id: number): Promise<CurrentUser> => {
+        const res = await axios.post<CurrentUser>(`${API_URL}/admin/users/${id}/force-logout`);
+        return res.data;
+    },
+    stats: async (): Promise<AdminStats> => {
+        const res = await axios.get<AdminStats>(`${API_URL}/admin/stats`);
+        return res.data;
+    },
+    getSettings: async (): Promise<AdminSettings> => {
+        const res = await axios.get<AdminSettings>(`${API_URL}/admin/settings`);
+        return res.data;
+    },
+    updateSettings: async (payload: Partial<AdminSettings>): Promise<AdminSettings> => {
+        const res = await axios.put<AdminSettings>(`${API_URL}/admin/settings`, payload);
+        return res.data;
+    },
+    auditLogs: async (limit = 100, offset = 0): Promise<AuditLogEntry[]> => {
+        const res = await axios.get<AuditLogEntry[]>(`${API_URL}/admin/audit-logs`, {
+            params: { limit, offset },
+        });
+        return res.data;
+    },
+};
 
 export const api = {
     createProject: async (title: string, text: string, skipAnalysis: boolean = false) => {
@@ -159,7 +391,7 @@ export const api = {
     uploadFile: async (file: File) => {
         const formData = new FormData();
         formData.append("file", file);
-        const response = await fetch(`${API_URL}/upload`, {
+        const response = await authedFetch(`${API_URL}/upload`, {
             method: "POST",
             body: formData,
         });
@@ -484,13 +716,13 @@ export const api = {
     },
 
     getVoices: async () => {
-        const response = await fetch(`${API_URL}/voices`);
+        const response = await authedFetch(`${API_URL}/voices`);
         if (!response.ok) throw new Error("Failed to fetch voices");
         return response.json();
     },
 
     bindVoice: async (scriptId: string, charId: string, voiceId: string, voiceName: string) => {
-        const response = await fetch(`${API_URL}/projects/${scriptId}/characters/${charId}/voice`, {
+        const response = await authedFetch(`${API_URL}/projects/${scriptId}/characters/${charId}/voice`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ voice_id: voiceId, voice_name: voiceName }),
@@ -500,7 +732,7 @@ export const api = {
     },
 
     generateAudio: async (scriptId: string) => {
-        const response = await fetch(`${API_URL}/projects/${scriptId}/generate_audio`, {
+        const response = await authedFetch(`${API_URL}/projects/${scriptId}/generate_audio`, {
             method: "POST",
         });
         if (!response.ok) throw new Error("Failed to generate audio");
@@ -508,7 +740,7 @@ export const api = {
     },
 
     generateLineAudio: async (scriptId: string, frameId: string, speed: number, pitch: number, volume: number = 50) => {
-        const response = await fetch(`${API_URL}/projects/${scriptId}/frames/${frameId}/audio`, {
+        const response = await authedFetch(`${API_URL}/projects/${scriptId}/frames/${frameId}/audio`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ speed, pitch, volume }),
@@ -518,7 +750,7 @@ export const api = {
     },
 
     updateVoiceParams: async (scriptId: string, charId: string, speed: number, pitch: number, volume: number) => {
-        const response = await fetch(`${API_URL}/projects/${scriptId}/characters/${charId}/voice_params`, {
+        const response = await authedFetch(`${API_URL}/projects/${scriptId}/characters/${charId}/voice_params`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ speed, pitch, volume }),
@@ -528,7 +760,7 @@ export const api = {
     },
 
     exportProject: async (scriptId: string, options: any) => {
-        const response = await fetch(`${API_URL}/projects/${scriptId}/export`, {
+        const response = await authedFetch(`${API_URL}/projects/${scriptId}/export`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(options),

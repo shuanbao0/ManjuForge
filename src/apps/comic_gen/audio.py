@@ -10,7 +10,8 @@ logger = get_logger(__name__)
 class AudioGenerator:
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
-        self.output_dir = self.config.get('output_dir', 'output/audio')
+        self.data_root = self.config.get('data_root', 'output')
+        self.output_dir = self.config.get('output_dir', os.path.join(self.data_root, 'audio'))
         
         # Initialize TTS Processor
         try:
@@ -74,7 +75,7 @@ class AudioGenerator:
             self.tts.synthesize(text, output_path, voice=voice, speech_rate=speed, pitch_rate=pitch, volume=volume)
             
             # Store relative path for frontend serving
-            rel_path = os.path.relpath(output_path, "output")
+            rel_path = os.path.relpath(output_path, self.data_root)
             frame.audio_url = rel_path
             frame.status = GenerationStatus.COMPLETED
             
@@ -109,7 +110,7 @@ class AudioGenerator:
                 f.write(b'dummy sfx content')
                 
             # Store relative path for frontend serving
-            rel_path = os.path.relpath(output_path, "output")
+            rel_path = os.path.relpath(output_path, self.data_root)
             frame.sfx_url = rel_path
             frame.status = GenerationStatus.COMPLETED
             
@@ -134,7 +135,7 @@ class AudioGenerator:
         with open(output_path, 'wb') as f:
             f.write(b'dummy v2a sfx content')
             
-        frame.sfx_url = os.path.relpath(output_path, "output")
+        frame.sfx_url = os.path.relpath(output_path, self.data_root)
         return frame
 
     def generate_bgm(self, frame: StoryboardFrame) -> StoryboardFrame:
@@ -149,5 +150,5 @@ class AudioGenerator:
         with open(output_path, 'wb') as f:
             f.write(b'dummy bgm content')
             
-        frame.bgm_url = os.path.relpath(output_path, "output")
+        frame.bgm_url = os.path.relpath(output_path, self.data_root)
         return frame

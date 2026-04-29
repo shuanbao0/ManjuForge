@@ -61,23 +61,33 @@ class TTSProcessor:
         voice: str = "longanyang"
     ):
         """
-        Initialize TTS processor
+        Initialize TTS processor.
 
-        Args:
-            api_key: DashScope API key. If None, will read from DASHSCOPE_API_KEY env var
-            model: TTS model name (default: cosyvoice-v2)
-            voice: Default voice ID (default: longxiaochun_v2)
+        Credentials are resolved per-call from the request context so each
+        user's DASHSCOPE_API_KEY is used. ``api_key`` here is only an
+        explicit override for tests / scripts that don't run inside a
+        request — it's still saved but doesn't pin the dashscope module.
         """
-        import dashscope
-
-        self.api_key = api_key or os.getenv('DASHSCOPE_API_KEY')
-        if self.api_key:
-            dashscope.api_key = self.api_key
-
+        self._explicit_api_key = api_key
         self.model = model
         self.voice = voice
 
         logger.info(f"TTS Processor initialized with model={model}, voice={voice}")
+
+    def _bind_dashscope_key(self) -> None:
+        """Set dashscope module-level api_key right before each call.
+
+        ``dashscope`` is a module-level singleton so concurrent users in
+        the same process briefly race on this assignment. Acceptable for
+        the current single-instance deployment model — individual users
+        still cannot end up with another user's key persisted because
+        every call re-binds before issuing the request.
+        """
+        import dashscope
+        from src.runtime import get_cred
+        key = self._explicit_api_key or get_cred("DASHSCOPE_API_KEY")
+        if key:
+            dashscope.api_key = key
 
     def synthesize(
         self,
@@ -104,6 +114,8 @@ class TTSProcessor:
         """
         import time
         from dashscope.audio.tts_v2 import SpeechSynthesizer
+
+        self._bind_dashscope_key()
 
         start_time = time.time()
         voice = voice or self.voice

@@ -49,7 +49,8 @@ class AssetGenerator:
         self.config = config or {}
         # Default to Wanx for now, can be swapped based on config
         self.model = WanxImageModel(self.config.get('model', {}))
-        self.output_dir = self.config.get('output_dir', 'output/assets')
+        self.data_root = self.config.get('data_root', 'output')
+        self.output_dir = self.config.get('output_dir', os.path.join(self.data_root, 'assets'))
 
     def generate_character(self, character: Character, generation_type: str = "all", prompt: str = "", positive_prompt: str = None, negative_prompt: str = "", batch_size: int = 1, model_name: str = None, i2i_model_name: str = None, size: str = None) -> Character:
         """
@@ -103,7 +104,7 @@ class AssetGenerator:
                                 ref_image_path = ref_url
                                 logger.debug(f"Reverse generation: Using uploaded three_views as reference: {ref_url}")
                             else:
-                                local_path = os.path.join("output", ref_url)
+                                local_path = os.path.join(self.data_root, ref_url)
                                 if os.path.exists(local_path):
                                     ref_image_path = local_path
                                     logger.debug(f"Reverse generation: Using local three_views as reference: {local_path}")
@@ -120,7 +121,7 @@ class AssetGenerator:
                                 ref_image_path = ref_url
                                 logger.debug(f"Reverse generation: Using uploaded headshot as reference: {ref_url}")
                             else:
-                                local_path = os.path.join("output", ref_url)
+                                local_path = os.path.join(self.data_root, ref_url)
                                 if os.path.exists(local_path):
                                     ref_image_path = local_path
                                     logger.debug(f"Reverse generation: Using local headshot as reference: {local_path}")
@@ -149,7 +150,7 @@ class AssetGenerator:
                         
                         self.model.generate(effective_generation_prompt, fullbody_path, ref_image_path=ref_image_path, negative_prompt=negative_prompt, model_name=effective_model_name, size=effective_size)
                         
-                        rel_fullbody_path = os.path.relpath(fullbody_path, "output")
+                        rel_fullbody_path = os.path.relpath(fullbody_path, self.data_root)
                         
                         # Store in ImageAsset
                         if not character.full_body_asset:
@@ -268,7 +269,7 @@ class AssetGenerator:
                     logger.debug(f"Using OSS Object Key for reference: {reference_url}")
                 else:
                     # Local relative path - prepend output directory
-                    fullbody_path = os.path.join("output", reference_url)
+                    fullbody_path = os.path.join(self.data_root, reference_url)
                     logger.debug(f"Using local path for reference: {fullbody_path}")
             else:
                 fullbody_path = None
@@ -297,7 +298,7 @@ class AssetGenerator:
                         
                         self.model.generate(generation_prompt, sheet_path, ref_image_path=fullbody_path, negative_prompt=sheet_negative, ref_strength=0.8, model_name=i2i_model_name)
                         
-                        rel_sheet_path = os.path.relpath(sheet_path, "output")
+                        rel_sheet_path = os.path.relpath(sheet_path, self.data_root)
                         
                         if not character.three_view_asset:
                             from .models import ImageAsset
@@ -373,7 +374,7 @@ class AssetGenerator:
                         
                         self.model.generate(generation_prompt, avatar_path, ref_image_path=fullbody_path, negative_prompt=negative_prompt, ref_strength=0.8, model_name=i2i_model_name)
                         
-                        rel_avatar_path = os.path.relpath(avatar_path, "output")
+                        rel_avatar_path = os.path.relpath(avatar_path, self.data_root)
                         
                         if not character.headshot_asset:
                             from .models import ImageAsset
@@ -464,7 +465,7 @@ class AssetGenerator:
                 
                 image_path, _ = self.model.generate(prompt, output_path, negative_prompt=negative_prompt, model_name=model_name, size=effective_size)
                 
-                rel_path = os.path.relpath(output_path, "output")
+                rel_path = os.path.relpath(output_path, self.data_root)
                 
                 if not scene.image_asset:
                     from .models import ImageAsset
@@ -526,7 +527,7 @@ class AssetGenerator:
                 
                 image_path, _ = self.model.generate(prompt, output_path, negative_prompt=negative_prompt, model_name=model_name, size=effective_size)
                 
-                rel_path = os.path.relpath(output_path, "output")
+                rel_path = os.path.relpath(output_path, self.data_root)
                 
                 if not prop.image_asset:
                     from .models import ImageAsset

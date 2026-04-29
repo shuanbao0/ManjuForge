@@ -10,7 +10,8 @@ logger = get_logger(__name__)
 class ExportManager:
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
-        self.output_dir = self.config.get('output_dir', 'output/export')
+        self.data_root = self.config.get('data_root', 'output')
+        self.output_dir = self.config.get('output_dir', os.path.join(self.data_root, 'export'))
         os.makedirs(self.output_dir, exist_ok=True)
 
     def render_project(self, script: Script, options: Dict[str, Any]) -> str:
@@ -44,7 +45,7 @@ class ExportManager:
                 f.write(b'dummy video content')
                 
             logger.info(f"Export completed: {output_path}")
-            return os.path.relpath(output_path, "output")
+            return os.path.relpath(output_path, self.data_root)
             
         except Exception as e:
             logger.error(f"Export failed: {e}")

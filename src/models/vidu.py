@@ -25,8 +25,13 @@ DEFAULT_I2V_MODEL = "viduq3-pro"
 class ViduModel(VideoGenModel):
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
-        self.api_key = config.get("api_key") or os.getenv("VIDU_API_KEY", "")
+        self._explicit_api_key = config.get("api_key")
         self.model_name = config.get("params", {}).get("model_name", DEFAULT_I2V_MODEL)
+
+    @property
+    def api_key(self) -> str:
+        from src.runtime import get_cred
+        return self._explicit_api_key or get_cred("VIDU_API_KEY") or ""
 
     def _headers(self) -> Dict[str, str]:
         return {

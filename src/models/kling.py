@@ -24,11 +24,21 @@ logger = logging.getLogger(__name__)
 class KlingModel(VideoGenModel):
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
-        self.access_key = config.get("access_key") or os.getenv("KLING_ACCESS_KEY", "")
-        self.secret_key = config.get("secret_key") or os.getenv("KLING_SECRET_KEY", "")
+        self._explicit_access_key = config.get("access_key")
+        self._explicit_secret_key = config.get("secret_key")
         self.model_name = config.get("params", {}).get("model_name", "kling-v3")
         self._cached_token = None
         self._token_exp = 0
+
+    @property
+    def access_key(self) -> str:
+        from src.runtime import get_cred
+        return self._explicit_access_key or get_cred("KLING_ACCESS_KEY") or ""
+
+    @property
+    def secret_key(self) -> str:
+        from src.runtime import get_cred
+        return self._explicit_secret_key or get_cred("KLING_SECRET_KEY") or ""
 
     def _get_token(self) -> str:
         """Generate a signed JWT token, cached until near expiry."""

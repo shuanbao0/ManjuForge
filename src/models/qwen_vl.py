@@ -44,14 +44,16 @@ class QwenVLModel:
 
     @property
     def api_key(self):
-        api_key = os.getenv("DASHSCOPE_API_KEY")
+        from src.runtime import get_cred
+        api_key = get_cred("DASHSCOPE_API_KEY")
         if not api_key:
             logger.warning("Dashscope API Key not found in config or environment variables.")
         return api_key
 
     def _get_client(self):
-        """Get or create the OpenAI-compatible client (lazy, cached)."""
-        if self._client is None:
+        """Get or create the OpenAI-compatible client (lazy, refreshed on key change)."""
+        # Refresh client when api_key changes (e.g. user updated credentials).
+        if self._client is None or getattr(self._client, "_manju_forge_key", None) != self.api_key:
             try:
                 from openai import OpenAI
             except ImportError:
@@ -61,6 +63,7 @@ class QwenVLModel:
                 base_url=f"{get_provider_base_url('DASHSCOPE')}/compatible-mode/v1",
                 timeout=120.0,
             )
+            self._client._manju_forge_key = self.api_key
         return self._client
 
     def _encode_image_to_base64(self, image_path: str) -> str:

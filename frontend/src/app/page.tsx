@@ -12,12 +12,15 @@ import AppShell from "@/components/layout/AppShell";
 import type { GlobalTab } from "@/components/layout/GlobalSidebar";
 import dynamic from "next/dynamic";
 import { api } from "@/lib/api";
+import { isAdmin, onAuthChange } from "@/lib/auth";
+import AuthGate from "@/components/auth/AuthGate";
 
 const ProjectClient = dynamic(() => import("@/components/project/ProjectClient"), { ssr: false });
 const SeriesDetailPage = dynamic(() => import("@/components/series/SeriesDetailPage"), { ssr: false });
 const ImportFileDialog = dynamic(() => import("@/components/series/ImportFileDialog"), { ssr: false });
 const SettingsPage = dynamic(() => import("@/components/settings/SettingsPage"), { ssr: false });
 const AssetLibraryPage = dynamic(() => import("@/components/library/AssetLibraryPage"), { ssr: false });
+const AdminPanel = dynamic(() => import("@/components/admin/AdminPanel"), { ssr: false });
 
 // ── Create Series Dialog ──
 function CreateSeriesDialog({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
@@ -316,7 +319,7 @@ export default function Home() {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [showCreateDropdown, setShowCreateDropdown] = useState(false);
-  const [currentView, setCurrentView] = useState<'home' | 'project' | 'series' | 'series-episode' | 'library' | 'settings'>('home');
+  const [currentView, setCurrentView] = useState<'home' | 'project' | 'series' | 'series-episode' | 'library' | 'settings' | 'admin'>('home');
   const [activeTab, setActiveTab] = useState<GlobalTab>("workspace");
   const [projectId, setProjectId] = useState<string | null>(null);
   const [seriesId, setSeriesId] = useState<string | null>(null);
@@ -335,6 +338,13 @@ export default function Home() {
     syncProjects();
     fetchSeriesList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Re-render whenever auth state flips (header role-gated entries depend on it).
+  const [, _bumpAuth] = useState(0);
+  useEffect(() => {
+    const off = onAuthChange(() => _bumpAuth((n) => n + 1));
+    return off;
   }, []);
 
   // Load episodes for all series when seriesList changes
@@ -446,6 +456,13 @@ export default function Home() {
         setEpisodeId(null);
         return;
       }
+      if (hash === '#/admin') {
+        setCurrentView('admin');
+        setProjectId(null);
+        setSeriesId(null);
+        setEpisodeId(null);
+        return;
+      }
       // Default: workspace
       setCurrentView('home');
       setActiveTab('workspace');
@@ -497,6 +514,19 @@ export default function Home() {
     }
     if (currentView === 'settings') {
       return <SettingsPage />;
+    }
+    if (currentView === 'admin') {
+      if (!isAdmin()) {
+        return (
+          <div className="container mx-auto px-6 py-8">
+            <div className="glass-panel rounded-xl p-6 text-center">
+              <h2 className="text-lg font-display font-bold text-white mb-2">无权访问</h2>
+              <p className="text-sm text-gray-400">此页面仅管理员可见。</p>
+            </div>
+          </div>
+        );
+      }
+      return <AdminPanel />;
     }
 
     // Workspace view
@@ -627,44 +657,46 @@ export default function Home() {
   };
 
   return (
-    <main className="relative h-screen w-screen bg-background flex flex-col">
-      {/* Background Canvas */}
-      <div className="fixed inset-0 z-0 pointer-events-none">
-        <CreativeCanvas />
-      </div>
+    <AuthGate>
+      <main className="relative h-screen w-screen bg-background flex flex-col">
+        {/* Background Canvas */}
+        <div className="fixed inset-0 z-0 pointer-events-none">
+          <CreativeCanvas />
+        </div>
 
-      {/* AppShell with GlobalSidebar + content */}
-      <div className="relative z-10 flex-1 overflow-hidden">
-        <AppShell activeTab={activeTab} onTabChange={handleTabChange}>
-          {renderContent()}
-        </AppShell>
-      </div>
+        {/* AppShell with GlobalSidebar + content */}
+        <div className="relative z-10 flex-1 overflow-hidden">
+          <AppShell activeTab={activeTab} onTabChange={handleTabChange}>
+            {renderContent()}
+          </AppShell>
+        </div>
 
-      {/* Create Project Dialog */}
-      <CreateProjectDialog
-        isOpen={isDialogOpen}
-        onClose={() => setIsDialogOpen(false)}
-      />
+        {/* Create Project Dialog */}
+        <CreateProjectDialog
+          isOpen={isDialogOpen}
+          onClose={() => setIsDialogOpen(false)}
+        />
 
-      {/* Create Series Dialog */}
-      <CreateSeriesDialog
-        isOpen={isSeriesDialogOpen}
-        onClose={() => setIsSeriesDialogOpen(false)}
-      />
+        {/* Create Series Dialog */}
+        <CreateSeriesDialog
+          isOpen={isSeriesDialogOpen}
+          onClose={() => setIsSeriesDialogOpen(false)}
+        />
 
-      {/* Environment Configuration Dialog (kept for EnvConfigChecker) */}
-      <EnvConfigDialog
-        isOpen={false}
-        onClose={() => {}}
-        isRequired={false}
-      />
+        {/* Environment Configuration Dialog (kept for EnvConfigChecker) */}
+        <EnvConfigDialog
+          isOpen={false}
+          onClose={() => {}}
+          isRequired={false}
+        />
 
-      {/* Import File Dialog */}
-      <ImportFileDialog
-        isOpen={isImportDialogOpen}
-        onClose={() => setIsImportDialogOpen(false)}
-        onSuccess={() => fetchSeriesList()}
-      />
-    </main>
+        {/* Import File Dialog */}
+        <ImportFileDialog
+          isOpen={isImportDialogOpen}
+          onClose={() => setIsImportDialogOpen(false)}
+          onSuccess={() => fetchSeriesList()}
+        />
+      </main>
+    </AuthGate>
   );
 }

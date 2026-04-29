@@ -27,7 +27,8 @@ class WanxModel(VideoGenModel):
 
     @property
     def api_key(self):
-        api_key = os.getenv("DASHSCOPE_API_KEY")
+        from src.runtime import get_cred
+        api_key = get_cred("DASHSCOPE_API_KEY")
         if not api_key:
             logger.warning("Dashscope API Key not found in config or environment variables.")
         return api_key

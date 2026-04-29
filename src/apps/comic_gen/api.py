@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Request
+from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -24,6 +24,15 @@ from .models import (
 from .llm import ScriptProcessor, DEFAULT_STORYBOARD_POLISH_PROMPT, DEFAULT_VIDEO_POLISH_PROMPT, DEFAULT_R2V_POLISH_PROMPT
 from ...utils.oss_utils import OSSImageUploader, sign_oss_urls_in_data
 from ...utils import setup_logging
+from ...auth import routes as auth_routes
+from ...auth import me_routes as me_routes_module
+from ...auth.db import get_engine as _ensure_auth_db
+from ...auth.middleware import AuthContextMiddleware
+from ...admin import routes as admin_routes
+from .pipeline_factory import pipeline_proxy, current_pipeline as _current_pipeline_for_user
+from ...auth.deps import require_admin
+from ...auth.models import User as _AuthUser
+from ... import runtime as _ctx_runtime  # carries request context across executor / bg tasks
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv, set_key
 
@@ -53,36 +62,126 @@ app.add_middleware(
     expose_headers=["Content-Disposition"],  # Allow browsers to access Content-Disposition for downloads
 )
 
-# Middleware to add cache headers to static files
+# Initialize the auth/users SQLite database eagerly so first request doesn't pay
+# the schema-creation cost and so misconfiguration surfaces at startup.
+_ensure_auth_db()
+
+# Authenticate every business-route request and bind a request-scoped
+# RequestContext containing user + decrypted credentials. Auth/admin/docs
+# paths are passed through; their FastAPI dependencies handle auth themselves.
+app.add_middleware(AuthContextMiddleware)
+
+app.include_router(auth_routes.router)
+app.include_router(admin_routes.router)
+app.include_router(me_routes_module.router)
+
+# Middleware to add cache headers on user file responses (the multi-user
+# /me/files route below produces these — public CDN paths are kept short-TTL
+# by default to avoid stale-data leakage between users).
 @app.middleware("http")
 async def add_cache_control_header(request: Request, call_next):
     response = await call_next(request)
-    if request.url.path.startswith("/files/"):
-        response.headers["Cache-Control"] = "public, max-age=86400"
+    if request.url.path.startswith("/me/files/"):
+        response.headers["Cache-Control"] = "private, max-age=300"
     return response
 
-# Create output directory if it doesn't exist
+# Create the legacy-tenant root + the multi-tenant root. Per-user dirs
+# (``output/users/<uid>/...``) are created lazily on first pipeline use.
 os.makedirs("output", exist_ok=True)
-os.makedirs("output/uploads", exist_ok=True)
-os.makedirs("output/video", exist_ok=True)
-os.makedirs("output/assets", exist_ok=True)
+os.makedirs("output/users", exist_ok=True)
 
-# Mount static files with multiple aliases to handle plural/singular inconsistencies
-# Legacy paths in projects.json often use 'outputs/videos' or 'outputs/assets'
-app.mount("/files/outputs/videos", StaticFiles(directory="output/video"), name="files_outputs_videos")
-app.mount("/files/outputs/assets", StaticFiles(directory="output/assets"), name="files_outputs_assets")
-app.mount("/files/outputs", StaticFiles(directory="output"), name="files_outputs")
-app.mount("/files/videos", StaticFiles(directory="output/video"), name="files_videos")
-app.mount("/files/assets", StaticFiles(directory="output/assets"), name="files_assets")
-app.mount("/files", StaticFiles(directory="output"), name="files")
+# NOTE: the public ``/files/*`` static mounts that existed pre-P2 have been
+# removed. Multi-user instances cannot expose the entire ``output/`` tree
+# without authentication, so reads now go through ``GET /me/files/{path}``
+# which validates the caller and resolves the path inside their per-user
+# directory (P4 will redirect to presigned URLs when object storage is on).
 
 
-# Initialize pipeline
-pipeline = ComicGenPipeline()
+# The proxy resolves to a per-user pipeline at attribute access time. Existing
+# route handlers that did ``pipeline.X(...)`` keep compiling, but now reach
+# the right user's data instead of a single global ``output/`` directory.
+pipeline = pipeline_proxy
+
+
+# ── Authenticated file serving ────────────────────────────────────────────
+#
+# Replaces the legacy public ``app.mount("/files", StaticFiles(...))``. Same
+# URL shape, but every read now has to come from the calling user's own
+# ``output/users/<uid>/`` directory. Path traversal is blocked via
+# ``_safe_resolve_path``. P4 will swap the local-disk read for a presigned
+# redirect when object storage is configured.
+
+from fastapi.responses import FileResponse, RedirectResponse  # noqa: E402  (must come after app init)
+from .pipeline import _safe_resolve_path  # noqa: E402
+from ...utils.object_storage import ObjectStorageClient  # noqa: E402
+from ...utils.oss_utils import is_object_key as _is_object_key  # noqa: E402
+
+# Legacy path families that older ``projects.json`` rows store in URLs.
+# Keep a single resolver that strips them so all of these work transparently.
+_FILE_PATH_PREFIXES = ("outputs/videos/", "outputs/assets/", "outputs/", "videos/", "assets/")
+
+
+def _strip_legacy_prefix(rel: str) -> str:
+    rel = rel.lstrip("/")
+    for prefix in _FILE_PATH_PREFIXES:
+        if rel.startswith(prefix):
+            # Map ``outputs/videos/x.mp4`` → ``video/x.mp4`` (singular)
+            tail = rel[len(prefix):]
+            if prefix == "outputs/videos/":
+                return os.path.join("video", tail)
+            if prefix == "videos/":
+                return os.path.join("video", tail)
+            if prefix == "outputs/assets/":
+                return os.path.join("assets", tail)
+            if prefix == "outputs/":
+                return tail
+            return os.path.join("assets", tail)
+    return rel
+
+
+@app.get("/files/{rel_path:path}")
+async def serve_user_file(rel_path: str):
+    """Authenticated counterpart of the old ``/files/*`` static mount.
+
+    If ``rel_path`` looks like an object-storage Object Key and the user
+    has S3/MinIO configured, redirects to a short-lived presigned URL so
+    the browser fetches the bytes directly from object storage. Otherwise
+    streams the file from the user's local ``output/users/<uid>/`` dir.
+    """
+    pipe = _current_pipeline_for_user()
+
+    # Object-storage redirect path: avoids hauling bytes through FastAPI
+    # when the user has remote storage configured.
+    try:
+        if _is_object_key(rel_path):
+            client = ObjectStorageClient.for_current_user()
+            if client.is_configured:
+                url = client.presigned_get_url(rel_path)
+                if url:
+                    return RedirectResponse(url, status_code=302)
+    except Exception:
+        # Fall through to local-disk handling below.
+        pass
+
+    safe_rel = _strip_legacy_prefix(rel_path)
+    try:
+        abs_path = _safe_resolve_path(pipe.data_root, safe_rel)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid path")
+    if not os.path.isfile(abs_path):
+        raise HTTPException(status_code=404, detail="file not found")
+    return FileResponse(abs_path)
+
+
+@app.get("/me/files/{rel_path:path}")
+async def serve_user_file_alias(rel_path: str):
+    """Modern alias of /files; encourages clients to be explicit about the
+    multi-user nature. Behavior identical to /files."""
+    return await serve_user_file(rel_path)
 
 @app.get("/debug/config")
-async def debug_config():
-    """Diagnostic endpoint to check OSS and path configuration."""
+async def debug_config(_admin: _AuthUser = Depends(require_admin)):
+    """Admin-only diagnostic endpoint to check OSS and path configuration."""
     uploader = OSSImageUploader()
     return {
         "oss_configured": uploader.is_configured,
@@ -158,8 +257,8 @@ class UpdateAssetAttributesRequest(BaseModel):
 
 
 @app.get("/system/check")
-async def check_system():
-    """Check system dependencies (ffmpeg, etc.) and configuration."""
+async def check_system(_admin: _AuthUser = Depends(require_admin)):
+    """Admin-only: check system dependencies (ffmpeg, etc.) and configuration."""
     from utils.system_check import run_system_checks
     return run_system_checks()
 
@@ -173,7 +272,8 @@ async def upload_file(file: UploadFile = File(...)):
     try:
         file_ext = os.path.splitext(file.filename)[1]
         filename = f"{uuid.uuid4()}{file_ext}"
-        file_path = os.path.join("output/uploads", filename)
+        file_path = os.path.join(_current_pipeline_for_user().data_root, "uploads", filename)
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -215,7 +315,8 @@ async def upload_asset(
         # 1. Save file locally first
         file_ext = os.path.splitext(file.filename)[1]
         filename = f"{uuid.uuid4()}{file_ext}"
-        file_path = os.path.join("output/uploads", filename)
+        file_path = os.path.join(_current_pipeline_for_user().data_root, "uploads", filename)
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
         
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -256,11 +357,12 @@ class CreateProjectRequest(BaseModel):
 @app.post("/projects", response_model=Script)
 async def create_project(request: CreateProjectRequest, skip_analysis: bool = False):
     """Creates a new project from a novel text."""
-    # Run in thread pool to avoid blocking event loop during LLM analysis (Python 3.8 compatible)
-    loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(
-        None,  # Use default executor
-        partial(pipeline.create_project, request.title, request.text, skip_analysis)
+    # Run in thread pool to avoid blocking event loop during LLM analysis.
+    # ``_ctx_runtime.run_in_executor`` carries the per-request user context
+    # across the thread boundary so the LLM picks up the caller's API key.
+    result = await _ctx_runtime.run_in_executor(
+        None,
+        pipeline.create_project, request.title, request.text, skip_analysis,
     )
     return signed_response(result)
 
@@ -274,11 +376,9 @@ class ReparseProjectRequest(BaseModel):
 async def reparse_project(script_id: str, request: ReparseProjectRequest):
     """Re-parses the text for an existing project, replacing all entities."""
     try:
-        # Run the blocking LLM call in a thread pool to avoid blocking the event loop (Python 3.8 compatible)
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
-            None,  # Use default executor
-            partial(pipeline.reparse_project, script_id, request.text)
+        # Carry user context into the worker thread (per-user creds).
+        result = await _ctx_runtime.run_in_executor(
+            None, pipeline.reparse_project, script_id, request.text,
         )
         return signed_response(result)
     except ValueError as e:
@@ -504,7 +604,7 @@ async def generate_series_asset(series_id: str, request: GenerateAssetRequest, b
             request.batch_size,
             request.model_name
         )
-        background_tasks.add_task(pipeline.process_asset_generation_task, task_id)
+        _ctx_runtime.add_background_task(background_tasks, pipeline.process_asset_generation_task, task_id)
         response_data = series.dict()
         response_data["_task_id"] = task_id
         return signed_response(response_data)
@@ -587,10 +687,8 @@ async def import_file_preview(
         if not text.strip():
             raise HTTPException(status_code=400, detail="文件内容为空")
 
-        loop = asyncio.get_event_loop()
-        episodes = await loop.run_in_executor(
-            None,
-            partial(pipeline.import_file_and_split, text, suggested_episodes)
+        episodes = await _ctx_runtime.run_in_executor(
+            None, pipeline.import_file_and_split, text, suggested_episodes,
         )
         # Store text in pipeline cache, return import_id instead of full text
         import_id = str(uuid.uuid4())
@@ -629,16 +727,13 @@ async def import_file_confirm(request: ConfirmImportRequest):
             text = request.text
         if not text:
             raise ValueError("No text available. Provide import_id or text.")
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(
+        result = await _ctx_runtime.run_in_executor(
             None,
-            partial(
-                pipeline.create_series_from_import,
-                request.title,
-                text,
-                request.episodes,
-                request.description,
-            )
+            pipeline.create_series_from_import,
+            request.title,
+            text,
+            request.episodes,
+            request.description,
         )
         return signed_response(result)
     except ValueError as e:
@@ -658,6 +753,12 @@ class EnvConfig(ProviderRoutingConfig):
     KLING_ACCESS_KEY: Optional[str] = None
     KLING_SECRET_KEY: Optional[str] = None
     VIDU_API_KEY: Optional[str] = None
+    LLM_PROVIDER: Optional[str] = None
+    OPENAI_API_KEY: Optional[str] = None
+    OPENAI_BASE_URL: Optional[str] = None
+    OPENAI_MODEL: Optional[str] = None
+    API_HOST: Optional[str] = None
+    API_PORT: Optional[str] = None
     endpoint_overrides: Dict[str, str] = Field(default_factory=dict)
 
 
@@ -769,8 +870,8 @@ load_user_config()
 
 
 @app.get("/config/info")
-async def get_config_info():
-    """Returns information about the current config storage mode."""
+async def get_config_info(_admin: _AuthUser = Depends(require_admin)):
+    """Admin-only: information about the instance's config storage mode."""
     config_path = get_user_config_path()
     is_packaged = os.getenv("MANJU_FORGE_PACKAGED", "false").lower() == "true" or getattr(sys, 'frozen', False)
     return {
@@ -781,8 +882,15 @@ async def get_config_info():
 
 
 @app.post("/config/env")
-async def update_env_config(config: EnvConfig):
-    """Updates environment configuration and saves to config file."""
+async def update_env_config(config: EnvConfig, _admin: _AuthUser = Depends(require_admin)):
+    """Admin-only: update instance-wide environment configuration.
+
+    Per-user secrets (DASHSCOPE_API_KEY, OSS keys, Kling/Vidu, OpenAI) now
+    live on the user record and should be edited via ``/me/credentials``.
+    This endpoint is preserved for the small set of instance-level settings
+    (``API_HOST`` / ``API_PORT`` / global LLM defaults) that admins still
+    set in the ``.env`` file.
+    """
     try:
         raw_config = config.dict(exclude_unset=True)
 
@@ -1009,7 +1117,7 @@ async def generate_motion_ref(script_id: str, request: GenerateMotionRefRequest,
         )
         
         # Add background processing
-        background_tasks.add_task(pipeline.process_motion_ref_task, script_id, task_id)
+        _ctx_runtime.add_background_task(background_tasks, pipeline.process_motion_ref_task, script_id, task_id)
         
         # Return script with task_id for frontend polling
         response_data = script.model_dump() if hasattr(script, 'model_dump') else script.dict()
@@ -1176,7 +1284,7 @@ async def create_video_task(script_id: str, request: CreateVideoTaskRequest, bac
                 tasks.append(created_task)
 
             # Add background processing
-            background_tasks.add_task(pipeline.process_video_task, script_id, task_id)
+            _ctx_runtime.add_background_task(background_tasks, pipeline.process_video_task, script_id, task_id)
 
         return signed_response(tasks)
 
@@ -1207,7 +1315,7 @@ async def generate_single_asset(script_id: str, request: GenerateAssetRequest, b
         )
         
         # Add background processing
-        background_tasks.add_task(pipeline.process_asset_generation_task, task_id)
+        _ctx_runtime.add_background_task(background_tasks, pipeline.process_asset_generation_task, task_id)
         
         # Return script with task_id for frontend polling
         response_data = script.model_dump() if hasattr(script, 'model_dump') else script.dict()
@@ -1256,7 +1364,7 @@ async def generate_asset_video(script_id: str, asset_type: str, asset_id: str, r
         )
         
         # Add background processing
-        background_tasks.add_task(pipeline.process_video_task, script_id, task_id)
+        _ctx_runtime.add_background_task(background_tasks, pipeline.process_video_task, script_id, task_id)
         
         return signed_response(script)
 
@@ -1763,7 +1871,8 @@ async def upload_frame_image(script_id: str, frame_id: str, file: UploadFile = F
         # Save file locally first
         file_ext = os.path.splitext(file.filename)[1]
         filename = f"{uuid.uuid4()}{file_ext}"
-        file_path = os.path.join("output/uploads", filename)
+        file_path = os.path.join(_current_pipeline_for_user().data_root, "uploads", filename)
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -1861,11 +1970,8 @@ async def analyze_script_for_styles(script_id: str, request: AnalyzeStyleRequest
         if not script:
             raise HTTPException(status_code=404, detail="Script not found")
 
-        # Use LLM to analyze and recommend styles (run in thread pool to avoid blocking, Python 3.8 compatible)
-        loop = asyncio.get_event_loop()
-        recommendations = await loop.run_in_executor(
-            None,  # Use default executor
-            partial(pipeline.script_processor.analyze_script_for_styles, request.script_text)
+        recommendations = await _ctx_runtime.run_in_executor(
+            None, pipeline.script_processor.analyze_script_for_styles, request.script_text,
         )
 
         return {"recommendations": recommendations}
@@ -2000,8 +2106,12 @@ async def polish_r2v_prompt(request: PolishR2VPromptRequest):
 # ===== Environment Configuration Endpoints =====
 
 @app.get("/config/env")
-async def get_env_config():
-    """Get current environment configuration."""
+async def get_env_config(_admin: _AuthUser = Depends(require_admin)):
+    """Admin-only: read instance-wide environment configuration.
+
+    For per-user keys (DashScope, OSS, Kling, Vidu, OpenAI), use
+    ``GET /me/credentials`` instead.
+    """
     try:
         from ...utils.endpoints import PROVIDER_DEFAULTS
         endpoint_overrides = {}
@@ -2010,6 +2120,9 @@ async def get_env_config():
             value = os.getenv(env_key)
             if value:
                 endpoint_overrides[env_key] = value
+
+        llm_provider_raw = (os.getenv("LLM_PROVIDER") or "").strip().lower()
+        llm_provider = llm_provider_raw if llm_provider_raw in ("dashscope", "openai") else "dashscope"
 
         return {
             "DASHSCOPE_API_KEY": os.getenv("DASHSCOPE_API_KEY", ""),
@@ -2024,6 +2137,12 @@ async def get_env_config():
             "KLING_PROVIDER_MODE": _normalize_provider_mode(os.getenv("KLING_PROVIDER_MODE")),
             "VIDU_PROVIDER_MODE": _normalize_provider_mode(os.getenv("VIDU_PROVIDER_MODE")),
             "PIXVERSE_PROVIDER_MODE": _normalize_provider_mode(os.getenv("PIXVERSE_PROVIDER_MODE")),
+            "LLM_PROVIDER": llm_provider,
+            "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY", ""),
+            "OPENAI_BASE_URL": os.getenv("OPENAI_BASE_URL", ""),
+            "OPENAI_MODEL": os.getenv("OPENAI_MODEL", ""),
+            "API_HOST": os.getenv("API_HOST", ""),
+            "API_PORT": os.getenv("API_PORT", ""),
             "endpoint_overrides": endpoint_overrides,
         }
     except Exception as e:
