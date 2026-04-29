@@ -39,10 +39,10 @@ jobs:
         include:
           - component: backend
             dockerfile: Dockerfile.backend
-            image: manjuforge-backend
+            image: lumenx-backend
           - component: frontend
             dockerfile: Dockerfile.frontend
-            image: manjuforge-frontend
+            image: lumenx-frontend
 
     steps:
       - name: Skip if not selected

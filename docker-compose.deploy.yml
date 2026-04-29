@@ -1,17 +1,18 @@
 version: "3.8"
 
-# Local-build compose file. Use this during development:
-#   docker compose up -d --build
+# Deployment compose file: pulls pre-built images from Docker Hub
+# (no local build context required).
 #
-# For pulling pre-built images from Docker Hub instead, see
-# docker-compose.deploy.yml.
+# Usage:
+#   cp .env.example .env   # fill in DASHSCOPE_API_KEY etc.
+#   IMAGE_TAG=v0.1.0 docker compose -f docker-compose.deploy.yml pull
+#   IMAGE_TAG=v0.1.0 docker compose -f docker-compose.deploy.yml up -d
+#
+# IMAGE_TAG defaults to `latest` if not set.
 
 services:
   backend:
     image: shuanbaoai/lumenx-backend:${IMAGE_TAG:-latest}
-    build:
-      context: .
-      dockerfile: Dockerfile.backend
     container_name: lumenx-backend
     env_file:
       - .env
@@ -25,9 +26,6 @@ services:
 
   frontend:
     image: shuanbaoai/lumenx-frontend:${IMAGE_TAG:-latest}
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
     container_name: lumenx-frontend
     ports:
       - "3000:80"
