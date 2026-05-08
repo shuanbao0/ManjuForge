@@ -1092,6 +1092,87 @@ export interface VendorConnectorDTO {
     accent: string;
 }
 
+// ── Model instances ──────────────────────────────────────────────────────
+//
+// User-configured model instances (one per Vendor × Type combo, optionally
+// many per type). Backed by /me/instances endpoints — Settings UI renders a
+// list of these grouped by type.
+
+export type InstanceTypeId = "llm" | "t2i" | "i2i" | "i2v" | "t2v" | "r2v" | "tts";
+
+export interface ModelInstanceOut {
+    id: string;
+    instance_type: InstanceTypeId;
+    vendor_id: string;
+    model_name: string;
+    display_name: string;
+    credential_keys: string[];   // presence-only; secrets stay server-side
+    base_url: string;
+    extra_params: Record<string, unknown>;
+    is_default: boolean;
+    created_at: number;
+    updated_at: number;
+}
+
+export interface ModelInstanceCreate {
+    instance_type: InstanceTypeId;
+    vendor_id: string;
+    model_name: string;
+    display_name: string;
+    credentials?: Record<string, string>;
+    base_url?: string;
+    extra_params?: Record<string, unknown>;
+    is_default?: boolean;
+}
+
+export interface ModelInstanceUpdate {
+    display_name?: string;
+    model_name?: string;
+    credentials?: Record<string, string>;
+    base_url?: string;
+    extra_params?: Record<string, unknown>;
+}
+
+export interface InstanceTestResult {
+    ok: boolean;
+    latency_ms: number;
+    error: string;
+}
+
+export const instances = {
+    list: async (type?: InstanceTypeId): Promise<ModelInstanceOut[]> => {
+        const url = type ? `${API_URL}/me/instances?type=${type}` : `${API_URL}/me/instances`;
+        const res = await authedFetch(url);
+        if (!res.ok) throw new Error("Failed to list instances");
+        return res.json();
+    },
+    get: async (id: string): Promise<ModelInstanceOut> => {
+        const res = await authedFetch(`${API_URL}/me/instances/${id}`);
+        if (!res.ok) throw new Error("Failed to fetch instance");
+        return res.json();
+    },
+    create: async (payload: ModelInstanceCreate): Promise<ModelInstanceOut> => {
+        const res = await axios.post<ModelInstanceOut>(`${API_URL}/me/instances`, payload);
+        return res.data;
+    },
+    update: async (id: string, payload: ModelInstanceUpdate): Promise<ModelInstanceOut> => {
+        const res = await axios.put<ModelInstanceOut>(`${API_URL}/me/instances/${id}`, payload);
+        return res.data;
+    },
+    delete: async (id: string): Promise<void> => {
+        await axios.delete(`${API_URL}/me/instances/${id}`);
+    },
+    setDefault: async (id: string): Promise<ModelInstanceOut> => {
+        const res = await axios.post<ModelInstanceOut>(`${API_URL}/me/instances/${id}/set-default`, {});
+        return res.data;
+    },
+    test: async (id: string): Promise<InstanceTestResult> => {
+        const res = await axios.post<InstanceTestResult>(`${API_URL}/me/instances/${id}/test`, {});
+        return res.data;
+    },
+};
+
+
 export const registry = {
     getCatalog: async (capability?: ModelCapability): Promise<ModelCatalogDTO> => {
         const url = capability
