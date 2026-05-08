@@ -174,7 +174,9 @@ export interface InstanceWizardProps {
 
 export function InstanceWizard({ initialType, editing, onClose, onSave }: InstanceWizardProps) {
     const isEdit = !!editing;
-    const [step, setStep] = useState<1 | 2 | 3>(isEdit ? 3 : 1);
+    // When the user opened the wizard from a specific type section (e.g.
+    // "添加 LLM 实例"), skip step 1 — type is already known.
+    const [step, setStep] = useState<1 | 2 | 3>(isEdit ? 3 : initialType ? 2 : 1);
     const [type, setType] = useState<InstanceTypeId>(initialType ?? "llm");
     const [vendorId, setVendorId] = useState<string>(editing?.vendor_id ?? "");
     const [modelName, setModelName] = useState<string>(editing?.model_name ?? "");
@@ -255,16 +257,26 @@ export function InstanceWizard({ initialType, editing, onClose, onSave }: Instan
 
                 <div className="p-6">
                     <h2 className="text-lg font-bold text-white">
-                        {isEdit ? `编辑实例 · ${editing?.display_name}` : "添加模型实例"}
+                        {isEdit
+                            ? `编辑实例 · ${editing?.display_name}`
+                            : initialType
+                                ? `添加 ${TYPE_LABELS[initialType]} 实例`
+                                : "添加模型实例"}
                     </h2>
                     <p className="text-xs text-gray-500 mt-1">
-                        {isEdit ? "改完保存即可。留空凭证字段会保留原值。" : "三步完成:选类型 → 选厂商 → 填凭证"}
+                        {isEdit
+                            ? "改完保存即可。留空凭证字段会保留原值。"
+                            : initialType
+                                ? "两步完成:选厂商 → 填凭证"
+                                : "三步完成:选类型 → 选厂商 → 填凭证"}
                     </p>
 
-                    {/* Stepper */}
+                    {/* Stepper — only the visible steps. When initialType
+                        was provided, step 1 is suppressed so the bar shows
+                        two segments instead of three. */}
                     {!isEdit && (
                         <div className="flex items-center gap-2 mt-4 mb-6">
-                            {[1, 2, 3].map((n) => (
+                            {(initialType ? [2, 3] : [1, 2, 3]).map((n) => (
                                 <div
                                     key={n}
                                     className={`flex-1 h-1 rounded-full transition-colors ${step >= n ? "bg-amber-500" : "bg-white/10"}`}
@@ -429,7 +441,10 @@ export function InstanceWizard({ initialType, editing, onClose, onSave }: Instan
 
                     {/* Footer */}
                     <div className="flex items-center justify-between mt-6 pt-4 border-t border-white/10">
-                        {!isEdit && step > 1 ? (
+                        {/* "上一步" only available when there's a previous
+                            visible step. With initialType, step 1 is hidden
+                            so step 2 is the first visible step. */}
+                        {!isEdit && step > (initialType ? 2 : 1) ? (
                             <button
                                 type="button"
                                 onClick={() => setStep((s) => (s - 1) as 1 | 2 | 3)}
