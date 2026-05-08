@@ -2,22 +2,28 @@ import axios from "axios";
 import { clearSession, getToken, type SetupStatus, type TokenResponse, type CurrentUser, persistSession, persistUser } from "./auth";
 
 // Dynamic API URL detection:
-// 1. In packaged app (Electron): Frontend is served by backend, use same origin
-// 2. In development (port 3000/3001): Use backend port 17177
+// 1. Docker build: nginx proxies API requests on the same origin (host port 3000)
+// 2. Packaged desktop app: frontend is served by the backend, use same origin
+// 3. Next.js dev server (port 3000/3001): API runs separately on backend port 17177
 const getApiUrl = (): string => {
-    // If running in browser
     if (typeof window !== 'undefined') {
         const { protocol, hostname, port } = window.location;
+        const sameOrigin = `${protocol}//${hostname}${port ? ':' + port : ''}`;
 
-        // In development mode (port 3000/3001 = Next.js dev server)
-        // Backend is on a different port
+        // Docker builds bake NEXT_PUBLIC_DOCKER_BUILD=true into the bundle.
+        // The frontend container (nginx) proxies /auth, /me, /projects, ... to the
+        // backend container, so all API calls must stay on the same origin.
+        if (process.env.NEXT_PUBLIC_DOCKER_BUILD === 'true') {
+            return sameOrigin;
+        }
+
+        // Dev mode: Next.js dev server runs on 3000/3001, FastAPI on 17177.
         if (port === '3000' || port === '3001') {
             return `${protocol}//${hostname}:17177`;
         }
 
-        // In production/packaged mode: Frontend is served by backend
-        // Use same origin
-        return `${protocol}//${hostname}${port ? ':' + port : ''}`;
+        // Packaged desktop app: backend serves the static frontend on its own port.
+        return sameOrigin;
     }
 
     // SSR fallback
