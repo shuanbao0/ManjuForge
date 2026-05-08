@@ -19,13 +19,15 @@ process environment so existing behavior is preserved.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass
 import os
-from typing import Any, Mapping, Optional, TYPE_CHECKING
+from typing import Any, Iterator, Mapping, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .auth.models import User
+    from .models.instance import ModelInstance
 
 
 @dataclass(frozen=True)
@@ -45,6 +47,15 @@ class RequestContext:
 
 _current: ContextVar[Optional[RequestContext]] = ContextVar(
     "manjuforge_request_context", default=None
+)
+
+# The currently-active model instance for the in-flight generation call.
+# Set by ``with_instance`` (Context Manager pattern); read by ``get_cred``
+# so credential lookups bind to the instance's stored secrets first. This
+# is what lets a single project use Claude for one stage and Qwen for
+# another — each call enters its own instance scope.
+_current_instance: ContextVar[Optional["ModelInstance"]] = ContextVar(
+    "manjuforge_current_instance", default=None
 )
 
 
@@ -71,26 +82,62 @@ def current_user_id() -> Optional[int]:
 
 
 def get_cred(key: str, default: str = "") -> str:
-    """Return the named credential for the current request's user.
+    """Return the named credential for the current call.
 
     **Resolution order**:
 
-    1. Per-user credentials saved via ``PUT /me/credentials`` (decrypted on
-       every request by the auth middleware).
-    2. Process environment / ``.env`` — used as a tenant-wide *fallback*
-       so an operator can pre-seed defaults (DashScope key, OSS bucket)
-       without forcing every user to fill the same value.
+    1. Active :class:`ModelInstance` (via :func:`with_instance`) — credentials
+       stored on the instance row override everything. This is the primary
+       path now that the Vendor → Instance architecture has landed.
+    2. Per-user RequestContext credentials (legacy ``PUT /me/credentials``
+       fallback so endpoints that haven't migrated yet keep working).
+    3. Process environment / ``.env`` — tenant-wide fallback for operator
+       defaults like a shared DashScope key.
 
-    Outside an HTTP request (tests, startup, CLI) only step 2 applies.
-    Returns ``""`` when neither layer has the key — same shape as
-    ``os.getenv(name, "")`` so existing callers don't need null checks.
+    Returns ``""`` when no layer has the key, matching ``os.getenv``.
     """
+    instance = _current_instance.get()
+    if instance is not None:
+        v = instance.credentials.get(key)
+        if v:
+            return v
     ctx = _current.get()
     if ctx is not None:
         v = ctx.creds.get(key)
-        if v:  # treat empty string as "not configured" — fall through to env
+        if v:
             return v
     return os.getenv(key, default) or default
+
+
+# ── Instance scope (Context Manager pattern) ─────────────────────────────
+
+
+@contextmanager
+def with_instance(instance: Optional["ModelInstance"]) -> Iterator[Optional["ModelInstance"]]:
+    """Bind a :class:`ModelInstance` to the current call for credential lookup.
+
+    Use it like::
+
+        with with_instance(llm_instance):
+            llm.chat(messages=...)   # get_cred("OPENAI_API_KEY") → instance creds
+
+    Passing ``None`` is a no-op (still valid context manager) — handy for
+    optional pipeline stages that may or may not have an instance configured.
+    Nesting is supported: the innermost ``with_instance`` wins, the outer
+    binding is restored on exit.
+    """
+    if instance is None:
+        yield None
+        return
+    token = _current_instance.set(instance)
+    try:
+        yield instance
+    finally:
+        _current_instance.reset(token)
+
+
+def current_instance() -> Optional["ModelInstance"]:
+    return _current_instance.get()
 
 
 def has_cred(key: str) -> bool:
@@ -177,6 +224,8 @@ __all__ = [
     "get_cred",
     "has_cred",
     "cred_snapshot",
+    "with_instance",
+    "current_instance",
     "run_in_executor",
     "add_background_task",
 ]
