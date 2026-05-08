@@ -6,6 +6,13 @@ import { clearSession, getToken, type SetupStatus, type TokenResponse, type Curr
 // 2. Packaged desktop app: frontend is served by the backend, use same origin
 // 3. Next.js dev server (port 3000/3001): API runs separately on backend port 17177
 const getApiUrl = (): string => {
+    // Allow explicit override (e.g. when the FastAPI backend lives on a
+    // different host/port than the Next.js dev server). Set this in your
+    // .env.local or via the shell before `npm run dev`.
+    if (process.env.NEXT_PUBLIC_API_URL) {
+        return process.env.NEXT_PUBLIC_API_URL.replace(/\/+$/, "");
+    }
+
     if (typeof window !== 'undefined') {
         const { protocol, hostname, port } = window.location;
         const sameOrigin = `${protocol}//${hostname}${port ? ':' + port : ''}`;
@@ -17,12 +24,18 @@ const getApiUrl = (): string => {
             return sameOrigin;
         }
 
-        // Dev mode: Next.js dev server runs on 3000/3001, FastAPI on 17177.
-        if (port === '3000' || port === '3001') {
+        // Dev mode heuristic: any non-prod build that isn't on the FastAPI
+        // backend port (17177) is assumed to be the Next.js dev server.
+        // Don't pin to 3000/3001 — Next picks 3002+ when those are busy,
+        // which used to silently fall through to sameOrigin and serve the
+        // SPA HTML for /registry/* requests.
+        const isProdBuild = process.env.NODE_ENV === 'production';
+        if (!isProdBuild && port !== '17177') {
             return `${protocol}//${hostname}:17177`;
         }
 
-        // Packaged desktop app: backend serves the static frontend on its own port.
+        // Packaged desktop app / production export: backend serves the
+        // static frontend on its own port (17177).
         return sameOrigin;
     }
 
