@@ -1046,6 +1046,39 @@ export interface ModelCatalogDTO {
     aspect_ratios: AspectRatioDTO[];
 }
 
+// Vendor connectors (Kling / Vidu / Doubao / Hailuo / ...). Backed by
+// /registry/vendors. Each entry drives one expandable VendorCard in Settings.
+
+export interface CredentialFieldDTO {
+    key: string;
+    label: string;
+    placeholder: string;
+    secret: boolean;
+    help_text: string;
+    required: boolean;
+}
+
+export interface VendorModeDTO {
+    id: string; // "dashscope" | "vendor"
+    label: string;
+    description: string;
+    fields: CredentialFieldDTO[];
+}
+
+export interface VendorConnectorDTO {
+    id: string;
+    display_name: string;
+    description: string;
+    capabilities: ModelCapability[];
+    common_fields: CredentialFieldDTO[];
+    modes: VendorModeDTO[];
+    mode_env_key: string | null;
+    family_prefixes: string[];
+    docs_url: string;
+    badges: string[];
+    accent: string;
+}
+
 export const registry = {
     getCatalog: async (capability?: ModelCapability): Promise<ModelCatalogDTO> => {
         const url = capability
@@ -1058,6 +1091,14 @@ export const registry = {
     getLLMPresets: async (): Promise<{ presets: LLMPresetDTO[] }> => {
         const response = await authedFetch(`${API_URL}/registry/llm-presets`);
         if (!response.ok) throw new Error("Failed to fetch LLM presets");
+        return response.json();
+    },
+    getVendors: async (capability?: ModelCapability): Promise<{ connectors: VendorConnectorDTO[] }> => {
+        const url = capability
+            ? `${API_URL}/registry/vendors?capability=${capability}`
+            : `${API_URL}/registry/vendors`;
+        const response = await authedFetch(url);
+        if (!response.ok) throw new Error("Failed to fetch vendor connectors");
         return response.json();
     },
 };

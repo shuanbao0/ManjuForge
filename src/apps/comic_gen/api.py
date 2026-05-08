@@ -214,6 +214,17 @@ async def list_llm_presets():
     return {"presets": get_default_catalog().serialize()["presets"]}
 
 
+@app.get("/registry/vendors")
+async def list_vendor_connectors(capability: Optional[str] = None):
+    """Return the configurable vendor connectors (Kling / Vidu / Doubao / ...).
+
+    The Settings UI renders one card per connector. Optional ``capability``
+    filter narrows by ``llm`` | ``i2v`` | ``t2v`` | ``r2v`` | ``t2i`` | ``i2i``.
+    """
+    from ...utils.vendor_connectors import get_default_vendor_registry
+    return get_default_vendor_registry().serialize(capability=capability)
+
+
 @app.get("/debug/config")
 async def debug_config(_admin: _AuthUser = Depends(require_admin)):
     """Admin-only diagnostic endpoint to check OSS and path configuration."""

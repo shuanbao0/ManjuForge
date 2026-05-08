@@ -3,12 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Save, Loader2, Key, ChevronDown, ChevronRight, Settings, MessageSquareCode,
-  Cpu, Database, ShieldCheck, Image, Video, Layout, Check, User as UserIcon, Building, Box,
-  Sparkles,
+  Database, ShieldCheck, Image, Video, Layout, Check, User as UserIcon, Building, Box,
+  Sparkles, Cpu, Plug,
 } from "lucide-react";
 import { me as meApi, type LLMPresetDTO } from "@/lib/api";
 import { ASPECT_RATIOS } from "@/store/projectStore";
 import { useModelCatalog, useModelsByCapability } from "@/hooks/useModelCatalog";
+import { useVendorConnectors } from "@/hooks/useVendorConnectors";
+import { VendorCard, type CredsMap } from "./VendorCard";
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -282,7 +284,6 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [endpointsOpen, setEndpointsOpen] = useState(false);
-  const [advancedProvidersOpen, setAdvancedProvidersOpen] = useState(false);
 
   // Pulled from backend `/registry/models` so dropdowns and LLM presets are
   // driven by the canonical catalog instead of duplicated hardcoded lists.
@@ -290,6 +291,21 @@ export default function SettingsPage() {
   const t2iModels = useModelsByCapability("t2i").models;
   const i2iModels = useModelsByCapability("i2i").models;
   const i2vModels = useModelsByCapability("i2v").models;
+
+  // Vendor connectors drive the unified VendorCard grid below. Backend is
+  // the single source of truth — see src/utils/vendor_connectors.py.
+  const { connectors: vendorConnectors } = useVendorConnectors();
+  const dashscopeConnector = useMemo(
+    () => vendorConnectors.find((c) => c.id === "dashscope"),
+    [vendorConnectors],
+  );
+  const videoConnectors = useMemo(
+    () =>
+      vendorConnectors.filter(
+        (c) => c.id !== "dashscope" && c.capabilities.some((cap) => ["i2v", "t2v"].includes(cap)),
+      ),
+    [vendorConnectors],
+  );
 
   const [modelSettings, setModelSettings] = useState<DefaultModelSettings>(() =>
     loadFromLS(LS_KEY_MODEL, {
@@ -411,14 +427,15 @@ export default function SettingsPage() {
           <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 text-sm text-red-300">{loadError}</div>
         ) : (
           <>
-            {/* DashScope */}
-            <div>
-              <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
-                <span>DashScope API Key {creds.LLM_PROVIDER === "dashscope" && <span className="text-red-500">*</span>}</span>
-                <span className="text-gray-600 font-normal text-xs">e.g. sk-xxx</span>
-              </label>
-              <input type="password" value={creds.DASHSCOPE_API_KEY} onChange={(e) => handleChange("DASHSCOPE_API_KEY", e.target.value)} placeholder="DashScope-first 默认密钥" className={inputClass} />
-            </div>
+            {/* DashScope — foundation vendor. Most other models route through it. */}
+            {dashscopeConnector && (
+              <VendorCard
+                connector={dashscopeConnector}
+                creds={creds as unknown as CredsMap}
+                onChange={(k, v) => handleChange(k as keyof MyCreds, v as MyCreds[keyof MyCreds])}
+                defaultExpanded={!creds.DASHSCOPE_API_KEY}
+              />
+            )}
 
             {/* LLM Provider — preset-driven selector. Preset = one click. */}
             <div className="pt-4 border-t border-white/10">
@@ -469,95 +486,44 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* Kling */}
+            {/* Video providers — unified VendorCard grid. Each card is its
+                own status-aware, expandable connector. Adding a new provider
+                only requires an entry in src/utils/vendor_connectors.py. */}
             <div className="pt-4 border-t border-white/10">
-              <h3 className="text-sm font-bold text-white mb-4">Kling Provider</h3>
-              <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={() => handleChange("KLING_PROVIDER_MODE", "dashscope")} className={modeButton(creds.KLING_PROVIDER_MODE === "dashscope")}>DashScope</button>
-                  <button type="button" onClick={() => handleChange("KLING_PROVIDER_MODE", "vendor")} className={modeButton(creds.KLING_PROVIDER_MODE === "vendor")}>Vendor Direct</button>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Plug size={14} className="text-purple-400" /> 视频生成供应商
+                  </h3>
+                  <p className="text-[10px] text-gray-500 mt-1">每家厂商都可独立配置,默认走 DashScope 路由</p>
                 </div>
-                {creds.KLING_PROVIDER_MODE === "vendor" && (
-                  <>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Kling Access Key <span className="text-red-500">*</span></label>
-                      <input type="password" value={creds.KLING_ACCESS_KEY} onChange={(e) => handleChange("KLING_ACCESS_KEY", e.target.value)} placeholder="Kling Access Key" className={inputClass} />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Kling Secret Key <span className="text-red-500">*</span></label>
-                      <input type="password" value={creds.KLING_SECRET_KEY} onChange={(e) => handleChange("KLING_SECRET_KEY", e.target.value)} placeholder="Kling Secret Key" className={inputClass} />
-                    </div>
-                  </>
-                )}
+                <span className="text-[10px] text-gray-500">
+                  {videoConnectors.filter((c) => {
+                    const mode = c.mode_env_key ? (creds as unknown as CredsMap)[c.mode_env_key] || "dashscope" : null;
+                    if (mode === "vendor") {
+                      return c.modes
+                        .find((m) => m.id === "vendor")
+                        ?.fields.filter((f) => f.required)
+                        .every((f) => ((creds as unknown as CredsMap)[f.key] || "").trim().length > 0);
+                    }
+                    if (mode === null) {
+                      return c.common_fields.filter((f) => f.required).every((f) => ((creds as unknown as CredsMap)[f.key] || "").trim().length > 0);
+                    }
+                    return true;
+                  }).length}
+                  {" / "}{videoConnectors.length} 已就绪
+                </span>
               </div>
-            </div>
-
-            {/* Vidu */}
-            <div className="pt-4 border-t border-white/10">
-              <h3 className="text-sm font-bold text-white mb-4">Vidu Provider</h3>
-              <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={() => handleChange("VIDU_PROVIDER_MODE", "dashscope")} className={modeButton(creds.VIDU_PROVIDER_MODE === "dashscope")}>DashScope</button>
-                  <button type="button" onClick={() => handleChange("VIDU_PROVIDER_MODE", "vendor")} className={modeButton(creds.VIDU_PROVIDER_MODE === "vendor")}>Vendor Direct</button>
-                </div>
-                {creds.VIDU_PROVIDER_MODE === "vendor" && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">Vidu API Key <span className="text-red-500">*</span></label>
-                    <input type="password" value={creds.VIDU_API_KEY} onChange={(e) => handleChange("VIDU_API_KEY", e.target.value)} placeholder="Vidu API Key" className={inputClass} />
-                  </div>
-                )}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {videoConnectors.map((connector) => (
+                  <VendorCard
+                    key={connector.id}
+                    connector={connector}
+                    creds={creds as unknown as CredsMap}
+                    onChange={(k, v) => handleChange(k as keyof MyCreds, v as MyCreds[keyof MyCreds])}
+                  />
+                ))}
               </div>
-            </div>
-
-            {/* Advanced video providers — Pixverse / Doubao Seedance / Hailuo. */}
-            <div className="pt-4 border-t border-white/10">
-              <button type="button" onClick={() => setAdvancedProvidersOpen((v) => !v)} className="flex items-center gap-2 text-sm font-medium text-gray-400 hover:text-gray-200 transition-colors">
-                {advancedProvidersOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                高级视频供应商 (Pixverse / Doubao / Hailuo)
-              </button>
-              {advancedProvidersOpen && (
-                <div className="mt-4 space-y-4">
-                  {/* Pixverse */}
-                  <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-bold text-white">Pixverse</h4>
-                      <div className="flex flex-wrap gap-2">
-                        <button type="button" onClick={() => handleChange("PIXVERSE_PROVIDER_MODE", "dashscope")} className={modeButton(creds.PIXVERSE_PROVIDER_MODE === "dashscope")}>DashScope</button>
-                        <button type="button" onClick={() => handleChange("PIXVERSE_PROVIDER_MODE", "vendor")} className={modeButton(creds.PIXVERSE_PROVIDER_MODE === "vendor")}>Vendor Direct</button>
-                      </div>
-                    </div>
-                    {creds.PIXVERSE_PROVIDER_MODE === "vendor" && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">Pixverse API Key <span className="text-red-500">*</span></label>
-                        <input type="password" value={creds.PIXVERSE_API_KEY} onChange={(e) => handleChange("PIXVERSE_API_KEY", e.target.value)} placeholder="Pixverse API Key" className={inputClass} />
-                      </div>
-                    )}
-                  </div>
-                  {/* Doubao Seedance */}
-                  <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-bold text-white">字节豆包 Seedance</h4>
-                      <span className="text-[10px] text-violet-300 px-2 py-0.5 rounded border border-violet-500/40 bg-violet-500/10">preview</span>
-                    </div>
-                    <p className="text-[10px] text-gray-500">仅 vendor-direct 接入,DashScope 暂未上线。配置后即可在 I2V 列表选择。</p>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Doubao API Key</label>
-                      <input type="password" value={creds.DOUBAO_API_KEY} onChange={(e) => handleChange("DOUBAO_API_KEY", e.target.value)} placeholder="Doubao API Key (Volcano Engine)" className={inputClass} />
-                    </div>
-                  </div>
-                  {/* Hailuo */}
-                  <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-bold text-white">MiniMax Hailuo 海螺</h4>
-                      <span className="text-[10px] text-violet-300 px-2 py-0.5 rounded border border-violet-500/40 bg-violet-500/10">preview</span>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">Hailuo API Key</label>
-                      <input type="password" value={creds.HAILUO_API_KEY} onChange={(e) => handleChange("HAILUO_API_KEY", e.target.value)} placeholder="MiniMax Hailuo API Key" className={inputClass} />
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Object storage */}
