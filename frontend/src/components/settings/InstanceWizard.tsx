@@ -22,10 +22,18 @@ interface VendorMeta {
     id: string;
     label: string;
     capabilities: InstanceTypeId[];
-    suggested_models: string[];
+    /** Either a flat list (single-capability vendor) or per-type buckets
+     *  (multi-capability vendor — different model ids per type). */
+    suggested_models: string[] | Partial<Record<InstanceTypeId, string[]>>;
     default_base_url: string;
     credential_keys: { key: string; label: string }[];
     docs_url?: string;
+}
+
+
+function suggestedModelsFor(vendor: VendorMeta, type: InstanceTypeId): string[] {
+    if (Array.isArray(vendor.suggested_models)) return vendor.suggested_models;
+    return vendor.suggested_models[type] ?? [];
 }
 
 const VENDORS: VendorMeta[] = [
@@ -81,18 +89,22 @@ const VENDORS: VendorMeta[] = [
     },
     {
         id: "minimax",
-        label: "MiniMax (Token Plan · LLM)",
-        capabilities: ["llm"],
-        suggested_models: [
-            "MiniMax-M2.7",
-            "MiniMax-M2",
-            "MiniMax-Text-01",
-            "abab6.5s-chat",
-        ],
+        label: "MiniMax (Token Plan)",
+        // MiniMax token plan covers LLM / TTS / T2I / I2V — one API key
+        // unlocks all four. Each capability gets its own ModelInstance row
+        // so the project settings can route per stage.
+        capabilities: ["llm", "tts", "t2i", "i2v", "t2v"],
+        suggested_models: {
+            llm: ["MiniMax-M2.7", "MiniMax-M2", "MiniMax-Text-01", "abab6.5s-chat"],
+            tts: ["speech-2.6-hd", "speech-2.6-turbo", "speech-02-hd", "speech-01-hd"],
+            t2i: ["image-01"],
+            i2v: ["MiniMax-Hailuo-2.3-Fast", "MiniMax-Hailuo-2.3", "MiniMax-Hailuo-02"],
+            t2v: ["MiniMax-Hailuo-2.3", "MiniMax-Hailuo-02"],
+        },
         // 国内官方域名(注意是 minimaxi.com,不是 minimax.io / minimax.chat)
         // 海外用户改用 https://api.minimax.io/v1
         default_base_url: "https://api.minimaxi.com/v1",
-        credential_keys: [{ key: "OPENAI_API_KEY", label: "API Key" }],
+        credential_keys: [{ key: "MINIMAX_API_KEY", label: "API Key" }],
         docs_url: "https://platform.minimaxi.com/",
     },
     {
@@ -155,21 +167,8 @@ const VENDORS: VendorMeta[] = [
         default_base_url: "https://ark.cn-beijing.volces.com/api/v3",
         credential_keys: [{ key: "DOUBAO_API_KEY", label: "API Key" }],
     },
-    {
-        id: "hailuo",
-        label: "MiniMax 海螺 (Token Plan · Video)",
-        capabilities: ["i2v", "t2v"],
-        // Token plan 实际可用的视频模型 IDs(国际版用 minimax.io,国内 minimaxi.com)
-        suggested_models: [
-            "hailuo-2.3-fast-768p",
-            "hailuo-2.3-768p",
-            "hailuo-2.3",
-            "hailuo-02",
-        ],
-        default_base_url: "https://api.minimaxi.com/v1",
-        credential_keys: [{ key: "HAILUO_API_KEY", label: "API Key" }],
-        docs_url: "https://platform.minimaxi.com/",
-    },
+    // (Hailuo merged into the unified `minimax` entry above so a single
+    // MINIMAX_API_KEY covers LLM / TTS / T2I / I2V on the same plan.)
 ];
 
 const TYPE_LABELS: Record<InstanceTypeId, string> = {
@@ -213,6 +212,10 @@ export function InstanceWizard({ initialType, editing, onClose, onSave }: Instan
 
     const eligibleVendors = useMemo(() => VENDORS.filter((v) => v.capabilities.includes(type)), [type]);
     const vendorMeta = useMemo(() => VENDORS.find((v) => v.id === vendorId), [vendorId]);
+    const typeSuggestions = useMemo(
+        () => (vendorMeta ? suggestedModelsFor(vendorMeta, type) : []),
+        [vendorMeta, type],
+    );
 
     // When type changes, reset vendor selection if the current vendor no longer fits.
     useEffect(() => {
@@ -221,10 +224,10 @@ export function InstanceWizard({ initialType, editing, onClose, onSave }: Instan
         }
     }, [type, eligibleVendors, vendorId]);
 
-    // When vendor changes, prefill suggested model + base url.
+    // When vendor changes, prefill suggested model (for current type) + base url.
     useEffect(() => {
         if (!vendorMeta) return;
-        if (!modelName) setModelName(vendorMeta.suggested_models[0] ?? "");
+        if (!modelName) setModelName(typeSuggestions[0] ?? "");
         if (!baseUrl) setBaseUrl(vendorMeta.default_base_url);
     }, [vendorId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -341,7 +344,7 @@ export function InstanceWizard({ initialType, editing, onClose, onSave }: Instan
                                         className={`p-3 rounded-lg border text-left transition-colors ${vendorId === v.id ? "border-amber-500/60 bg-amber-500/10 text-amber-200" : "border-white/10 bg-white/5 text-gray-300 hover:border-white/20"}`}
                                     >
                                         <div className="text-sm font-medium text-white">{v.label}</div>
-                                        <div className="text-[10px] text-gray-500 mt-0.5 truncate font-mono">{v.suggested_models.slice(0, 3).join(", ")}</div>
+                                        <div className="text-[10px] text-gray-500 mt-0.5 truncate font-mono">{suggestedModelsFor(v, type).slice(0, 3).join(", ")}</div>
                                     </button>
                                 ))}
                             </div>
@@ -376,9 +379,9 @@ export function InstanceWizard({ initialType, editing, onClose, onSave }: Instan
                                     placeholder="模型 ID"
                                     className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-white/30 font-mono"
                                 />
-                                {vendorMeta && (
+                                {typeSuggestions.length > 0 && (
                                     <div className="flex flex-wrap gap-1 mt-2">
-                                        {vendorMeta.suggested_models.map((m) => (
+                                        {typeSuggestions.map((m) => (
                                             <button
                                                 key={m}
                                                 type="button"

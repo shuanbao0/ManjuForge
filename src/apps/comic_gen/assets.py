@@ -44,13 +44,56 @@ ASPECT_RATIO_TO_SIZE = {
     "1:1": "1024*1024",   # Square
 }
 
+class _MinimaxImageAdapter:
+    """Adapter making :mod:`src.models.minimax_image` look like ``WanxImageModel.generate``.
+
+    Only T2I (no ref_image_path) is supported for now — i2i / image edit is
+    not on MiniMax image-01 yet, so callers that pass ``ref_image_path``
+    silently fall through to Wanx. This keeps the route safe without
+    requiring AssetGenerator to know which model can do which.
+    """
+
+    def generate(self, prompt, output_path, ref_image_path=None, negative_prompt=None,
+                 model_name=None, size=None, **kwargs):
+        if ref_image_path:
+            raise NotImplementedError("MiniMax image-01 doesn't support ref_image_path; use Wan for I2I")
+        from ..models.minimax_image import generate_minimax_image  # type: ignore
+        # NOTE: relative-import path uses two dots because assets.py lives
+        # in src/apps/comic_gen/. Compensate by going up two levels: ../..
+        # = src/  → models.minimax_image lives at src/models/minimax_image.py
+        from ...models.minimax_image import generate_minimax_image as _gen
+        saved, latency = _gen(prompt=prompt, output_path=output_path,
+                              size=size or "1024*1024",
+                              n=1, negative_prompt=negative_prompt)
+        return saved[0], latency
+
+
 class AssetGenerator:
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
-        # Default to Wanx for now, can be swapped based on config
+        # Default backend = Wanx. The minimax adapter is held alongside so
+        # ``_route_for_call`` can pick the right one based on the active
+        # ModelInstance's vendor_id without re-allocating per call.
         self.model = WanxImageModel(self.config.get('model', {}))
+        self._minimax_adapter = _MinimaxImageAdapter()
         self.data_root = self.config.get('data_root', 'output')
         self.output_dir = self.config.get('output_dir', os.path.join(self.data_root, 'assets'))
+
+    def _route_for_call(self):
+        """Pick the underlying T2I/I2I client based on the scoped ModelInstance.
+
+        ``current_instance().vendor_id`` decides: ``minimax`` → image-01
+        adapter, anything else (or no scope) → Wanx default. Caller still
+        passes ``model_name`` along, but with MiniMax that string already
+        matches the API id (``image-01``)."""
+        try:
+            from src.runtime import current_instance
+            inst = current_instance()
+            if inst and inst.vendor_id == "minimax":
+                return self._minimax_adapter
+        except Exception:
+            pass
+        return self.model
 
     def generate_character(self, character: Character, generation_type: str = "all", prompt: str = "", positive_prompt: str = None, negative_prompt: str = "", batch_size: int = 1, model_name: str = None, i2i_model_name: str = None, size: str = None) -> Character:
         """
@@ -148,7 +191,11 @@ class AssetGenerator:
                                 effective_generation_prompt = f"{reverse_enhancement}{generation_prompt}"
                                 logger.debug(f"Reverse generation enhanced prompt: {effective_generation_prompt[:100]}...")
                         
-                        self.model.generate(effective_generation_prompt, fullbody_path, ref_image_path=ref_image_path, negative_prompt=negative_prompt, model_name=effective_model_name, size=effective_size)
+                        # Route to MiniMax image-01 only when there's no
+                        # reference image (pure T2I); ref-image flows stay on
+                        # Wanx since MiniMax image-01 is T2I-only.
+                        _client = self._route_for_call() if ref_image_path is None else self.model
+                        _client.generate(effective_generation_prompt, fullbody_path, ref_image_path=ref_image_path, negative_prompt=negative_prompt, model_name=effective_model_name, size=effective_size)
                         
                         rel_fullbody_path = os.path.relpath(fullbody_path, self.data_root)
                         
@@ -463,10 +510,10 @@ class AssetGenerator:
                 output_path = os.path.join(self.output_dir, 'scenes', f"{scene.id}_{variant_id}.png")
                 os.makedirs(os.path.dirname(output_path), exist_ok=True)
                 
-                image_path, _ = self.model.generate(prompt, output_path, negative_prompt=negative_prompt, model_name=model_name, size=effective_size)
-                
+                image_path, _ = self._route_for_call().generate(prompt, output_path, negative_prompt=negative_prompt, model_name=model_name, size=effective_size)
+
                 rel_path = os.path.relpath(output_path, self.data_root)
-                
+
                 if not scene.image_asset:
                     from .models import ImageAsset
                     scene.image_asset = ImageAsset()
@@ -525,10 +572,10 @@ class AssetGenerator:
                 output_path = os.path.join(self.output_dir, 'props', f"{prop.id}_{variant_id}.png")
                 os.makedirs(os.path.dirname(output_path), exist_ok=True)
                 
-                image_path, _ = self.model.generate(prompt, output_path, negative_prompt=negative_prompt, model_name=model_name, size=effective_size)
-                
+                image_path, _ = self._route_for_call().generate(prompt, output_path, negative_prompt=negative_prompt, model_name=model_name, size=effective_size)
+
                 rel_path = os.path.relpath(output_path, self.data_root)
-                
+
                 if not prop.image_asset:
                     from .models import ImageAsset
                     prop.image_asset = ImageAsset()

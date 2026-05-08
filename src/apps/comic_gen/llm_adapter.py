@@ -53,6 +53,7 @@ class LLMAdapter:
         if inst:
             return bool(
                 inst.credentials.get("OPENAI_API_KEY")
+                or inst.credentials.get("MINIMAX_API_KEY")
                 or inst.credentials.get("DASHSCOPE_API_KEY")
             )
         if self.provider == "openai":
@@ -78,6 +79,7 @@ class LLMAdapter:
         if inst:
             api_key = (
                 inst.credentials.get("OPENAI_API_KEY")
+                or inst.credentials.get("MINIMAX_API_KEY")
                 or inst.credentials.get("DASHSCOPE_API_KEY")
                 or ""
             )

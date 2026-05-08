@@ -63,27 +63,36 @@ class AudioGenerator:
         return self._real_generate_dialogue(frame, character, text, speed, pitch, volume)
 
     def _real_generate_dialogue(self, frame: StoryboardFrame, character: Character, text: str, speed: float, pitch: float, volume: int) -> StoryboardFrame:
-        """Generate dialogue using real TTS."""
+        """Generate dialogue using real TTS, routed by the active instance vendor."""
         try:
             output_path = os.path.join(self.output_dir, 'dialogue', f"{frame.id}.mp3")
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            
-            # Use character's assigned voice
+
             voice = character.voice_id
-            
-            # Call TTSProcessor with speed/pitch
-            self.tts.synthesize(text, output_path, voice=voice, speech_rate=speed, pitch_rate=pitch, volume=volume)
-            
-            # Store relative path for frontend serving
+
+            # Route by vendor of the currently-scoped TTS ModelInstance.
+            # When vendor_id == "minimax", use MiniMax T2A v2; otherwise
+            # default to DashScope CosyVoice (the legacy path).
+            from src.runtime import current_instance
+            inst = current_instance()
+            if inst and inst.vendor_id == "minimax":
+                from src.audio.minimax_tts import synthesize_minimax_tts
+                synthesize_minimax_tts(
+                    text, output_path,
+                    voice=voice, speech_rate=speed, pitch_rate=pitch, volume=volume,
+                )
+            else:
+                self.tts.synthesize(text, output_path, voice=voice, speech_rate=speed, pitch_rate=pitch, volume=volume)
+
             rel_path = os.path.relpath(output_path, self.data_root)
             frame.audio_url = rel_path
             frame.status = GenerationStatus.COMPLETED
-            
+
         except Exception as e:
             logger.error(f"TTS generation failed for frame {frame.id}: {e}")
             frame.status = GenerationStatus.FAILED
             frame.audio_error = f"TTS generation failed: {str(e)}"
-            
+
         return frame
 
     def _mock_generate_dialogue(self, frame: StoryboardFrame, character: Character, text: str, speed: float, pitch: float, volume: int) -> StoryboardFrame:

@@ -188,12 +188,35 @@ def make_doubao_vendor_adapter() -> VideoAdapter:
     )
 
 
+class HailuoVendorAdapter(VideoAdapter):
+    """MiniMax Hailuo (海螺) vendor-direct adapter.
+
+    Bridges the dispatcher's :class:`VideoGenerationContext` to the simpler
+    :func:`src.models.hailuo.generate_hailuo_video` signature. Resolution
+    is mapped from the pipeline's ``720p/1080p`` strings to MiniMax's
+    ``768P/1080P`` casing.
+    """
+
+    _RES_MAP = {"480p": "768P", "720p": "768P", "768p": "768P", "1080p": "1080P", "2k": "1080P"}
+
+    def generate(self, ctx: VideoGenerationContext) -> Tuple[str, float]:
+        from .hailuo import generate_hailuo_video
+
+        task = ctx.task
+        target_resolution = self._RES_MAP.get((task.resolution or "").lower(), "768P")
+        return generate_hailuo_video(
+            prompt=task.prompt,
+            output_path=ctx.output_path,
+            img_url=ctx.img_url,
+            img_path=ctx.img_path,
+            duration=int(task.duration or 6),
+            resolution=target_resolution,
+            model=task.model,
+        )
+
+
 def make_hailuo_vendor_adapter() -> VideoAdapter:
-    return _NotImplementedAdapter(
-        family="hailuo",
-        hint="MiniMax Hailuo is currently in preview. Implement "
-        "src/models/hailuo.py and register it in video_dispatcher.",
-    )
+    return HailuoVendorAdapter()
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -282,6 +305,8 @@ def build_default_dispatcher(video_generator: Any) -> VideoModelDispatcher:
     dispatcher.register("pixverse-", "vendor", make_pixverse_vendor_adapter)
     dispatcher.register("doubao-seedance-", "vendor", make_doubao_vendor_adapter)
     dispatcher.register("hailuo-", "vendor", make_hailuo_vendor_adapter)
+    # MiniMax-Hailuo-* (canonical API model ids) shares the same adapter.
+    dispatcher.register("minimax-hailuo-", "vendor", make_hailuo_vendor_adapter)
     return dispatcher
 
 

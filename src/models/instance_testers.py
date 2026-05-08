@@ -46,11 +46,13 @@ def _llm_probe(instance: ModelInstance) -> TestResult:
     except ImportError:
         return TestResult(ok=False, error="openai package not installed")
 
-    api_key = instance.credentials.get("OPENAI_API_KEY") or instance.credentials.get(
-        "DASHSCOPE_API_KEY"
+    api_key = (
+        instance.credentials.get("OPENAI_API_KEY")
+        or instance.credentials.get("MINIMAX_API_KEY")
+        or instance.credentials.get("DASHSCOPE_API_KEY")
     )
     if not api_key:
-        return TestResult(ok=False, error="No API key configured (OPENAI_API_KEY / DASHSCOPE_API_KEY)")
+        return TestResult(ok=False, error="No API key configured (OPENAI_API_KEY / MINIMAX_API_KEY / DASHSCOPE_API_KEY)")
 
     base_url = instance.base_url or _default_llm_base_url(instance.vendor_id)
     client = OpenAI(api_key=api_key, base_url=base_url)
@@ -107,11 +109,20 @@ def _vendor_direct_required_keys(vendor_id: str) -> tuple[str, ...]:
         "pixverse": ("PIXVERSE_API_KEY",),
         "doubao": ("DOUBAO_API_KEY",),
         "hailuo": ("HAILUO_API_KEY",),
+        # MiniMax token plan covers I2V/T2I/TTS — one MINIMAX_API_KEY is enough.
+        "minimax": ("MINIMAX_API_KEY",),
     }.get(vendor_id, ())
 
 
 def _tts_probe(instance: ModelInstance) -> TestResult:
-    """TTS currently only supported via DashScope CosyVoice."""
+    """TTS supports two backends:
+    - DashScope CosyVoice → needs DASHSCOPE_API_KEY
+    - MiniMax T2A v2 → needs MINIMAX_API_KEY
+    """
+    if instance.vendor_id == "minimax":
+        if instance.credentials.get("MINIMAX_API_KEY"):
+            return TestResult(ok=True)
+        return TestResult(ok=False, error="MINIMAX_API_KEY missing")
     if not instance.credentials.get("DASHSCOPE_API_KEY"):
         return TestResult(ok=False, error="DASHSCOPE_API_KEY missing")
     return TestResult(ok=True)

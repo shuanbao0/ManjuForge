@@ -225,7 +225,21 @@ DEFAULT_PROVIDER_FAMILIES: Tuple[ProviderFamilyConfig, ...] = (
         backend_default="vendor",
         backend_env_key="HAILUO_PROVIDER_MODE",
         credential_sources={
-            "vendor": ("HAILUO_API_KEY",),
+            "vendor": ("MINIMAX_API_KEY", "HAILUO_API_KEY"),
+        },
+        supported_modalities=("t2v", "i2v"),
+        image_input_mode={
+            "vendor": "hailuo_vendor_image_url",
+        },
+    ),
+    # MiniMax's official model ids carry a "MiniMax-Hailuo-" prefix; route
+    # them to the same vendor-direct adapter.
+    ProviderFamilyConfig(
+        model_family="minimax-hailuo-",
+        backend_default="vendor",
+        backend_env_key="HAILUO_PROVIDER_MODE",
+        credential_sources={
+            "vendor": ("MINIMAX_API_KEY", "HAILUO_API_KEY"),
         },
         supported_modalities=("t2v", "i2v"),
         image_input_mode={

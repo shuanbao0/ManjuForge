@@ -100,9 +100,23 @@ def test_default_dispatcher_registers_all_vendor_routes():
         ("pixverse-", "vendor"),
         ("doubao-seedance-", "vendor"),
         ("hailuo-", "vendor"),
+        ("minimax-hailuo-", "vendor"),
     }
     for r in expected:
         assert r in routes
+
+
+def test_minimax_hailuo_model_resolves_to_real_adapter():
+    """``MiniMax-Hailuo-2.3`` (canonical API id) must reach HailuoVendorAdapter,
+    not the NotImplementedAdapter that used to live there."""
+    from src.models.video_dispatcher import HailuoVendorAdapter
+
+    video_generator = SimpleNamespace(model=None)
+    d = build_default_dispatcher(video_generator)
+    adapter = d.resolve("MiniMax-Hailuo-2.3", "vendor")
+    assert isinstance(adapter, HailuoVendorAdapter)
+    adapter2 = d.resolve("hailuo-2.3-768p", "vendor")
+    assert isinstance(adapter2, HailuoVendorAdapter)
 
 
 def test_default_dispatcher_routes_dashscope_to_wanx_adapter():

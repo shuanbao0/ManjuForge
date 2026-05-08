@@ -56,6 +56,10 @@ ALLOWED_KEYS: frozenset[str] = frozenset(
         "HAILUO_PROVIDER_MODE",
         "HAILUO_API_KEY",
         "HAILUO_BASE_URL",
+        # Unified MiniMax token-plan key — covers LLM / TTS / T2I / I2V on
+        # the same MiniMax account so the user pastes one key per instance.
+        "MINIMAX_API_KEY",
+        "MINIMAX_BASE_URL",
         # Object storage (P4) — provider-agnostic S3 fields
         "STORAGE_PROVIDER",       # minio | aliyun_oss | local_only
         "STORAGE_ENDPOINT",
@@ -85,6 +89,7 @@ SECRET_KEYS: frozenset[str] = frozenset(
         "PIXVERSE_API_KEY",
         "DOUBAO_API_KEY",
         "HAILUO_API_KEY",
+        "MINIMAX_API_KEY",
         "STORAGE_ACCESS_KEY",
         "STORAGE_SECRET_KEY",
         "ALIBABA_CLOUD_ACCESS_KEY_ID",
