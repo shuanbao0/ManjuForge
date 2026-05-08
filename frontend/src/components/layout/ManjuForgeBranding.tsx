@@ -16,7 +16,17 @@ export default function ManjuForgeBranding({ size = "md", showSlogan = true }: M
       <div className="flex gap-4 items-center">
         <div className="flex-shrink-0">
           <img
-            src={typeof window !== "undefined" && process.env.NODE_ENV === "production" ? "/static/ManjuForge.png" : "/ManjuForge.png"}
+            src={
+              // Only the desktop PyInstaller bundle hosts the frontend under
+              // ``/static/`` (see ``next.config.mjs``: basePath: '/static' when
+              // isProd && !isDocker). Docker builds and dev mode serve from
+              // root, so the asset lives at ``/ManjuForge.png``.
+              typeof window !== "undefined"
+                && process.env.NODE_ENV === "production"
+                && process.env.NEXT_PUBLIC_DOCKER_BUILD !== "true"
+                ? "/static/ManjuForge.png"
+                : "/ManjuForge.png"
+            }
             alt="ManjuForge"
             className={`${logoSize} object-contain`}
           />
