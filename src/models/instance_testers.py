@@ -73,7 +73,7 @@ def _default_llm_base_url(vendor_id: str) -> str:
         "anthropic": "https://api.anthropic.com/v1",
         "deepseek": "https://api.deepseek.com/v1",
         "moonshot": "https://api.moonshot.cn/v1",
-        "minimax": "https://api.minimax.io/v1",
+        "minimax": "https://api.minimaxi.com/v1",
         "zhipu": "https://open.bigmodel.cn/api/paas/v4",
         "google": "https://generativelanguage.googleapis.com/v1beta/openai",
         "ollama": "http://localhost:11434/v1",

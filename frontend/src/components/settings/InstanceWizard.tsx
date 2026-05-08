@@ -81,7 +81,7 @@ const VENDORS: VendorMeta[] = [
     },
     {
         id: "minimax",
-        label: "MiniMax (Token Plan LLM)",
+        label: "MiniMax (Token Plan · LLM)",
         capabilities: ["llm"],
         suggested_models: [
             "MiniMax-M2.7",
@@ -89,7 +89,9 @@ const VENDORS: VendorMeta[] = [
             "MiniMax-Text-01",
             "abab6.5s-chat",
         ],
-        default_base_url: "https://api.minimax.io/v1",
+        // 国内官方域名(注意是 minimaxi.com,不是 minimax.io / minimax.chat)
+        // 海外用户改用 https://api.minimax.io/v1
+        default_base_url: "https://api.minimaxi.com/v1",
         credential_keys: [{ key: "OPENAI_API_KEY", label: "API Key" }],
         docs_url: "https://platform.minimaxi.com/",
     },
@@ -155,11 +157,18 @@ const VENDORS: VendorMeta[] = [
     },
     {
         id: "hailuo",
-        label: "MiniMax Hailuo",
+        label: "MiniMax 海螺 (Token Plan · Video)",
         capabilities: ["i2v", "t2v"],
-        suggested_models: ["hailuo-02"],
-        default_base_url: "https://api.minimax.chat/v1",
+        // Token plan 实际可用的视频模型 IDs(国际版用 minimax.io,国内 minimaxi.com)
+        suggested_models: [
+            "hailuo-2.3-fast-768p",
+            "hailuo-2.3-768p",
+            "hailuo-2.3",
+            "hailuo-02",
+        ],
+        default_base_url: "https://api.minimaxi.com/v1",
         credential_keys: [{ key: "HAILUO_API_KEY", label: "API Key" }],
+        docs_url: "https://platform.minimaxi.com/",
     },
 ];
 
