@@ -142,7 +142,7 @@ export interface ModelSettings {
 // Model options for dropdowns.
 //
 // These arrays act as **fallbacks only**: the canonical catalog is fetched
-// from the backend `/registry/models` endpoint via `useModelCatalog`. We keep
+// from the user's ModelInstance list (see useInstances). We keep
 // hardcoded copies here so the Settings page renders something reasonable
 // during SSR / before the network round-trip resolves. Adding a new model
 // belongs in `src/utils/model_catalog.py` on the backend, not here.

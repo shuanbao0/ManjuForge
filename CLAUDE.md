@@ -55,6 +55,54 @@ This is the heart of the product. Files map roughly to pipeline stages:
 | `export.py` | Final video stitching via FFmpeg. |
 | `style_presets.json` | Built-in art-direction presets. |
 
+### Model Instance architecture (Vendor → Instance → Reference)
+
+**This is the canonical way to configure and run any AI model in the product.**
+Settings does not configure "vendors" or pick "current LLM" — every model is a
+``ModelInstance`` row owned by a user, and projects reference instances by id.
+
+Three layers:
+
+1. **Vendor** (system-known, immutable) — DashScope / OpenAI / Anthropic /
+   DeepSeek / Kling / Vidu / Pixverse / Doubao / Hailuo. Surfaced for UI
+   purposes through ``src/utils/vendor_connectors.py`` +
+   ``src/utils/model_catalog.py``; users never CRUD vendors.
+2. **ModelInstance** (per-user) — pairs a vendor + ``model_name`` +
+   ``credentials`` + ``base_url`` + a user-chosen ``display_name``. Users
+   may have many per type; one is marked ``is_default``. CRUD via
+   ``GET/POST/PUT/DELETE /me/instances`` and
+   ``POST /me/instances/{id}/{set-default,test}``.
+3. **Reference** — ``ModelSettings`` on Script/Series stores
+   ``llm_instance_id`` / ``t2i_instance_id`` / ``i2i_instance_id`` /
+   ``i2v_instance_id`` / ``tts_instance_id`` (all UUIDs, all optional).
+   ``None`` falls back to the user's default instance for that type.
+
+Files:
+- ``src/models/instance.py`` — ``InstanceType`` enum, ``ModelInstance``
+  dataclass with ``to_public_dict`` that scrubs credentials.
+- ``src/models/instance_repository.py`` — Repository pattern, Fernet
+  encryption, "single default per (user, type)" invariant.
+- ``src/models/instance_testers.py`` — Strategy registry: per-type
+  connectivity probes (LLM ping, DashScope key presence check, etc.).
+- ``src/auth/me_routes.py`` — REST surface.
+- ``src/auth/service.py::_seed_default_instances`` — onboarding hook.
+- ``src/runtime.py::with_instance`` — Context Manager that binds an
+  instance to the current call so ``get_cred()`` resolves from
+  ``instance.credentials`` first, then env. **All pipeline stages must
+  enter this scope before invoking a model client** (see
+  ``src/apps/comic_gen/instance_resolver.py::scoped_instance``).
+- ``src/apps/comic_gen/llm_adapter.py`` — reads model_name + base_url +
+  credentials from the active instance when one is bound.
+
+Adding a new vendor:
+1. Append a ``VendorConnector`` to ``src/utils/vendor_connectors.py``.
+2. Register the family in ``src/utils/provider_registry.py`` (so
+   provider routing resolves the model name).
+3. Mirror the vendor metadata in
+   ``frontend/src/components/settings/InstanceWizard.tsx::VENDORS``.
+4. (Optional) add a real client adapter in ``src/models/`` and register
+   it in ``src/models/video_dispatcher.py``.
+
 ### Provider routing (critical concept)
 
 ManjuForge is **DashScope-first** but supports vendor-direct routing per model family.
@@ -191,7 +239,7 @@ Commit messages follow **Conventional Commits**: `feat(scope): ...`, `fix(scope)
 - **Proxy bypass**: `start_backend.sh`, `Dockerfile.backend`, and `docker-compose.yml` all set `NO_PROXY=*.aliyuncs.com,localhost,127.0.0.1`. macOS PAC rules can otherwise break DashScope/OSS traffic.
 - **Path-traversal**: when adding endpoints that accept user-supplied IDs or relative paths, use `pipeline._validate_safe_id` and `pipeline._safe_resolve_path` rather than ad-hoc `os.path.join`.
 - **Docker nginx allowlist**: every new top-level FastAPI prefix (e.g. adding `@app.get("/registry/...")`) MUST be added to the proxied path alternation in `docker/nginx.conf`. Otherwise nginx falls back to the SPA `index.html` and the browser gets `Unexpected token '<', "<!DOCTYPE "...` instead of JSON. The `tests/test_nginx_routing.py` guard auto-enumerates FastAPI prefixes and fails CI if the nginx config drifts — keep both in sync.
-- **Settings catalog/connector registry**: vendor and model catalogs are declarative in `src/utils/vendor_connectors.py` + `src/utils/model_catalog.py`. The Settings UI fetches them from `/registry/vendors` / `/registry/models` / `/registry/llm-presets`. Adding a new provider means: (1) one `VendorConnector` entry, (2) a `ProviderFamilyConfig` in `src/utils/provider_registry.py`, (3) credential keys added to `src/auth/credentials.py::ALLOWED_KEYS`. The frontend `useVendorConnectors` / `useModelCatalog` hooks ship hardcoded fallbacks of the same data — keep them roughly in sync so offline / outdated-backend deployments still render usable cards.
+- **Settings is ModelInstance-driven**: per-user model configurations live in the `model_instances` table; the Settings page CRUDs them via `/me/instances/*`. Vendor + model catalog files (`vendor_connectors.py`, `model_catalog.py`) are pure metadata (display names, suggested model ids, docs links) — adding a new provider means: (1) `VendorConnector` entry, (2) `ProviderFamilyConfig` in `provider_registry.py`, (3) (optional) real client + dispatcher adapter, (4) mirror in `InstanceWizard.tsx::VENDORS`. **Do not** add per-user keys to `src/auth/credentials.py::ALLOWED_KEYS` for new vendors — those are now stored on the instance row's encrypted blob.
 
 ## Useful Pointers
 
