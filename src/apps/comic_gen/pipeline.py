@@ -84,9 +84,12 @@ class ComicGenPipeline:
         self.video_generation_tasks: Dict[str, Dict[str, Any]] = {}
         # Temporary cache for file import previews (import_id -> text)
         self._import_cache: Dict[str, str] = {}
-        # Cached model instances for Kling/Vidu (lazily initialized)
+        # Cached model instances for Kling/Vidu (lazily initialized).
+        # Kept for backward-compat with tests that monkeypatch these slots
+        # directly; the actual dispatch goes through ``_video_dispatcher``.
         self._kling_model = None
         self._vidu_model = None
+        self._video_dispatcher = None  # built lazily in process_video_task
 
     def _resolve_video_backend(self, model_name: str) -> str:
         try:
@@ -2023,74 +2026,31 @@ class ComicGenPipeline:
             # Ensure img_url is passed correctly for OSS
             img_url = task.image_url
 
-            # Route to the appropriate model based on task.model
-            model_name = task.model or ""
-            model_name_lower = model_name.lower()
-            backend = self._resolve_video_backend(model_name)
-            use_vendor_kling = backend == "vendor" and model_name_lower.startswith("kling-")
-            use_vendor_vidu = backend == "vendor" and (
-                model_name_lower.startswith("vidu")
-                or model_name_lower.startswith("viduq2")
-                or model_name_lower.startswith("viduq3")
+            # Route to the appropriate model via the dispatcher (strategy
+            # registry). The default fallback is the DashScope/Wanx route, so
+            # families like Wan / Kling-on-DashScope / Vidu-on-DashScope all
+            # land there without explicit registration.
+            from ...models.video_dispatcher import (
+                VideoGenerationContext,
+                build_default_dispatcher,
             )
-
-            if use_vendor_kling:
-                # Use Kling model (cached)
-                if self._kling_model is None:
-                    from ...models.kling import KlingModel
-                    self._kling_model = KlingModel({})
-                video_path, _ = self._kling_model.generate(
-                    prompt=task.prompt,
+            # Tests may construct the pipeline via ``__new__`` (skipping
+            # ``__init__``), so use ``getattr`` for a safe lazy build.
+            if getattr(self, "_video_dispatcher", None) is None:
+                self._video_dispatcher = build_default_dispatcher(self.video_generator)
+            model_name = task.model or ""
+            backend = self._resolve_video_backend(model_name)
+            adapter = self._video_dispatcher.resolve(model_name, backend)
+            video_path, _ = adapter.generate(
+                VideoGenerationContext(
+                    task=task,
                     output_path=output_path,
                     img_url=img_url,
                     img_path=img_path,
-                    duration=task.duration,
-                    model=task.model,
-                    negative_prompt=task.negative_prompt,
-                    aspect_ratio="16:9",
-                    mode=task.mode or "std",
-                    sound=task.sound or "off",
-                    cfg_scale=task.cfg_scale,
-                )
-            elif use_vendor_vidu:
-                # Use Vidu model (cached)
-                if self._vidu_model is None:
-                    from ...models.vidu import ViduModel
-                    self._vidu_model = ViduModel({})
-                video_path, _ = self._vidu_model.generate(
-                    prompt=task.prompt,
-                    output_path=output_path,
-                    img_url=img_url,
-                    img_path=img_path,
-                    duration=task.duration,
-                    model=task.model,
-                    resolution=task.resolution,
-                    aspect_ratio="16:9",
-                    seed=task.seed or 0,
-                    audio=task.vidu_audio if task.vidu_audio is not None else True,
-                    movement_amplitude=task.movement_amplitude or "auto",
-                )
-            else:
-                # Default: Wanx model
-                video_path, _ = self.video_generator.model.generate(
-                    prompt=task.prompt,
-                    output_path=output_path,
-                    img_path=img_path,
-                    img_url=img_url,
-                    duration=task.duration,
-                    seed=task.seed,
-                    resolution=task.resolution,
-                    # Pass new params
                     audio_url=final_audio_url,
-                    audio=final_generate_audio,
-                    prompt_extend=task.prompt_extend,
-                    negative_prompt=task.negative_prompt,
-                    model=task.model,
-                    shot_type=task.shot_type,
-                    ref_video_urls=task.reference_video_urls if task.generation_mode == "r2v" else None,
-                    camera_motion=None,
-                    subject_motion=None
+                    generate_audio=final_generate_audio,
                 )
+            )
             
             task.video_url = os.path.relpath(output_path, self.data_root)
             task.status = "completed"

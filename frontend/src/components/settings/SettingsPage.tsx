@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Save, Loader2, Key, ChevronDown, ChevronRight, Settings, MessageSquareCode,
   Cpu, Database, ShieldCheck, Image, Video, Layout, Check, User as UserIcon, Building, Box,
+  Sparkles,
 } from "lucide-react";
-import { me as meApi } from "@/lib/api";
-import { T2I_MODELS, I2I_MODELS, I2V_MODELS, ASPECT_RATIOS } from "@/store/projectStore";
+import { me as meApi, type LLMPresetDTO } from "@/lib/api";
+import { ASPECT_RATIOS } from "@/store/projectStore";
+import { useModelCatalog, useModelsByCapability } from "@/hooks/useModelCatalog";
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -28,6 +30,11 @@ interface MyCreds {
   VIDU_PROVIDER_MODE: ProviderMode;
   VIDU_API_KEY: string;
   PIXVERSE_PROVIDER_MODE: ProviderMode;
+  PIXVERSE_API_KEY: string;
+  DOUBAO_PROVIDER_MODE: ProviderMode;
+  DOUBAO_API_KEY: string;
+  HAILUO_PROVIDER_MODE: ProviderMode;
+  HAILUO_API_KEY: string;
   // Endpoint overrides
   DASHSCOPE_BASE_URL: string;
   KLING_BASE_URL: string;
@@ -54,6 +61,11 @@ const DEFAULT_CREDS: MyCreds = {
   VIDU_PROVIDER_MODE: "dashscope",
   VIDU_API_KEY: "",
   PIXVERSE_PROVIDER_MODE: "dashscope",
+  PIXVERSE_API_KEY: "",
+  DOUBAO_PROVIDER_MODE: "vendor",
+  DOUBAO_API_KEY: "",
+  HAILUO_PROVIDER_MODE: "vendor",
+  HAILUO_API_KEY: "",
   DASHSCOPE_BASE_URL: "",
   KLING_BASE_URL: "",
   VIDU_BASE_URL: "",
@@ -78,6 +90,8 @@ const merge = (base: MyCreds, raw: Record<string, string>): MyCreds => ({
   KLING_PROVIDER_MODE: PROVIDER_MODE(raw.KLING_PROVIDER_MODE ?? base.KLING_PROVIDER_MODE),
   VIDU_PROVIDER_MODE: PROVIDER_MODE(raw.VIDU_PROVIDER_MODE ?? base.VIDU_PROVIDER_MODE),
   PIXVERSE_PROVIDER_MODE: PROVIDER_MODE(raw.PIXVERSE_PROVIDER_MODE ?? base.PIXVERSE_PROVIDER_MODE),
+  DOUBAO_PROVIDER_MODE: PROVIDER_MODE(raw.DOUBAO_PROVIDER_MODE ?? base.DOUBAO_PROVIDER_MODE),
+  HAILUO_PROVIDER_MODE: PROVIDER_MODE(raw.HAILUO_PROVIDER_MODE ?? base.HAILUO_PROVIDER_MODE),
   STORAGE_PROVIDER: STORAGE_MODE(raw.STORAGE_PROVIDER ?? base.STORAGE_PROVIDER),
 });
 
@@ -130,6 +144,136 @@ function loadFromLS<T>(key: string, fallback: T): T {
   }
 }
 
+type ModelCardLite = {
+  id: string;
+  display_name: string;
+  description: string;
+  badges: string[];
+  available: boolean;
+};
+
+const ACCENTS = {
+  green: { border: "border-green-500/50 bg-green-500/10", check: "text-green-400" },
+  blue: { border: "border-blue-500/50 bg-blue-500/10", check: "text-blue-400" },
+  purple: { border: "border-purple-500/50 bg-purple-500/10", check: "text-purple-400" },
+} as const;
+
+const BADGE_STYLES: Record<string, string> = {
+  recommended: "bg-amber-500/20 text-amber-200 border-amber-500/40",
+  new: "bg-emerald-500/20 text-emerald-200 border-emerald-500/40",
+  preview: "bg-violet-500/20 text-violet-200 border-violet-500/40",
+  fast: "bg-sky-500/20 text-sky-200 border-sky-500/40",
+  premium: "bg-rose-500/20 text-rose-200 border-rose-500/40",
+  "open-source": "bg-slate-500/20 text-slate-200 border-slate-500/40",
+};
+
+/**
+ * Renders a uniform 2-column model picker grid. Used for T2I / I2I / I2V.
+ * Pulled out so adding/removing capabilities does not duplicate JSX.
+ */
+function ModelGrid({
+  models,
+  activeId,
+  onPick,
+  accent,
+  className,
+}: {
+  models: ModelCardLite[];
+  activeId: string;
+  onPick: (id: string) => void;
+  accent: keyof typeof ACCENTS;
+  className?: string;
+}) {
+  const a = ACCENTS[accent];
+  return (
+    <div className={`grid grid-cols-2 gap-2 ${className ?? ""}`}>
+      {models.map((m) => {
+        const active = activeId === m.id;
+        return (
+          <button
+            key={m.id}
+            type="button"
+            onClick={() => m.available && onPick(m.id)}
+            disabled={!m.available}
+            className={`relative flex flex-col items-start p-3 rounded-lg border transition-all text-left ${active ? a.border : "border-white/10 hover:border-white/20 bg-white/5"} ${m.available ? "" : "opacity-50 cursor-not-allowed"}`}
+            title={m.available ? "" : "尚未启用,需要供应商凭证"}
+          >
+            {active && <div className="absolute top-2 right-2"><Check size={14} className={a.check} /></div>}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-sm font-medium text-white">{m.display_name}</span>
+              {m.badges.map((b) => (
+                <span key={b} className={`px-1.5 py-0.5 text-[9px] rounded border ${BADGE_STYLES[b] ?? "bg-white/10 text-gray-300 border-white/10"}`}>
+                  {b}
+                </span>
+              ))}
+            </div>
+            <span className="text-xs text-gray-500 line-clamp-2 mt-1">{m.description}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Combobox-ish input: free text + chip list of suggestions from the active
+ * preset. Lets users either pick a known model or type a custom one.
+ */
+function SuggestedModelInput({
+  value,
+  onChange,
+  suggestions,
+  inputClass,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  suggestions: string[];
+  inputClass: string;
+}) {
+  return (
+    <div className="space-y-2">
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={suggestions[0] ?? "gpt-4o"}
+        className={inputClass}
+      />
+      {suggestions.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {suggestions.map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => onChange(m)}
+              className={`px-2 py-1 text-[11px] rounded border transition-colors ${value === m ? "border-emerald-500/60 bg-emerald-500/15 text-emerald-200" : "border-white/10 bg-white/5 text-gray-400 hover:text-gray-200"}`}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Best-effort match of the saved LLM creds back to one of the catalog presets,
+ * so the UI can highlight the preset the user is currently using. Returns the
+ * preset id, or empty string for "custom / manual".
+ */
+function detectPreset(creds: MyCreds, presets: LLMPresetDTO[]): string {
+  if (creds.LLM_PROVIDER === "dashscope") {
+    return presets.find((p) => p.provider === "dashscope")?.id ?? "";
+  }
+  const baseUrl = (creds.OPENAI_BASE_URL || "").replace(/\/+$/, "");
+  if (!baseUrl) return "";
+  const match = presets.find(
+    (p) => p.provider === "openai" && p.base_url.replace(/\/+$/, "") === baseUrl,
+  );
+  return match?.id ?? "";
+}
+
 // ── Component ────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
@@ -138,6 +282,14 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [endpointsOpen, setEndpointsOpen] = useState(false);
+  const [advancedProvidersOpen, setAdvancedProvidersOpen] = useState(false);
+
+  // Pulled from backend `/registry/models` so dropdowns and LLM presets are
+  // driven by the canonical catalog instead of duplicated hardcoded lists.
+  const { presets: llmPresets, aspectRatios } = useModelCatalog();
+  const t2iModels = useModelsByCapability("t2i").models;
+  const i2iModels = useModelsByCapability("i2i").models;
+  const i2vModels = useModelsByCapability("i2v").models;
 
   const [modelSettings, setModelSettings] = useState<DefaultModelSettings>(() =>
     loadFromLS(LS_KEY_MODEL, {
@@ -207,6 +359,20 @@ export default function SettingsPage() {
     alert("默认 prompt 已保存");
   };
 
+  // Selecting an LLM preset auto-fills LLM_PROVIDER + suggested base URL/model.
+  // The user only needs to paste the API key. Empty preset (`""`) = manual edit.
+  const activePresetId = useMemo(() => detectPreset(creds, llmPresets), [creds, llmPresets]);
+  const handleSelectPreset = (preset: LLMPresetDTO) => {
+    setCreds((prev) => ({
+      ...prev,
+      LLM_PROVIDER: preset.provider,
+      OPENAI_BASE_URL: preset.provider === "openai" ? preset.base_url : "",
+      OPENAI_MODEL: preset.suggested_models[0] ?? prev.OPENAI_MODEL,
+    }));
+  };
+
+  const showAspectRatios = aspectRatios.length > 0 ? aspectRatios : ASPECT_RATIOS;
+
   const inputClass =
     "w-full bg-black/30 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-primary/50 transition-colors";
   const modeButton = (active: boolean) =>
@@ -254,28 +420,49 @@ export default function SettingsPage() {
               <input type="password" value={creds.DASHSCOPE_API_KEY} onChange={(e) => handleChange("DASHSCOPE_API_KEY", e.target.value)} placeholder="DashScope-first 默认密钥" className={inputClass} />
             </div>
 
-            {/* LLM Provider */}
+            {/* LLM Provider — preset-driven selector. Preset = one click. */}
             <div className="pt-4 border-t border-white/10">
               <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2"><Cpu size={14} className="text-emerald-400" /> LLM Provider</h3>
-              <p className="text-[10px] text-gray-500 mb-4">用于剧本分析和 prompt 润色。默认 DashScope，复用上方 Key</p>
+              <p className="text-[10px] text-gray-500 mb-4">用于剧本分析和 prompt 润色。点击预设即可一键填充 Base URL 和推荐模型</p>
               <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={() => handleChange("LLM_PROVIDER", "dashscope")} className={modeButton(creds.LLM_PROVIDER === "dashscope")}>DashScope（默认）</button>
-                  <button type="button" onClick={() => handleChange("LLM_PROVIDER", "openai")} className={modeButton(creds.LLM_PROVIDER === "openai")}>OpenAI 兼容</button>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  {llmPresets.map((preset) => {
+                    const active = activePresetId === preset.id;
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => handleSelectPreset(preset)}
+                        className={`relative flex flex-col items-start p-3 rounded-lg border transition-all text-left ${active ? "border-emerald-500/60 bg-emerald-500/10" : "border-white/10 hover:border-white/20 bg-white/5"}`}
+                      >
+                        {active && <div className="absolute top-2 right-2"><Check size={14} className="text-emerald-400" /></div>}
+                        <span className="text-sm font-medium text-white flex items-center gap-1.5">
+                          {preset.badges.includes("recommended") && <Sparkles size={12} className="text-amber-400" />}
+                          {preset.display_name}
+                        </span>
+                        <span className="text-xs text-gray-500 line-clamp-2">{preset.description}</span>
+                      </button>
+                    );
+                  })}
                 </div>
                 {creds.LLM_PROVIDER === "openai" && (
                   <>
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-2">OpenAI API Key <span className="text-red-500">*</span></label>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">API Key <span className="text-red-500">*</span></label>
                       <input type="password" value={creds.OPENAI_API_KEY} onChange={(e) => handleChange("OPENAI_API_KEY", e.target.value)} placeholder="sk-... 或 ollama" className={inputClass} />
                     </div>
                     <div>
-                      <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2"><span>OpenAI Base URL</span><span className="text-gray-600 font-normal text-xs">留空则用 https://api.openai.com/v1</span></label>
-                      <input type="text" value={creds.OPENAI_BASE_URL} onChange={(e) => handleChange("OPENAI_BASE_URL", e.target.value)} placeholder="https://api.deepseek.com/v1" className={inputClass} />
+                      <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2"><span>Base URL</span><span className="text-gray-600 font-normal text-xs">留空则用 https://api.openai.com/v1</span></label>
+                      <input type="text" value={creds.OPENAI_BASE_URL} onChange={(e) => handleChange("OPENAI_BASE_URL", e.target.value)} placeholder="https://api.openai.com/v1" className={inputClass} />
                     </div>
                     <div>
-                      <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2"><span>OpenAI Model</span><span className="text-gray-600 font-normal text-xs">e.g. gpt-4o, deepseek-chat</span></label>
-                      <input type="text" value={creds.OPENAI_MODEL} onChange={(e) => handleChange("OPENAI_MODEL", e.target.value)} placeholder="gpt-4o" className={inputClass} />
+                      <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2"><span>Model</span><span className="text-gray-600 font-normal text-xs">来自所选预设</span></label>
+                      <SuggestedModelInput
+                        value={creds.OPENAI_MODEL}
+                        onChange={(v) => handleChange("OPENAI_MODEL", v)}
+                        suggestions={llmPresets.find((p) => p.id === activePresetId)?.suggested_models ?? []}
+                        inputClass={inputClass}
+                      />
                     </div>
                   </>
                 )}
@@ -320,6 +507,57 @@ export default function SettingsPage() {
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Advanced video providers — Pixverse / Doubao Seedance / Hailuo. */}
+            <div className="pt-4 border-t border-white/10">
+              <button type="button" onClick={() => setAdvancedProvidersOpen((v) => !v)} className="flex items-center gap-2 text-sm font-medium text-gray-400 hover:text-gray-200 transition-colors">
+                {advancedProvidersOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                高级视频供应商 (Pixverse / Doubao / Hailuo)
+              </button>
+              {advancedProvidersOpen && (
+                <div className="mt-4 space-y-4">
+                  {/* Pixverse */}
+                  <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-bold text-white">Pixverse</h4>
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={() => handleChange("PIXVERSE_PROVIDER_MODE", "dashscope")} className={modeButton(creds.PIXVERSE_PROVIDER_MODE === "dashscope")}>DashScope</button>
+                        <button type="button" onClick={() => handleChange("PIXVERSE_PROVIDER_MODE", "vendor")} className={modeButton(creds.PIXVERSE_PROVIDER_MODE === "vendor")}>Vendor Direct</button>
+                      </div>
+                    </div>
+                    {creds.PIXVERSE_PROVIDER_MODE === "vendor" && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-300 mb-2">Pixverse API Key <span className="text-red-500">*</span></label>
+                        <input type="password" value={creds.PIXVERSE_API_KEY} onChange={(e) => handleChange("PIXVERSE_API_KEY", e.target.value)} placeholder="Pixverse API Key" className={inputClass} />
+                      </div>
+                    )}
+                  </div>
+                  {/* Doubao Seedance */}
+                  <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-bold text-white">字节豆包 Seedance</h4>
+                      <span className="text-[10px] text-violet-300 px-2 py-0.5 rounded border border-violet-500/40 bg-violet-500/10">preview</span>
+                    </div>
+                    <p className="text-[10px] text-gray-500">仅 vendor-direct 接入,DashScope 暂未上线。配置后即可在 I2V 列表选择。</p>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Doubao API Key</label>
+                      <input type="password" value={creds.DOUBAO_API_KEY} onChange={(e) => handleChange("DOUBAO_API_KEY", e.target.value)} placeholder="Doubao API Key (Volcano Engine)" className={inputClass} />
+                    </div>
+                  </div>
+                  {/* Hailuo */}
+                  <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-bold text-white">MiniMax Hailuo 海螺</h4>
+                      <span className="text-[10px] text-violet-300 px-2 py-0.5 rounded border border-violet-500/40 bg-violet-500/10">preview</span>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Hailuo API Key</label>
+                      <input type="password" value={creds.HAILUO_API_KEY} onChange={(e) => handleChange("HAILUO_API_KEY", e.target.value)} placeholder="MiniMax Hailuo API Key" className={inputClass} />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Object storage */}
@@ -416,15 +654,12 @@ export default function SettingsPage() {
 
         <div className="space-y-5">
           <div className="flex items-center gap-2 text-sm font-bold text-white"><Image size={16} className="text-green-400" /><span>Text-to-Image</span></div>
-          <div className="grid grid-cols-2 gap-2">
-            {T2I_MODELS.map((model) => (
-              <button key={model.id} onClick={() => setModelSettings((s) => ({ ...s, t2i_model: model.id }))} className={`relative flex flex-col items-start p-3 rounded-lg border transition-all text-left ${modelSettings.t2i_model === model.id ? "border-green-500/50 bg-green-500/10" : "border-white/10 hover:border-white/20 bg-white/5"}`}>
-                {modelSettings.t2i_model === model.id && <div className="absolute top-2 right-2"><Check size={14} className="text-green-400" /></div>}
-                <span className="text-sm font-medium text-white">{model.name}</span>
-                <span className="text-xs text-gray-500">{model.description}</span>
-              </button>
-            ))}
-          </div>
+          <ModelGrid
+            models={t2iModels}
+            activeId={modelSettings.t2i_model}
+            onPick={(id) => setModelSettings((s) => ({ ...s, t2i_model: id }))}
+            accent="green"
+          />
 
           <div className="grid grid-cols-3 gap-4">
             {([
@@ -435,7 +670,7 @@ export default function SettingsPage() {
               <div key={key} className="space-y-2">
                 <div className="flex items-center gap-1 text-xs text-gray-400"><Icon size={12} /><label>{label}</label></div>
                 <div className="space-y-1">
-                  {ASPECT_RATIOS.map((ratio) => (
+                  {showAspectRatios.map((ratio) => (
                     <button key={ratio.id} onClick={() => setModelSettings((s) => ({ ...s, [key]: ratio.id }))} className={`w-full flex flex-col items-center py-2 px-2 rounded border transition-all ${modelSettings[key] === ratio.id ? "border-green-500/50 bg-green-500/10" : "border-white/10 hover:border-white/20 bg-white/5"}`}>
                       <span className="text-xs font-medium text-white">{ratio.name}</span>
                     </button>
@@ -447,28 +682,24 @@ export default function SettingsPage() {
 
           <div className="border-t border-white/10 pt-4">
             <div className="flex items-center gap-2 text-sm font-bold text-white"><Layout size={16} className="text-blue-400" /><span>Storyboard (I2I)</span></div>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              {I2I_MODELS.map((model) => (
-                <button key={model.id} onClick={() => setModelSettings((s) => ({ ...s, i2i_model: model.id }))} className={`relative flex flex-col items-start p-3 rounded-lg border transition-all text-left ${modelSettings.i2i_model === model.id ? "border-blue-500/50 bg-blue-500/10" : "border-white/10 hover:border-white/20 bg-white/5"}`}>
-                  {modelSettings.i2i_model === model.id && <div className="absolute top-2 right-2"><Check size={14} className="text-blue-400" /></div>}
-                  <span className="text-sm font-medium text-white">{model.name}</span>
-                  <span className="text-xs text-gray-500">{model.description}</span>
-                </button>
-              ))}
-            </div>
+            <ModelGrid
+              models={i2iModels}
+              activeId={modelSettings.i2i_model}
+              onPick={(id) => setModelSettings((s) => ({ ...s, i2i_model: id }))}
+              accent="blue"
+              className="mt-3"
+            />
           </div>
 
           <div className="border-t border-white/10 pt-4">
             <div className="flex items-center gap-2 text-sm font-bold text-white"><Video size={16} className="text-purple-400" /><span>Motion (I2V)</span></div>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              {I2V_MODELS.map((model) => (
-                <button key={model.id} onClick={() => setModelSettings((s) => ({ ...s, i2v_model: model.id }))} className={`relative flex flex-col items-start p-3 rounded-lg border transition-all text-left ${modelSettings.i2v_model === model.id ? "border-purple-500/50 bg-purple-500/10" : "border-white/10 hover:border-white/20 bg-white/5"}`}>
-                  {modelSettings.i2v_model === model.id && <div className="absolute top-2 right-2"><Check size={14} className="text-purple-400" /></div>}
-                  <span className="text-sm font-medium text-white">{model.name}</span>
-                  <span className="text-xs text-gray-500">{model.description}</span>
-                </button>
-              ))}
-            </div>
+            <ModelGrid
+              models={i2vModels}
+              activeId={modelSettings.i2v_model}
+              onPick={(id) => setModelSettings((s) => ({ ...s, i2v_model: id }))}
+              accent="purple"
+              className="mt-3"
+            />
           </div>
         </div>
 

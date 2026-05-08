@@ -193,6 +193,27 @@ async def serve_user_file_alias(rel_path: str):
     multi-user nature. Behavior identical to /files."""
     return await serve_user_file(rel_path)
 
+# ── Model catalog registry (single source of truth for FE dropdowns) ─────
+# Backed by ``src.utils.model_catalog`` — adding a new model is just a card.
+
+@app.get("/registry/models")
+async def list_registered_models(capability: Optional[str] = None):
+    """Return the curated model catalog.
+
+    Optional ``capability`` filter: ``t2i`` | ``i2i`` | ``i2v`` | ``t2v`` |
+    ``r2v`` | ``tts`` | ``llm``. When omitted, returns the full catalog.
+    """
+    from ...utils.model_catalog import get_default_catalog
+    return get_default_catalog().serialize(capability=capability)
+
+
+@app.get("/registry/llm-presets")
+async def list_llm_presets():
+    """Return the LLM provider presets shown in the Settings dropdown."""
+    from ...utils.model_catalog import get_default_catalog
+    return {"presets": get_default_catalog().serialize()["presets"]}
+
+
 @app.get("/debug/config")
 async def debug_config(_admin: _AuthUser = Depends(require_admin)):
     """Admin-only diagnostic endpoint to check OSS and path configuration."""

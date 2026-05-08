@@ -998,3 +998,66 @@ export const crudApi = {
         return res.data;
     }
 };
+
+
+// ── Model registry (single-source-of-truth catalog) ──────────────────────
+//
+// Backed by GET /registry/models on the backend (see src/utils/model_catalog.py).
+// The dropdowns in the Settings page render these. Hardcoded fallbacks live in
+// frontend/src/store/projectStore.ts so the UI still works offline / on first
+// load before the network round-trip.
+
+export type ModelCapability = "t2i" | "i2i" | "i2v" | "t2v" | "r2v" | "tts" | "llm";
+
+export interface ModelCardDTO {
+    id: string;
+    family: string;
+    display_name: string;
+    description: string;
+    capabilities: ModelCapability[];
+    provider_key: string;
+    requires_credentials: string[];
+    params?: Record<string, unknown>;
+    available: boolean;
+    badges: string[];
+}
+
+export interface LLMPresetDTO {
+    id: string;
+    provider: "dashscope" | "openai";
+    display_name: string;
+    description: string;
+    base_url: string;
+    suggested_models: string[];
+    api_key_env: string;
+    docs_url: string;
+    badges: string[];
+}
+
+export interface AspectRatioDTO {
+    id: string;
+    name: string;
+    description: string;
+}
+
+export interface ModelCatalogDTO {
+    cards: ModelCardDTO[];
+    presets: LLMPresetDTO[];
+    aspect_ratios: AspectRatioDTO[];
+}
+
+export const registry = {
+    getCatalog: async (capability?: ModelCapability): Promise<ModelCatalogDTO> => {
+        const url = capability
+            ? `${API_URL}/registry/models?capability=${capability}`
+            : `${API_URL}/registry/models`;
+        const response = await authedFetch(url);
+        if (!response.ok) throw new Error("Failed to fetch model catalog");
+        return response.json();
+    },
+    getLLMPresets: async (): Promise<{ presets: LLMPresetDTO[] }> => {
+        const response = await authedFetch(`${API_URL}/registry/llm-presets`);
+        if (!response.ok) throw new Error("Failed to fetch LLM presets");
+        return response.json();
+    },
+};

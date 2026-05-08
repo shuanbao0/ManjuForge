@@ -46,6 +46,16 @@ ALLOWED_KEYS: frozenset[str] = frozenset(
         "VIDU_API_KEY",
         "VIDU_BASE_URL",
         "PIXVERSE_PROVIDER_MODE",
+        "PIXVERSE_API_KEY",
+        "PIXVERSE_BASE_URL",
+        # ByteDance Doubao Seedance (vendor-direct only).
+        "DOUBAO_PROVIDER_MODE",
+        "DOUBAO_API_KEY",
+        "DOUBAO_BASE_URL",
+        # MiniMax Hailuo 海螺 (vendor-direct only).
+        "HAILUO_PROVIDER_MODE",
+        "HAILUO_API_KEY",
+        "HAILUO_BASE_URL",
         # Object storage (P4) — provider-agnostic S3 fields
         "STORAGE_PROVIDER",       # minio | aliyun_oss | local_only
         "STORAGE_ENDPOINT",
@@ -72,6 +82,9 @@ SECRET_KEYS: frozenset[str] = frozenset(
         "KLING_ACCESS_KEY",
         "KLING_SECRET_KEY",
         "VIDU_API_KEY",
+        "PIXVERSE_API_KEY",
+        "DOUBAO_API_KEY",
+        "HAILUO_API_KEY",
         "STORAGE_ACCESS_KEY",
         "STORAGE_SECRET_KEY",
         "ALIBABA_CLOUD_ACCESS_KEY_ID",

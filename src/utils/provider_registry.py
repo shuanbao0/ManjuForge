@@ -63,6 +63,23 @@ class ProviderRegistry:
 
 DEFAULT_PROVIDER_FAMILIES: Tuple[ProviderFamilyConfig, ...] = (
     ProviderFamilyConfig(
+        model_family="wan2.7-",
+        backend_default="dashscope",
+        credential_sources={
+            "dashscope": ("DASHSCOPE_API_KEY",),
+        },
+        supported_modalities=("t2i", "i2i", "i2v", "r2v"),
+        image_input_mode={
+            "dashscope": "dashscope_multimodal_message",
+        },
+        audio_input_mode={
+            "dashscope": "dashscope_temp_file_url",
+        },
+        reference_video_input_mode={
+            "dashscope": "dashscope_temp_file_url",
+        },
+    ),
+    ProviderFamilyConfig(
         model_family="wan2.6-",
         backend_default="dashscope",
         credential_sources={
@@ -78,6 +95,25 @@ DEFAULT_PROVIDER_FAMILIES: Tuple[ProviderFamilyConfig, ...] = (
         reference_video_input_mode={
             "dashscope": "dashscope_temp_file_url",
         },
+    ),
+    ProviderFamilyConfig(
+        model_family="wan2.5-",
+        backend_default="dashscope",
+        credential_sources={
+            "dashscope": ("DASHSCOPE_API_KEY",),
+        },
+        supported_modalities=("t2i", "i2i", "i2v"),
+        image_input_mode={
+            "dashscope": "dashscope_multimodal_message",
+        },
+    ),
+    ProviderFamilyConfig(
+        model_family="wan2.2-",
+        backend_default="dashscope",
+        credential_sources={
+            "dashscope": ("DASHSCOPE_API_KEY",),
+        },
+        supported_modalities=("t2i", "i2v"),
     ),
     ProviderFamilyConfig(
         model_family="kling-",
@@ -143,6 +179,57 @@ DEFAULT_PROVIDER_FAMILIES: Tuple[ProviderFamilyConfig, ...] = (
         reference_video_input_mode={
             "dashscope": "dashscope_temp_file_url",
             "vendor": "pixverse_vendor_video_url",
+        },
+    ),
+    # ── DashScope-hosted image generation families (T2I / I2I) ────────────
+    ProviderFamilyConfig(
+        model_family="qwen-image",
+        backend_default="dashscope",
+        credential_sources={
+            "dashscope": ("DASHSCOPE_API_KEY",),
+        },
+        supported_modalities=("t2i", "i2i"),
+        image_input_mode={
+            "dashscope": "dashscope_multimodal_message",
+        },
+    ),
+    ProviderFamilyConfig(
+        model_family="flux-",
+        backend_default="dashscope",
+        credential_sources={
+            "dashscope": ("DASHSCOPE_API_KEY",),
+        },
+        supported_modalities=("t2i",),
+    ),
+    # ── Vendor-direct only (not yet on DashScope; client wired separately) ─
+    ProviderFamilyConfig(
+        model_family="doubao-seedance-",
+        backend_default="vendor",
+        backend_env_key="DOUBAO_PROVIDER_MODE",
+        credential_sources={
+            "vendor": ("DOUBAO_API_KEY",),
+        },
+        supported_modalities=("t2v", "i2v"),
+        image_input_mode={
+            "vendor": "doubao_vendor_image_url",
+        },
+        audio_input_mode={
+            "vendor": "doubao_vendor_audio_url",
+        },
+        reference_video_input_mode={
+            "vendor": "doubao_vendor_video_url",
+        },
+    ),
+    ProviderFamilyConfig(
+        model_family="hailuo-",
+        backend_default="vendor",
+        backend_env_key="HAILUO_PROVIDER_MODE",
+        credential_sources={
+            "vendor": ("HAILUO_API_KEY",),
+        },
+        supported_modalities=("t2v", "i2v"),
+        image_input_mode={
+            "vendor": "hailuo_vendor_image_url",
         },
     ),
 )
