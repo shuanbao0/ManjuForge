@@ -106,6 +106,46 @@ class UserCredential(Base):
     user: Mapped["User"] = relationship(back_populates="credentials")
 
 
+class ModelInstanceRow(Base):
+    """A user-configured model instance.
+
+    Concept: each row represents one usable model — pairing a vendor + a
+    specific ``model_name`` with the user's credentials and a friendly
+    label. Projects reference instances via :pyattr:`id`, so swapping a
+    project's LLM is as simple as picking a different instance id.
+
+    Credentials are stored as a Fernet-encrypted JSON blob in
+    :pyattr:`encrypted_credentials`; everything else is plain text.
+
+    The unique constraint enforces "at most one default per user per type",
+    relying on a partial index emulated at the service layer for SQLite.
+    """
+
+    __tablename__ = "model_instances"
+    __table_args__ = (
+        Index("ix_model_instances_user_type", "user_id", "instance_type"),
+        Index("ix_model_instances_user_default", "user_id", "instance_type", "is_default"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    instance_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    vendor_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    model_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    encrypted_credentials: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    base_url: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    extra_params_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime, nullable=False, default=_utcnow, onupdate=_utcnow
+    )
+
+
 class Setting(Base):
     """Instance-wide key/value flags (e.g. registration_enabled)."""
 
