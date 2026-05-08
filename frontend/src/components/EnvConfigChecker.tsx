@@ -1,40 +1,40 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import EnvConfigDialog from "@/components/project/EnvConfigDialog";
 import { api } from "@/lib/api";
+import { isAdmin, isAuthenticated, onAuthChange } from "@/lib/auth";
 
+// Probes the instance-wide environment configuration and prompts the admin
+// to fill in DASHSCOPE_API_KEY if it is missing. Per-user secrets live on
+// /me/credentials and are handled elsewhere — this checker is admin-only
+// because GET /config/env is gated by require_admin on the backend.
 export default function EnvConfigChecker() {
   const [isEnvDialogOpen, setIsEnvDialogOpen] = useState(false);
   const [envRequired, setEnvRequired] = useState(false);
-  const [hasChecked, setHasChecked] = useState(false);
 
-  useEffect(() => {
-    // 只在客户端执行，且只检查一次
-    if (typeof window === 'undefined' || hasChecked) return;
-    
-    checkEnvConfig();
-    setHasChecked(true);
-  }, [hasChecked]);
-
-  const checkEnvConfig = async () => {
+  const checkEnvConfig = useCallback(async () => {
+    if (!isAuthenticated() || !isAdmin()) return;
     try {
       const config = await api.getEnvConfig();
-      // 空值和空字符串都视为未配置
       const dashscopeKey = config.DASHSCOPE_API_KEY?.trim();
-      const hasRequired = dashscopeKey && dashscopeKey.length > 0;
-      
+      const hasRequired = !!dashscopeKey && dashscopeKey.length > 0;
       if (!hasRequired) {
         setEnvRequired(true);
         setIsEnvDialogOpen(true);
       }
     } catch (error) {
       console.error("Failed to check env config:", error);
-      // 如果API调用失败，也显示配置对话框
-      setEnvRequired(true);
-      setIsEnvDialogOpen(true);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    checkEnvConfig();
+    return onAuthChange(() => {
+      checkEnvConfig();
+    });
+  }, [checkEnvConfig]);
 
   return (
     <EnvConfigDialog
