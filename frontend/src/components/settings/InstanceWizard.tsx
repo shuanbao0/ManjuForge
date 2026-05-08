@@ -80,6 +80,20 @@ const VENDORS: VendorMeta[] = [
         credential_keys: [{ key: "OPENAI_API_KEY", label: "API Key" }],
     },
     {
+        id: "minimax",
+        label: "MiniMax (Token Plan LLM)",
+        capabilities: ["llm"],
+        suggested_models: [
+            "MiniMax-M2.7",
+            "MiniMax-M2",
+            "MiniMax-Text-01",
+            "abab6.5s-chat",
+        ],
+        default_base_url: "https://api.minimax.io/v1",
+        credential_keys: [{ key: "OPENAI_API_KEY", label: "API Key" }],
+        docs_url: "https://platform.minimaxi.com/",
+    },
+    {
         id: "zhipu",
         label: "智谱 GLM",
         capabilities: ["llm"],
