@@ -92,15 +92,24 @@ def _payload(**overrides):
 # ── CRUD ─────────────────────────────────────────────────────────────────
 
 
-def test_list_empty_for_fresh_user(client: TestClient):
+def test_setup_seeds_default_instances(client: TestClient):
+    """Onboarding creates one default ModelInstance per type so the
+    Settings UI never starts blank."""
     token = _setup_admin(client)
     r = client.get("/me/instances", headers=_bearer(token))
     assert r.status_code == 200
-    assert r.json() == []
+    instances = r.json()
+    types_seen = {i["instance_type"] for i in instances}
+    assert types_seen == {"llm", "t2i", "i2i", "i2v", "tts"}
+    assert all(i["is_default"] for i in instances)
+    # Credentials start empty — user fills them in via the wizard.
+    assert all(i["credential_keys"] == [] for i in instances)
 
 
 def test_create_then_list_and_get(client: TestClient):
     token = _setup_admin(client)
+    seeded_count = len(client.get("/me/instances", headers=_bearer(token)).json())
+
     r = client.post("/me/instances", json=_payload(), headers=_bearer(token))
     assert r.status_code == 201, r.text
     created = r.json()
@@ -111,8 +120,8 @@ def test_create_then_list_and_get(client: TestClient):
     r = client.get("/me/instances", headers=_bearer(token))
     assert r.status_code == 200
     listing = r.json()
-    assert len(listing) == 1
-    assert listing[0]["id"] == created["id"]
+    assert len(listing) == seeded_count + 1
+    assert any(i["id"] == created["id"] for i in listing)
 
     r = client.get(f"/me/instances/{created['id']}", headers=_bearer(token))
     assert r.status_code == 200
@@ -123,10 +132,12 @@ def test_filter_by_type(client: TestClient):
     token = _setup_admin(client)
     client.post("/me/instances", json=_payload(instance_type="llm"), headers=_bearer(token))
     client.post("/me/instances", json=_payload(instance_type="t2i", vendor_id="dashscope", model_name="wan2.6-t2i"), headers=_bearer(token))
+    # Seed adds 1 LLM + 1 T2I + others. Created adds 1 LLM + 1 T2I.
     r = client.get("/me/instances?type=llm", headers=_bearer(token))
     assert r.status_code == 200
-    assert len(r.json()) == 1
-    assert r.json()[0]["instance_type"] == "llm"
+    llms = r.json()
+    assert len(llms) == 2
+    assert all(i["instance_type"] == "llm" for i in llms)
 
 
 def test_create_rejects_unknown_type(client: TestClient):

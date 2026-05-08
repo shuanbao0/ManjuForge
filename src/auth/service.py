@@ -119,6 +119,7 @@ def bootstrap_admin(session: Session, payload: schemas.SetupRequest) -> User:
     )
     session.add(user)
     session.flush()
+    _seed_default_instances(session, user.id)
     logger.info("bootstrap_admin: created admin id=%s email=%s", user.id, user.email)
     return user
 
@@ -166,7 +167,45 @@ def admin_create_user(session: Session, payload: schemas.CreateUserRequest) -> U
     )
     session.add(user)
     session.flush()
+    _seed_default_instances(session, user.id)
     return user
+
+
+def _seed_default_instances(session: Session, user_id: int) -> None:
+    """Create empty default ModelInstances for new users.
+
+    Each instance starts with no credentials — the user fills them in
+    Settings. The point is to give the FE something to render on first
+    load so the UI never starts from "completely empty" state. Failures
+    are non-fatal: user creation must succeed even if seeding does not.
+    """
+    try:
+        from ..models.instance import InstanceType, ModelInstance
+        from ..models.instance_repository import InstanceRepository
+
+        repo = InstanceRepository(session)
+        seeds = [
+            (InstanceType.LLM, "dashscope", "qwen3.5-plus", "DashScope Qwen"),
+            (InstanceType.T2I, "dashscope", "wan2.6-t2i", "Wan 2.6 T2I"),
+            (InstanceType.I2I, "dashscope", "wan2.6-image", "Wan 2.6 I2I"),
+            (InstanceType.I2V, "dashscope", "wan2.6-i2v", "Wan 2.6 I2V"),
+            (InstanceType.TTS, "dashscope", "cosyvoice-v3-flash", "CosyVoice"),
+        ]
+        for itype, vendor, model_name, label in seeds:
+            repo.create(
+                ModelInstance(
+                    id=ModelInstance.new_id(),
+                    user_id=user_id,
+                    instance_type=itype,
+                    vendor_id=vendor,
+                    model_name=model_name,
+                    display_name=label,
+                    credentials={},
+                    is_default=True,
+                )
+            )
+    except Exception:
+        logger.exception("failed to seed default instances for user %s", user_id)
 
 
 def admin_update_user(session: Session, user_id: int, payload: schemas.UpdateUserRequest) -> User:

@@ -99,6 +99,26 @@ def test_setup_validates_password_min_length(client: TestClient):
     assert r.status_code == 422
 
 
+def test_setup_seeds_default_model_instances(client: TestClient):
+    """Onboarding should pre-create one default ModelInstance per generation
+    type so the Settings page never lands on a blank screen."""
+    r = client.post("/auth/setup", json={"email": "a@b.com", "password": "pw12345678"})
+    assert r.status_code == 201
+    token = r.json()["access_token"]
+
+    # Need to register the /me routes for this client (test_auth fixture
+    # only mounts auth/admin). Pull instances from a dedicated client.
+    from src.auth import me_routes as me_routes_module
+    # The app fixture didn't include me_routes; assert via DB directly.
+    from src.auth.db import session_scope
+    from src.auth.models import ModelInstanceRow
+
+    with session_scope() as s:
+        rows = s.query(ModelInstanceRow).all()
+        types_seeded = {r.instance_type for r in rows}
+    assert types_seeded == {"llm", "t2i", "i2i", "i2v", "tts"}
+
+
 # ── Login flow ────────────────────────────────────────────────────────────
 
 
