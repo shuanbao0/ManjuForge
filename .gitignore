@@ -83,6 +83,10 @@ logs/
 # Secrets (extra safety)
 *secret*
 *credential*
+# ...but Python source files named `secrets.py` / `credentials.py` are code,
+# not secret dumps — don't accidentally ignore them.
+!*secrets.py
+!*credentials.py
 *.pem
 *.key
 !*.pub.key
