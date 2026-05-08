@@ -55,8 +55,12 @@ logger.info(f"STARTUP: OSS_ENDPOINT={os.getenv('OSS_ENDPOINT')}, OSS_BUCKET_NAME
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify the frontend origin
-    allow_credentials=True,
+    allow_origins=["*"],
+    # ``allow_credentials=True`` would be invalid per CORS spec when origin
+    # is ``*`` and the browser would reject the response. Auth uses Bearer
+    # tokens in the Authorization header (no cookies), so we don't need
+    # credentialed requests anyway.
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["Content-Disposition"],  # Allow browsers to access Content-Disposition for downloads

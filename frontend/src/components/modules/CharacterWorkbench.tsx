@@ -634,9 +634,7 @@ function WorkbenchPanel({
                             </p>
                             {reverseReferenceUrl && (
                                 <img
-                                    src={typeof reverseReferenceUrl === 'string' && reverseReferenceUrl.startsWith('http')
-                                        ? reverseReferenceUrl
-                                        : `${window.location.origin}/${reverseReferenceUrl}`}
+                                    src={getAssetUrl(reverseReferenceUrl)}
                                     alt="Reference"
                                     className="w-16 h-16 rounded-lg object-cover border border-white/20"
                                 />
