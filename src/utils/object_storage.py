@@ -64,6 +64,14 @@ class StorageConfig:
         )
         bucket = get_cred("STORAGE_BUCKET") or get_cred("OSS_BUCKET_NAME") or ""
         prefix = (get_cred("STORAGE_PATH_PREFIX") or get_cred("OSS_BASE_PATH") or "manju-forge").strip("/")
+        # Multi-tenant key scoping: anchor every object under
+        # ``<prefix>/users/<uid>``. Without this, two users sharing one bucket
+        # (the deploy-compose default — MinIO root creds + single bucket)
+        # can read each other's data by guessing object keys, since the
+        # presigned-URL endpoint signs anything in the bucket.
+        uid = current_user_id()
+        if uid is not None:
+            prefix = f"{prefix}/users/{uid}"
         region = get_cred("STORAGE_REGION") or "us-east-1"
 
         # Normalise endpoint for Aliyun OSS: "oss-cn-beijing.aliyuncs.com" → full URL

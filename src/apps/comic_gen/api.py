@@ -156,9 +156,19 @@ async def serve_user_file(rel_path: str):
         if _is_object_key(rel_path):
             client = ObjectStorageClient.for_current_user()
             if client.is_configured:
+                # Defense in depth: the path_prefix already includes
+                # ``users/<uid>`` so signing is scoped, but reject
+                # cross-tenant keys explicitly to avoid surprising callers
+                # if the prefix logic is ever changed.
+                user_prefix = client.config.path_prefix.rstrip("/")
+                normalized = rel_path.lstrip("/")
+                if user_prefix and not normalized.startswith(user_prefix + "/") and normalized != user_prefix:
+                    raise HTTPException(status_code=403, detail="object key outside current user's namespace")
                 url = client.presigned_get_url(rel_path)
                 if url:
                     return RedirectResponse(url, status_code=302)
+    except HTTPException:
+        raise
     except Exception:
         # Fall through to local-disk handling below.
         pass

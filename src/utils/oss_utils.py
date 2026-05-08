@@ -164,11 +164,17 @@ class OSSImageUploader:
     
     def _build_object_key(self, sub_path: str, filename: str) -> str:
         """
-        Build full Object Key from base path, sub path, and filename.
-        
-        Example: manju-forge/proj_123/assets/characters/char_001.png
+        Build full Object Key from base path, sub path, and filename, scoped
+        to the current user's namespace so two users sharing one bucket can't
+        read each other's data via guessable keys.
+
+        Example: manju-forge/users/42/proj_123/assets/characters/char_001.png
         """
         parts = [self.base_path]
+        from src.runtime import current_user_id
+        uid = current_user_id()
+        if uid is not None:
+            parts.append(f"users/{uid}")
         if sub_path:
             parts.append(sub_path.strip("/"))
         parts.append(filename)
