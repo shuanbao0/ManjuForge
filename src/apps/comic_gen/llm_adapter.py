@@ -1,21 +1,34 @@
 """
-LLM Adapter - Unified interface for DashScope and OpenAI-compatible APIs.
+LLM Adapter - Unified OpenAI-compatible client for any LLM vendor.
 
-Supports two providers:
-  - dashscope (default): Alibaba Cloud DashScope via OpenAI-compatible endpoint
-  - openai: Any OpenAI-compatible API (OpenAI, DeepSeek, Ollama, etc.)
+Now driven by :class:`ModelInstance` injected via ``with_instance(...)``.
+When an instance is bound:
+  - ``model_name`` comes from ``instance.model_name``
+  - ``base_url`` comes from ``instance.base_url`` (or vendor default)
+  - API key comes from ``instance.credentials`` (OPENAI_API_KEY or
+    DASHSCOPE_API_KEY depending on vendor)
 
-Credentials are resolved per-request via :mod:`src.runtime` so each user
-has their own ``LLM_PROVIDER`` / ``DASHSCOPE_API_KEY`` / ``OPENAI_*``.
-Outside a request the helpers fall back to the process environment.
+When no instance is bound (CLI / tests) the adapter falls back to env vars
+so existing scripts keep working.
 """
 import logging
 from typing import Dict, List, Optional, Any
 
-from src.runtime import get_cred
+from src.runtime import current_instance, get_cred
 from ...utils.endpoints import get_provider_base_url
 
 logger = logging.getLogger(__name__)
+
+
+_VENDOR_BASE_URLS = {
+    "openai": "https://api.openai.com/v1",
+    "anthropic": "https://api.anthropic.com/v1",
+    "deepseek": "https://api.deepseek.com/v1",
+    "moonshot": "https://api.moonshot.cn/v1",
+    "zhipu": "https://open.bigmodel.cn/api/paas/v4",
+    "google": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "ollama": "http://localhost:11434/v1",
+}
 
 
 class LLMAdapter:
@@ -28,16 +41,31 @@ class LLMAdapter:
 
     @property
     def provider(self) -> str:
+        inst = current_instance()
+        if inst:
+            return "dashscope" if inst.vendor_id == "dashscope" else "openai"
         return (get_cred("LLM_PROVIDER") or "dashscope").lower()
 
     @property
     def is_configured(self) -> bool:
+        inst = current_instance()
+        if inst:
+            return bool(
+                inst.credentials.get("OPENAI_API_KEY")
+                or inst.credentials.get("DASHSCOPE_API_KEY")
+            )
         if self.provider == "openai":
             return bool(get_cred("OPENAI_API_KEY"))
         return bool(get_cred("DASHSCOPE_API_KEY"))
 
     def _get_client(self):
-        """Build a fresh OpenAI-compatible client for the current request."""
+        """Build a fresh OpenAI-compatible client for the current request.
+
+        Order:
+        1. Use the currently-scoped :class:`ModelInstance` if any (vendor →
+           base_url mapping, credentials from instance).
+        2. Else fall back to env-driven LLM_PROVIDER + OPENAI_*/DASHSCOPE_*.
+        """
         try:
             from openai import OpenAI
         except ImportError:
@@ -45,18 +73,34 @@ class LLMAdapter:
                 "openai package not installed. Run: pip install openai>=1.0.0"
             )
 
+        inst = current_instance()
+        if inst:
+            api_key = (
+                inst.credentials.get("OPENAI_API_KEY")
+                or inst.credentials.get("DASHSCOPE_API_KEY")
+                or ""
+            )
+            base_url = inst.base_url or _VENDOR_BASE_URLS.get(
+                inst.vendor_id, "https://api.openai.com/v1"
+            )
+            if inst.vendor_id == "dashscope" and not inst.base_url:
+                base_url = f"{get_provider_base_url('DASHSCOPE')}/compatible-mode/v1"
+            return OpenAI(api_key=api_key, base_url=base_url)
+
         if self.provider == "openai":
             return OpenAI(
                 api_key=get_cred("OPENAI_API_KEY"),
                 base_url=get_cred("OPENAI_BASE_URL") or "https://api.openai.com/v1",
             )
-        # DashScope uses OpenAI-compatible endpoint
         return OpenAI(
             api_key=get_cred("DASHSCOPE_API_KEY"),
             base_url=f"{get_provider_base_url('DASHSCOPE')}/compatible-mode/v1",
         )
 
     def _get_default_model(self) -> str:
+        inst = current_instance()
+        if inst:
+            return inst.model_name
         if self.provider == "openai":
             return get_cred("OPENAI_MODEL") or "gpt-4o"
         return "qwen3.5-plus"

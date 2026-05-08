@@ -284,27 +284,30 @@ class TestModelSettingsIntegration:
         now = _ts()
         s = Series(id="s1", title="S", created_at=now, updated_at=now)
         assert isinstance(s.model_settings, ModelSettings)
-        assert s.model_settings.t2i_model == "wan2.6-t2i"
-        assert s.model_settings.i2v_model == "wan2.6-i2v"
+        # New instance-based settings start unset (None) — runtime resolves
+        # to the user's default ModelInstance for each type.
+        assert s.model_settings.t2i_instance_id is None
+        assert s.model_settings.i2v_instance_id is None
+        assert s.model_settings.storyboard_aspect_ratio == "16:9"
 
     def test_update_series_model_settings_via_pipeline(self, pipeline):
         """Pipeline update_series should accept model_settings changes."""
         s = pipeline.create_series("S")
-        new_ms = ModelSettings(t2i_model="custom-t2i", i2v_model="kling-1.6")
+        new_ms = ModelSettings(t2i_instance_id="t2i-uuid", i2v_instance_id="i2v-uuid")
         updated = pipeline.update_series(s.id, {"model_settings": new_ms})
-        assert updated.model_settings.t2i_model == "custom-t2i"
-        assert updated.model_settings.i2v_model == "kling-1.6"
-        # Other fields keep defaults
-        assert updated.model_settings.i2i_model == "wan2.6-image"
+        assert updated.model_settings.t2i_instance_id == "t2i-uuid"
+        assert updated.model_settings.i2v_instance_id == "i2v-uuid"
+        # Other instance fields stay None
+        assert updated.model_settings.i2i_instance_id is None
 
     def test_update_series_model_settings_partial_via_copy(self, pipeline):
         """Partial update via model_copy should preserve other fields."""
         s = pipeline.create_series("S")
         current_ms = s.model_settings
-        updated_ms = current_ms.model_copy(update={"t2i_model": "new-model"})
+        updated_ms = current_ms.model_copy(update={"t2i_instance_id": "new-uuid"})
         updated = pipeline.update_series(s.id, {"model_settings": updated_ms})
-        assert updated.model_settings.t2i_model == "new-model"
-        assert updated.model_settings.i2i_model == "wan2.6-image"  # preserved
+        assert updated.model_settings.t2i_instance_id == "new-uuid"
+        assert updated.model_settings.i2i_instance_id is None  # preserved
         assert updated.model_settings.storyboard_aspect_ratio == "16:9"  # preserved
 
     def test_model_settings_not_overwritten_by_id_or_created_at(self, pipeline):

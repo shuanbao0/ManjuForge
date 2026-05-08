@@ -578,9 +578,13 @@ async def update_series_prompt_config(series_id: str, config: PromptConfig):
 # ============================================================
 
 class UpdateModelSettingsRequest(BaseModel):
-    t2i_model: Optional[str] = None
-    i2i_model: Optional[str] = None
-    i2v_model: Optional[str] = None
+    """References to the user's ModelInstance rows (uuids)."""
+
+    llm_instance_id: Optional[str] = None
+    t2i_instance_id: Optional[str] = None
+    i2i_instance_id: Optional[str] = None
+    i2v_instance_id: Optional[str] = None
+    tts_instance_id: Optional[str] = None
     character_aspect_ratio: Optional[str] = None
     scene_aspect_ratio: Optional[str] = None
     prop_aspect_ratio: Optional[str] = None
@@ -1587,17 +1591,19 @@ async def toggle_variant_favorite(script_id: str, request: FavoriteVariantReques
 
 @app.post("/projects/{script_id}/model_settings", response_model=Script)
 async def update_model_settings(script_id: str, request: UpdateModelSettingsRequest):
-    """Updates project's model settings for T2I/I2I/I2V and aspect ratios."""
+    """Update a project's model-instance references and aspect ratios."""
     try:
         updated_script = pipeline.update_model_settings(
             script_id,
-            request.t2i_model,
-            request.i2i_model,
-            request.i2v_model,
-            request.character_aspect_ratio,
-            request.scene_aspect_ratio,
-            request.prop_aspect_ratio,
-            request.storyboard_aspect_ratio
+            llm_instance_id=request.llm_instance_id,
+            t2i_instance_id=request.t2i_instance_id,
+            i2i_instance_id=request.i2i_instance_id,
+            i2v_instance_id=request.i2v_instance_id,
+            tts_instance_id=request.tts_instance_id,
+            character_aspect_ratio=request.character_aspect_ratio,
+            scene_aspect_ratio=request.scene_aspect_ratio,
+            prop_aspect_ratio=request.prop_aspect_ratio,
+            storyboard_aspect_ratio=request.storyboard_aspect_ratio,
         )
         return signed_response(updated_script)
     except ValueError as e:

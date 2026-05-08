@@ -251,14 +251,27 @@ class StoryboardFrame(BaseModel):
     updated_at: float = Field(default_factory=time.time, description="Timestamp of last update")
 
 class ModelSettings(BaseModel):
-    """Model selection settings for different generation stages"""
-    t2i_model: str = Field("wan2.6-t2i", description="Text-to-Image model for Assets")
-    i2i_model: str = Field("wan2.6-image", description="Image-to-Image model for Storyboard")
-    i2v_model: str = Field("wan2.6-i2v", description="Image-to-Video model for Motion")
-    character_aspect_ratio: str = Field("9:16", description="Aspect ratio for Characters (9:16, 16:9, 1:1)")
-    scene_aspect_ratio: str = Field("16:9", description="Aspect ratio for Scenes (9:16, 16:9, 1:1)")
-    prop_aspect_ratio: str = Field("1:1", description="Aspect ratio for Props (9:16, 16:9, 1:1)")
-    storyboard_aspect_ratio: str = Field("16:9", description="Aspect ratio for Storyboard (9:16, 16:9, 1:1)")
+    """Per-project model selections — references to the user's ModelInstance rows.
+
+    Each ``*_instance_id`` is a UUID matching a ``ModelInstance.id`` owned by
+    the current user. The pipeline resolves instances at run-time and wraps
+    each generation call in :func:`src.runtime.with_instance` so credentials
+    + model_name + base_url all flow through the instance.
+
+    ``None`` means "use the user's default instance for this type" — looked
+    up via ``InstanceRepository.get_default``.
+    """
+
+    llm_instance_id: Optional[str] = Field(None, description="ModelInstance.id for LLM (剧本/润色)")
+    t2i_instance_id: Optional[str] = Field(None, description="ModelInstance.id for Text-to-Image")
+    i2i_instance_id: Optional[str] = Field(None, description="ModelInstance.id for Image-to-Image (storyboard)")
+    i2v_instance_id: Optional[str] = Field(None, description="ModelInstance.id for Image-to-Video")
+    tts_instance_id: Optional[str] = Field(None, description="ModelInstance.id for Text-to-Speech")
+
+    character_aspect_ratio: str = Field("9:16", description="Aspect ratio for Characters")
+    scene_aspect_ratio: str = Field("16:9", description="Aspect ratio for Scenes")
+    prop_aspect_ratio: str = Field("1:1", description="Aspect ratio for Props")
+    storyboard_aspect_ratio: str = Field("16:9", description="Aspect ratio for Storyboard")
 
 
 class ArtDirection(BaseModel):

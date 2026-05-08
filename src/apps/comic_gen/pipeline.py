@@ -15,6 +15,8 @@ from .storyboard import StoryboardGenerator
 from .video import VideoGenerator
 from .audio import AudioGenerator
 from .export import ExportManager
+from .instance_resolver import scoped_instance, model_name_or
+from ...models.instance import InstanceType
 from ...utils import get_logger
 from ...utils.oss_utils import is_object_key
 from ...utils.provider_registry import resolve_provider_backend
@@ -149,20 +151,24 @@ class ComicGenPipeline:
         if skip_analysis:
             script = self.script_processor.create_draft_script(title, text)
         else:
-            script = self.script_processor.parse_novel(title, text)
-            
+            # Use the user's default LLM instance for the initial parse —
+            # there is no project-scoped instance yet at this point.
+            with scoped_instance(None, InstanceType.LLM):
+                script = self.script_processor.parse_novel(title, text)
+
         self.scripts[script.id] = script
         self._save_data()
         return script
-    
+
     def reparse_project(self, script_id: str, text: str) -> Script:
         """Re-parse the text for an existing project, replacing all entities."""
         existing_script = self.scripts.get(script_id)
         if not existing_script:
             raise ValueError("Script not found")
-        
-        # Parse the new text (this generates new entities with new IDs)
-        new_script = self.script_processor.parse_novel(existing_script.title, text)
+
+        # Parse the new text under the project's configured LLM instance.
+        with scoped_instance(existing_script.model_settings.llm_instance_id, InstanceType.LLM):
+            new_script = self.script_processor.parse_novel(existing_script.title, text)
         
         # Preserve the original script ID and timestamps
         new_script.id = existing_script.id
@@ -212,10 +218,6 @@ class ComicGenPipeline:
         if not script:
             raise ValueError("Script not found")
         
-        # Get effective model names from project settings if not overridden
-        t2i_model = model_name or script.model_settings.t2i_model
-        i2i_model = script.model_settings.i2i_model
-        
         # Get effective size based on asset type
         from .assets import ASPECT_RATIO_TO_SIZE
         if asset_type == "character":
@@ -230,7 +232,7 @@ class ComicGenPipeline:
         else:
             aspect_ratio = "9:16"
             default_size = "576*1024"
-        
+
         effective_size = ASPECT_RATIO_TO_SIZE.get(aspect_ratio, default_size)
         
         # Determine effective style: Art Direction > passed style > legacy style
@@ -277,33 +279,31 @@ class ComicGenPipeline:
         
         target_asset.status = GenerationStatus.PROCESSING
         self._save_data()
-        
+
         try:
-            # Generate with Art Direction style injected
-            if asset_type == "character":
-                # Pass generation_type and specific prompt if available
-                # If prompt is provided (from Workbench), use it directly. 
-                # Otherwise, asset_generator will construct it using effective_positive_prompt.
-                # Note: If prompt is provided, we might still want to append style if it's not included?
-                # For now, let's assume the Workbench passes the FULL prompt or we pass style separately.
-                # The asset_generator.generate_character expects 'prompt' as the specific prompt.
-                # If 'prompt' is None, it constructs one.
-                # We should pass effective_positive_prompt as 'positive_prompt' (style suffix) to be appended if needed.
-                self.asset_generator.generate_character(
-                    target_asset, 
-                    generation_type=generation_type, 
-                    prompt=prompt, 
-                    positive_prompt=effective_positive_prompt, # Used as style suffix if prompt is auto-generated
-                    negative_prompt=effective_negative_prompt,
-                    batch_size=batch_size,
-                    model_name=t2i_model,
-                    i2i_model_name=i2i_model,
-                    size=effective_size
-                )
-            elif asset_type == "scene":
-                self.asset_generator.generate_scene(target_asset, effective_positive_prompt, effective_negative_prompt, batch_size=batch_size, model_name=t2i_model, size=effective_size)
-            elif asset_type == "prop":
-                self.asset_generator.generate_prop(target_asset, effective_positive_prompt, effective_negative_prompt, batch_size=batch_size, model_name=t2i_model, size=effective_size)
+            # Bind T2I and I2I instances to this call so credentials and
+            # model_name flow from the user's configured ModelInstance rows.
+            with scoped_instance(script.model_settings.t2i_instance_id, InstanceType.T2I) as t2i_inst, \
+                 scoped_instance(script.model_settings.i2i_instance_id, InstanceType.I2I) as i2i_inst:
+                t2i_model = model_name_or(model_name or "wan2.6-t2i", t2i_inst)
+                i2i_model = model_name_or("wan2.6-image", i2i_inst)
+                # Generate with Art Direction style injected
+                if asset_type == "character":
+                    self.asset_generator.generate_character(
+                        target_asset,
+                        generation_type=generation_type,
+                        prompt=prompt,
+                        positive_prompt=effective_positive_prompt,
+                        negative_prompt=effective_negative_prompt,
+                        batch_size=batch_size,
+                        model_name=t2i_model,
+                        i2i_model_name=i2i_model,
+                        size=effective_size
+                    )
+                elif asset_type == "scene":
+                    self.asset_generator.generate_scene(target_asset, effective_positive_prompt, effective_negative_prompt, batch_size=batch_size, model_name=t2i_model, size=effective_size)
+                elif asset_type == "prop":
+                    self.asset_generator.generate_prop(target_asset, effective_positive_prompt, effective_negative_prompt, batch_size=batch_size, model_name=t2i_model, size=effective_size)
                 
             target_asset.status = GenerationStatus.COMPLETED
         except Exception as e:
@@ -425,33 +425,38 @@ class ComicGenPipeline:
         prompt = params.get("prompt")
         reference_image_url = params.get("reference_image_url")
 
-        if asset_type == "character":
-            target = next((c for c in series.characters if c.id == asset_id), None)
-            if not target:
-                raise ValueError(f"Character {asset_id} not found in series")
-            self.asset_generator.generate_character(
-                target, generation_type=generation_type, prompt=prompt or "",
-                positive_prompt=positive_prompt, negative_prompt=negative_prompt,
-                batch_size=batch_size, model_name=t2i_model, size=effective_size,
-            )
-        elif asset_type == "scene":
-            target = next((s for s in series.scenes if s.id == asset_id), None)
-            if not target:
-                raise ValueError(f"Scene {asset_id} not found in series")
-            self.asset_generator.generate_scene(
-                target, positive_prompt=positive_prompt, negative_prompt=negative_prompt,
-                batch_size=batch_size, model_name=t2i_model, size=effective_size,
-            )
-        elif asset_type == "prop":
-            target = next((p for p in series.props if p.id == asset_id), None)
-            if not target:
-                raise ValueError(f"Prop {asset_id} not found in series")
-            self.asset_generator.generate_prop(
-                target, positive_prompt=positive_prompt, negative_prompt=negative_prompt,
-                batch_size=batch_size, model_name=t2i_model, size=effective_size,
-            )
-        else:
-            raise ValueError(f"Unknown asset type: {asset_type}")
+        # Re-bind instance scope on the worker thread (ContextVars are
+        # carried by run_in_executor; this is a safety net for paths that
+        # didn't go through it).
+        with scoped_instance(params.get("t2i_instance_id"), InstanceType.T2I), \
+             scoped_instance(params.get("i2i_instance_id"), InstanceType.I2I):
+            if asset_type == "character":
+                target = next((c for c in series.characters if c.id == asset_id), None)
+                if not target:
+                    raise ValueError(f"Character {asset_id} not found in series")
+                self.asset_generator.generate_character(
+                    target, generation_type=generation_type, prompt=prompt or "",
+                    positive_prompt=positive_prompt, negative_prompt=negative_prompt,
+                    batch_size=batch_size, model_name=t2i_model, size=effective_size,
+                )
+            elif asset_type == "scene":
+                target = next((s for s in series.scenes if s.id == asset_id), None)
+                if not target:
+                    raise ValueError(f"Scene {asset_id} not found in series")
+                self.asset_generator.generate_scene(
+                    target, positive_prompt=positive_prompt, negative_prompt=negative_prompt,
+                    batch_size=batch_size, model_name=t2i_model, size=effective_size,
+                )
+            elif asset_type == "prop":
+                target = next((p for p in series.props if p.id == asset_id), None)
+                if not target:
+                    raise ValueError(f"Prop {asset_id} not found in series")
+                self.asset_generator.generate_prop(
+                    target, positive_prompt=positive_prompt, negative_prompt=negative_prompt,
+                    batch_size=batch_size, model_name=t2i_model, size=effective_size,
+                )
+            else:
+                raise ValueError(f"Unknown asset type: {asset_type}")
 
         self._save_series_data()
 
@@ -898,8 +903,9 @@ class ComicGenPipeline:
             "props": [{"id": p.id, "name": p.name, "description": p.description} for p in all_props],
         }
 
-        # Call LLM to analyze text (may raise RuntimeError on parse failure)
-        raw_frames = self.script_processor.analyze_to_storyboard(text, entities_json)
+        # Call LLM to analyze text (bound to project's LLM instance).
+        with scoped_instance(script.model_settings.llm_instance_id, InstanceType.LLM):
+            raw_frames = self.script_processor.analyze_to_storyboard(text, entities_json)
 
         if not raw_frames:
             raise RuntimeError("AI 分镜分析未返回任何帧数据，请重试。")
@@ -985,8 +991,9 @@ class ComicGenPipeline:
         if custom_prompt == DEFAULT_STORYBOARD_POLISH_PROMPT:
             custom_prompt = ""
 
-        # Call LLM to refine prompt
-        result = self.script_processor.polish_storyboard_prompt(raw_prompt, assets, feedback, custom_prompt)
+        # Call LLM to refine prompt (bound to project's LLM instance).
+        with scoped_instance(script.model_settings.llm_instance_id, InstanceType.LLM):
+            result = self.script_processor.polish_storyboard_prompt(raw_prompt, assets, feedback, custom_prompt)
         
         # Find and update the frame
         frame_found = False
@@ -1356,24 +1363,24 @@ class ComicGenPipeline:
             storyboard_aspect_ratio = script.model_settings.storyboard_aspect_ratio
             effective_size = ASPECT_RATIO_TO_SIZE.get(storyboard_aspect_ratio, "1024*576")  # Default to landscape
             
-            # Use model from settings
-            i2i_model = script.model_settings.i2i_model
-            logger.info(f"Rendering frame {frame_id} using model {i2i_model} with {len(ref_image_paths)} reference images")
-            if len(ref_image_urls) > 0:
-                logger.debug(f"Original reference URLs from frontend: {ref_image_urls}")
+            # Resolve I2I instance and bind it for this call.
+            with scoped_instance(script.model_settings.i2i_instance_id, InstanceType.I2I) as i2i_inst:
+                i2i_model = model_name_or("wan2.6-image", i2i_inst)
+                logger.info(f"Rendering frame {frame_id} using model {i2i_model} with {len(ref_image_paths)} reference images")
+                if len(ref_image_urls) > 0:
+                    logger.debug(f"Original reference URLs from frontend: {ref_image_urls}")
 
-            # Call generator
-            self.storyboard_generator.generate_frame(
-                frame, 
-                script.characters, 
-                scene, 
-                ref_image_path=ref_image_path,
-                ref_image_paths=ref_image_paths,
-                prompt=final_prompt,
-                batch_size=batch_size,
-                size=effective_size,
-                model_name=i2i_model
-            )
+                self.storyboard_generator.generate_frame(
+                    frame,
+                    script.characters,
+                    scene,
+                    ref_image_path=ref_image_path,
+                    ref_image_paths=ref_image_paths,
+                    prompt=final_prompt,
+                    batch_size=batch_size,
+                    size=effective_size,
+                    model_name=i2i_model
+                )
             
             self._save_data()
             return script
@@ -2027,9 +2034,8 @@ class ComicGenPipeline:
             img_url = task.image_url
 
             # Route to the appropriate model via the dispatcher (strategy
-            # registry). The default fallback is the DashScope/Wanx route, so
-            # families like Wan / Kling-on-DashScope / Vidu-on-DashScope all
-            # land there without explicit registration.
+            # registry). Bind the I2V instance so credentials + base_url
+            # flow through the runtime context.
             from ...models.video_dispatcher import (
                 VideoGenerationContext,
                 build_default_dispatcher,
@@ -2038,19 +2044,26 @@ class ComicGenPipeline:
             # ``__init__``), so use ``getattr`` for a safe lazy build.
             if getattr(self, "_video_dispatcher", None) is None:
                 self._video_dispatcher = build_default_dispatcher(self.video_generator)
-            model_name = task.model or ""
-            backend = self._resolve_video_backend(model_name)
-            adapter = self._video_dispatcher.resolve(model_name, backend)
-            video_path, _ = adapter.generate(
-                VideoGenerationContext(
-                    task=task,
-                    output_path=output_path,
-                    img_url=img_url,
-                    img_path=img_path,
-                    audio_url=final_audio_url,
-                    generate_audio=final_generate_audio,
+            ms = getattr(script, "model_settings", None) if script else None
+            i2v_instance_id = getattr(ms, "i2v_instance_id", None) if ms else None
+            with scoped_instance(i2v_instance_id, InstanceType.I2V) as i2v_inst:
+                # If task didn't specify a model and we have an instance,
+                # use the instance's model_name; otherwise honor task.model.
+                if i2v_inst and not task.model:
+                    task.model = i2v_inst.model_name
+                model_name = task.model or ""
+                backend = self._resolve_video_backend(model_name)
+                adapter = self._video_dispatcher.resolve(model_name, backend)
+                video_path, _ = adapter.generate(
+                    VideoGenerationContext(
+                        task=task,
+                        output_path=output_path,
+                        img_url=img_url,
+                        img_path=img_path,
+                        audio_url=final_audio_url,
+                        generate_audio=final_generate_audio,
+                    )
                 )
-            )
             
             task.video_url = os.path.relpath(output_path, self.data_root)
             task.status = "completed"
@@ -2475,18 +2488,38 @@ class ComicGenPipeline:
         self._save_data()
         return script
 
-    def update_model_settings(self, script_id: str, t2i_model: str = None, i2i_model: str = None, i2v_model: str = None, character_aspect_ratio: str = None, scene_aspect_ratio: str = None, prop_aspect_ratio: str = None, storyboard_aspect_ratio: str = None) -> Script:
-        """Updates the model settings for a script."""
+    def update_model_settings(
+        self,
+        script_id: str,
+        llm_instance_id: Optional[str] = None,
+        t2i_instance_id: Optional[str] = None,
+        i2i_instance_id: Optional[str] = None,
+        i2v_instance_id: Optional[str] = None,
+        tts_instance_id: Optional[str] = None,
+        character_aspect_ratio: Optional[str] = None,
+        scene_aspect_ratio: Optional[str] = None,
+        prop_aspect_ratio: Optional[str] = None,
+        storyboard_aspect_ratio: Optional[str] = None,
+    ) -> Script:
+        """Updates the project's model-instance references and aspect ratios.
+
+        Each id should be a uuid matching one of the user's ``ModelInstance``
+        rows; an empty string is treated as "clear / use default".
+        """
         script = self.scripts.get(script_id)
         if not script:
             raise ValueError("Script not found")
-        
-        if t2i_model:
-            script.model_settings.t2i_model = t2i_model
-        if i2i_model:
-            script.model_settings.i2i_model = i2i_model
-        if i2v_model:
-            script.model_settings.i2v_model = i2v_model
+
+        if llm_instance_id is not None:
+            script.model_settings.llm_instance_id = llm_instance_id or None
+        if t2i_instance_id is not None:
+            script.model_settings.t2i_instance_id = t2i_instance_id or None
+        if i2i_instance_id is not None:
+            script.model_settings.i2i_instance_id = i2i_instance_id or None
+        if i2v_instance_id is not None:
+            script.model_settings.i2v_instance_id = i2v_instance_id or None
+        if tts_instance_id is not None:
+            script.model_settings.tts_instance_id = tts_instance_id or None
         if character_aspect_ratio:
             script.model_settings.character_aspect_ratio = character_aspect_ratio
         if scene_aspect_ratio:
@@ -2495,7 +2528,7 @@ class ComicGenPipeline:
             script.model_settings.prop_aspect_ratio = prop_aspect_ratio
         if storyboard_aspect_ratio:
             script.model_settings.storyboard_aspect_ratio = storyboard_aspect_ratio
-        
+
         self._save_data()
         return script
 
@@ -2718,7 +2751,8 @@ class ComicGenPipeline:
 
     def import_file_and_split(self, text: str, suggested_episodes: int = 3) -> List[Dict]:
         """Split text into episodes using LLM. Returns episode preview data."""
-        return self.script_processor.split_into_episodes(text, suggested_episodes)
+        with scoped_instance(None, InstanceType.LLM):
+            return self.script_processor.split_into_episodes(text, suggested_episodes)
 
     def create_series_from_import(self, title: str, text: str, episodes_data: List[Dict],
                                    description: str = "") -> Dict:
@@ -2860,7 +2894,14 @@ class ComicGenPipeline:
         if not series:
             raise ValueError("Series not found")
 
-        t2i_model = model_name or series.model_settings.t2i_model
+        # Resolve T2I instance now (within request scope) so task params can
+        # carry the resolved model_name + instance_id forward.
+        from .instance_resolver import load_instance as _load_inst
+        t2i_inst = _load_inst(series.model_settings.t2i_instance_id, InstanceType.T2I)
+        i2i_inst = _load_inst(series.model_settings.i2i_instance_id, InstanceType.I2I)
+        t2i_model = model_name or model_name_or("wan2.6-t2i", t2i_inst)
+        t2i_instance_id = t2i_inst.id if t2i_inst else None
+        i2i_instance_id = i2i_inst.id if i2i_inst else None
 
         from .assets import ASPECT_RATIO_TO_SIZE
         if asset_type == "character":
@@ -2910,6 +2951,8 @@ class ComicGenPipeline:
                 "apply_style": apply_style,
                 "batch_size": batch_size,
                 "t2i_model": t2i_model,
+                "t2i_instance_id": t2i_instance_id,
+                "i2i_instance_id": i2i_instance_id,
                 "effective_size": effective_size,
             }
         }
