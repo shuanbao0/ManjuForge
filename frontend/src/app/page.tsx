@@ -12,7 +12,7 @@ import AppShell from "@/components/layout/AppShell";
 import type { GlobalTab } from "@/components/layout/GlobalSidebar";
 import dynamic from "next/dynamic";
 import { api } from "@/lib/api";
-import { isAdmin, onAuthChange } from "@/lib/auth";
+import { isAdmin, isAuthenticated, onAuthChange } from "@/lib/auth";
 import AuthGate from "@/components/auth/AuthGate";
 
 const ProjectClient = dynamic(() => import("@/components/project/ProjectClient"), { ssr: false });
@@ -333,18 +333,32 @@ export default function Home() {
   const setProjects = useProjectStore((state) => state.setProjects);
   const fetchSeriesList = useProjectStore((state) => state.fetchSeriesList);
 
-  // Sync projects and series from backend on mount
+  // Sync projects and series from backend, but only when the user has a valid
+  // session. AuthGate blocks rendering of children when the user is logged out,
+  // but Home itself still mounts and runs effects, so without this guard the
+  // calls fire unauthenticated and 401 on the login screen.
   useEffect(() => {
-    syncProjects();
-    fetchSeriesList();
+    if (isAuthenticated()) {
+      syncProjects();
+      fetchSeriesList();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Re-render whenever auth state flips (header role-gated entries depend on it).
+  // Also kick off the initial data fetch the first time the user logs in
+  // within this tab.
   const [, _bumpAuth] = useState(0);
   useEffect(() => {
-    const off = onAuthChange(() => _bumpAuth((n) => n + 1));
+    const off = onAuthChange(() => {
+      _bumpAuth((n) => n + 1);
+      if (isAuthenticated()) {
+        syncProjects();
+        fetchSeriesList();
+      }
+    });
     return off;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Load episodes for all series when seriesList changes
