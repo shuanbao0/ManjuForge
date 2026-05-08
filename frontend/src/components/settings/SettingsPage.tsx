@@ -287,14 +287,15 @@ export default function SettingsPage() {
 
   // Pulled from backend `/registry/models` so dropdowns and LLM presets are
   // driven by the canonical catalog instead of duplicated hardcoded lists.
-  const { presets: llmPresets, aspectRatios } = useModelCatalog();
+  const { presets: llmPresets, aspectRatios, error: catalogError } = useModelCatalog();
   const t2iModels = useModelsByCapability("t2i").models;
   const i2iModels = useModelsByCapability("i2i").models;
   const i2vModels = useModelsByCapability("i2v").models;
 
   // Vendor connectors drive the unified VendorCard grid below. Backend is
   // the single source of truth — see src/utils/vendor_connectors.py.
-  const { connectors: vendorConnectors } = useVendorConnectors();
+  const { connectors: vendorConnectors, error: vendorsError } = useVendorConnectors();
+  const registryError = catalogError || vendorsError;
   const dashscopeConnector = useMemo(
     () => vendorConnectors.find((c) => c.id === "dashscope"),
     [vendorConnectors],
@@ -427,6 +428,22 @@ export default function SettingsPage() {
           <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 text-sm text-red-300">{loadError}</div>
         ) : (
           <>
+            {/* Registry-fetch error banner. Falls back to inline hardcoded
+                connectors so the user can still configure, but warns that
+                the backend likely needs a restart to pick up new endpoints. */}
+            {registryError && (
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-xs text-amber-200 flex items-start gap-2">
+                <span className="mt-0.5">⚠</span>
+                <div className="flex-1">
+                  <div className="font-medium">无法从后端读取厂商目录,正在使用内置默认列表</div>
+                  <div className="text-amber-300/70 mt-0.5">
+                    可能原因:后端进程未重启(新增了 <code className="bg-black/30 px-1 rounded">/registry/vendors</code> 等端点)。请重启 <code className="bg-black/30 px-1 rounded">./start_backend.sh</code> 后刷新页面。
+                  </div>
+                  <div className="text-amber-400/60 mt-1 font-mono text-[10px]">{registryError}</div>
+                </div>
+              </div>
+            )}
+
             {/* DashScope — foundation vendor. Most other models route through it. */}
             {dashscopeConnector && (
               <VendorCard
