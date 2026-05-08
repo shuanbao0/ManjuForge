@@ -130,13 +130,16 @@ export interface ArtDirection {
 }
 
 export interface ModelSettings {
-    t2i_model: string;  // Text-to-Image model for Assets
-    i2i_model: string;  // Image-to-Image model for Storyboard
-    i2v_model: string;  // Image-to-Video model for Motion
-    character_aspect_ratio: string;  // Aspect ratio for Character generation
-    scene_aspect_ratio: string;  // Aspect ratio for Scene generation
-    prop_aspect_ratio: string;  // Aspect ratio for Prop generation
-    storyboard_aspect_ratio: string;  // Aspect ratio for Storyboard generation
+    // ModelInstance id references — null means "use my default for this type".
+    llm_instance_id: string | null;
+    t2i_instance_id: string | null;
+    i2i_instance_id: string | null;
+    i2v_instance_id: string | null;
+    tts_instance_id: string | null;
+    character_aspect_ratio: string;
+    scene_aspect_ratio: string;
+    prop_aspect_ratio: string;
+    storyboard_aspect_ratio: string;
 }
 
 // Model options for dropdowns.

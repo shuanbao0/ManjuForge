@@ -89,6 +89,16 @@ class TTSProcessor:
         if key:
             dashscope.api_key = key
 
+    def _resolve_active_model(self) -> str:
+        """Use the bound :class:`ModelInstance`'s ``model_name`` when one is
+        scoped (e.g. ``cosyvoice-v3-plus`` set per-project). Falls back to
+        the constructor-provided default for CLI / tests."""
+        from src.runtime import current_instance
+        inst = current_instance()
+        if inst and inst.model_name:
+            return inst.model_name
+        return self.model
+
     def synthesize(
         self,
         text: str,
@@ -120,8 +130,12 @@ class TTSProcessor:
         start_time = time.time()
         voice = voice or self.voice
 
-        # Resolve the correct model for the voice if it's a known voice
+        # Voice → model preferred; otherwise honor the active ModelInstance
+        # so per-project TTS picks (cosyvoice-v3-flash vs v3-plus) flow
+        # through. Falls back to constructor default outside an HTTP request.
         model = self._resolve_model_for_voice(voice)
+        if model == self.model:
+            model = self._resolve_active_model()
 
         logger.info(f"Synthesizing with model={model}, voice='{voice}' (rate={speech_rate}, pitch={pitch_rate}, vol={volume})...")
         logger.info(f"Text: {text[:100]}{'...' if len(text) > 100 else ''}")

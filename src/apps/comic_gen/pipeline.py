@@ -2245,36 +2245,36 @@ class ComicGenPipeline:
         script = self.scripts.get(script_id)
         if not script:
             raise ValueError("Script not found")
-            
+
         logger.info(f"Generating audio for script {script.id}")
-        
-        for frame in script.frames:
-            # Generate Dialogue
-            if frame.dialogue:
-                speaker = None
-                if frame.character_ids:
-                    speaker = next((c for c in script.characters if c.id == frame.character_ids[0]), None)
-                
-                if speaker:
-                    self.audio_generator.generate_dialogue(
-                        frame, speaker,
-                        speed=speaker.voice_speed,
-                        pitch=speaker.voice_pitch,
-                        volume=speaker.voice_volume
-                    )
-            
-            # Generate SFX (Text-to-Audio)
-            if frame.action_description:
-                self.audio_generator.generate_sfx(frame)
-                
-            # Generate SFX (Video-to-Audio) - if video exists
-            if frame.video_url:
-                self.audio_generator.generate_sfx_from_video(frame)
-                
-            # Generate BGM
-            # Simple logic: generate BGM for every frame (or scene start)
-            self.audio_generator.generate_bgm(frame)
-                
+
+        with scoped_instance(script.model_settings.tts_instance_id, InstanceType.TTS):
+            for frame in script.frames:
+                # Generate Dialogue
+                if frame.dialogue:
+                    speaker = None
+                    if frame.character_ids:
+                        speaker = next((c for c in script.characters if c.id == frame.character_ids[0]), None)
+
+                    if speaker:
+                        self.audio_generator.generate_dialogue(
+                            frame, speaker,
+                            speed=speaker.voice_speed,
+                            pitch=speaker.voice_pitch,
+                            volume=speaker.voice_volume
+                        )
+
+                # Generate SFX (Text-to-Audio)
+                if frame.action_description:
+                    self.audio_generator.generate_sfx(frame)
+
+                # Generate SFX (Video-to-Audio) - if video exists
+                if frame.video_url:
+                    self.audio_generator.generate_sfx_from_video(frame)
+
+                # Generate BGM
+                self.audio_generator.generate_bgm(frame)
+
         self._save_data()
         return script
 
@@ -2283,19 +2283,20 @@ class ComicGenPipeline:
         script = self.scripts.get(script_id)
         if not script:
             raise ValueError("Script not found")
-            
+
         frame = next((f for f in script.frames if f.id == frame_id), None)
         if not frame:
             raise ValueError("Frame not found")
-            
+
         if frame.dialogue:
             speaker = None
             if frame.character_ids:
                 speaker = next((c for c in script.characters if c.id == frame.character_ids[0]), None)
-            
+
             if speaker:
-                self.audio_generator.generate_dialogue(frame, speaker, speed, pitch, volume)
-                
+                with scoped_instance(script.model_settings.tts_instance_id, InstanceType.TTS):
+                    self.audio_generator.generate_dialogue(frame, speaker, speed, pitch, volume)
+
         self._save_data()
         return script
 

@@ -561,23 +561,19 @@ export const api = {
 
     updateModelSettings: async (
         scriptId: string,
-        t2iModel?: string,
-        i2iModel?: string,
-        i2vModel?: string,
-        characterAspectRatio?: string,
-        sceneAspectRatio?: string,
-        propAspectRatio?: string,
-        storyboardAspectRatio?: string
+        payload: {
+            llm_instance_id?: string | null;
+            t2i_instance_id?: string | null;
+            i2i_instance_id?: string | null;
+            i2v_instance_id?: string | null;
+            tts_instance_id?: string | null;
+            character_aspect_ratio?: string;
+            scene_aspect_ratio?: string;
+            prop_aspect_ratio?: string;
+            storyboard_aspect_ratio?: string;
+        },
     ) => {
-        const res = await axios.post(`${API_URL}/projects/${scriptId}/model_settings`, {
-            t2i_model: t2iModel,
-            i2i_model: i2iModel,
-            i2v_model: i2vModel,
-            character_aspect_ratio: characterAspectRatio,
-            scene_aspect_ratio: sceneAspectRatio,
-            prop_aspect_ratio: propAspectRatio,
-            storyboard_aspect_ratio: storyboardAspectRatio
-        });
+        const res = await axios.post(`${API_URL}/projects/${scriptId}/model_settings`, payload);
         return res.data;
     },
 
@@ -890,9 +886,11 @@ export const api = {
         return response.data;
     },
     updateSeriesModelSettings: async (seriesId: string, settings: {
-        t2i_model?: string;
-        i2i_model?: string;
-        i2v_model?: string;
+        llm_instance_id?: string | null;
+        t2i_instance_id?: string | null;
+        i2i_instance_id?: string | null;
+        i2v_instance_id?: string | null;
+        tts_instance_id?: string | null;
         character_aspect_ratio?: string;
         scene_aspect_ratio?: string;
         prop_aspect_ratio?: string;

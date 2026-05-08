@@ -113,19 +113,12 @@ function AssetsInspector({ project }: { project: any }) {
         if (!currentProject) return;
 
         try {
-            const updatePayload: any = {};
-            if (type === 'character') updatePayload.character_aspect_ratio = ratio;
-            else if (type === 'scene') updatePayload.scene_aspect_ratio = ratio;
-            else if (type === 'prop') updatePayload.prop_aspect_ratio = ratio;
+            const payload: Parameters<typeof api.updateModelSettings>[1] = {};
+            if (type === 'character') payload.character_aspect_ratio = ratio;
+            else if (type === 'scene') payload.scene_aspect_ratio = ratio;
+            else if (type === 'prop') payload.prop_aspect_ratio = ratio;
 
-            const updated = await api.updateModelSettings(
-                currentProject.id,
-                undefined, undefined, undefined,
-                type === 'character' ? ratio : undefined,
-                type === 'scene' ? ratio : undefined,
-                type === 'prop' ? ratio : undefined,
-                undefined
-            );
+            const updated = await api.updateModelSettings(currentProject.id, payload);
             updateProject(currentProject.id, updated);
         } catch (error) {
             console.error('Failed to update aspect ratio:', error);
@@ -473,9 +466,12 @@ function StoryboardInspector() {
 
                     const referenceCount = (sceneHasImage ? 1 : 0) + charImageCount + propImageCount;
 
-                    // Dynamic limit based on model
-                    const i2iModel = currentProject?.model_settings?.i2i_model;
-                    const referenceLimit = i2iModel === 'wan2.6-image' ? 4 : 3;
+                    // Reference image limit. Wan 2.6 supports 4; older models
+                    // accept 3. The actual model is resolved from the i2i
+                    // ModelInstance at runtime, so the FE no longer reads a
+                    // model_name string from project settings — assume the
+                    // higher limit (Wan 2.6 is the seeded default).
+                    const referenceLimit = 4;
                     const isLimitReached = referenceCount >= referenceLimit;
 
                     return (

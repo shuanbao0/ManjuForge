@@ -91,7 +91,9 @@ export default function ConsistencyVault() {
                 applyStyle,
                 negativePrompt,
                 batchSize,
-                currentProject.model_settings?.t2i_model
+                // model_name is resolved by the backend from the project's
+                // t2i_instance_id; passing undefined lets it apply.
+                undefined,
             );
 
             const taskId = response._task_id;

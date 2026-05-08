@@ -14,25 +14,24 @@ export default function VideoGenerator() {
     // Shared state for Remix functionality
     const [remixData, setRemixData] = useState<Partial<VideoTask> | null>(null);
 
-    // Get default model from project settings
-    const defaultI2vModel = currentProject?.model_settings?.i2v_model || "wan2.5-i2v-preview";
-
-    // Generation Params (Lifted State)
+    // Generation Params (Lifted State). The actual model now comes from
+    // the project's i2v_instance_id at runtime — leaving ``model`` empty
+    // tells the backend to resolve it from the instance.
     const [params, setParams] = useState({
         resolution: "720p",
         duration: 5,
         seed: undefined as number | undefined,
-        generateAudio: true,  // Default to AI Sound enabled
+        generateAudio: true,
         audioUrl: "",
         promptExtend: true,
         negativePrompt: "",
         batchSize: 1,
         cameraMovement: "none" as string,
         subjectMotion: "still" as string,
-        model: defaultI2vModel,
-        shotType: "single" as string,  // 'single' or 'multi' (only for wan2.6-i2v)
-        generationMode: "i2v" as string,  // 'i2v' or 'r2v'
-        referenceVideoUrls: [] as string[],  // Reference videos for R2V (max 3)
+        model: "",
+        shotType: "single" as string,
+        generationMode: "i2v" as string,
+        referenceVideoUrls: [] as string[],
         // Kling params
         mode: "std" as string,
         sound: false,
@@ -41,13 +40,6 @@ export default function VideoGenerator() {
         viduAudio: true,
         movementAmplitude: "auto" as string,
     });
-
-    // Sync model from project settings when project changes
-    useEffect(() => {
-        if (currentProject?.model_settings?.i2v_model) {
-            setParams(p => ({ ...p, model: currentProject.model_settings!.i2v_model }));
-        }
-    }, [currentProject?.model_settings?.i2v_model]);
 
     // Sync tasks from project
     useEffect(() => {
