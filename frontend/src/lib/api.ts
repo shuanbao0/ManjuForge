@@ -703,6 +703,10 @@ export const api = {
     /**
      * Analyzes script text and generates storyboard frames using AI.
      * Replaces existing frames with newly generated ones.
+     *
+     * Async: returns ``{ ...script, _task_id }`` immediately. Caller polls
+     * ``getTaskStatus(task_id)`` until status === "completed" / "failed", then
+     * refetches the project to get the new frames.
      */
     analyzeToStoryboard: async (scriptId: string, text: string) => {
         const res = await axios.post(`${API_URL}/projects/${scriptId}/storyboard/analyze`, {

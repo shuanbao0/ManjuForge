@@ -972,6 +972,53 @@ class ComicGenPipeline:
         self._save_data()
         return script
 
+    def create_storyboard_analysis_task(self, script_id: str, text: str) -> Tuple[Script, str]:
+        """Creates an async storyboard analysis task and returns (script, task_id) immediately.
+
+        The actual LLM call (which can take 1–3 minutes for long scripts) runs in a
+        background worker; the client polls ``/tasks/{task_id}`` for completion. This
+        avoids 5xx timeouts at upstream gateways (Cloudflare hard-limits responses to
+        ~100s on free/pro plans) when scripts are long.
+        """
+        script = self.scripts.get(script_id)
+        if not script:
+            raise ValueError("Script not found")
+
+        # ``add_background_task`` copies ContextVars into the worker, so the
+        # per-user RequestContext is preserved; ``analyze_text_to_frames``
+        # then re-enters its own ``scoped_instance`` from ``script.model_settings``.
+        task_id = str(uuid.uuid4())
+        self.asset_generation_tasks[task_id] = {
+            "task_type": "storyboard_analysis",
+            "status": "pending",
+            "progress": 0,
+            "error": None,
+            "script_id": script_id,
+            "asset_id": None,
+            "asset_type": None,
+            "created_at": time.time(),
+            "params": {"text": text},
+        }
+        return script, task_id
+
+    def process_storyboard_analysis_task(self, task_id: str):
+        """Processes a storyboard analysis task in the background."""
+        task = self.asset_generation_tasks.get(task_id)
+        if not task:
+            logger.error(f"Storyboard analysis task {task_id} not found")
+            return
+
+        task["status"] = "processing"
+        try:
+            self.analyze_text_to_frames(task["script_id"], task["params"]["text"])
+            task["status"] = "completed"
+            task["progress"] = 100
+            logger.info(f"Storyboard analysis task {task_id} completed successfully")
+        except Exception as e:
+            task["status"] = "failed"
+            task["error"] = str(e)
+            logger.error(f"Storyboard analysis task {task_id} failed: {e}", exc_info=True)
+
     def refine_frame_prompt(self, script_id: str, frame_id: str, raw_prompt: str, assets: List[Dict[str, Any]], feedback: str = "") -> Dict[str, Any]:
         """
         Refines a raw prompt into bilingual (CN/EN) prompts using LLM.

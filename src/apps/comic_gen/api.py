@@ -1188,14 +1188,28 @@ class AnalyzeToStoryboardRequest(BaseModel):
 
 
 @app.post("/projects/{script_id}/storyboard/analyze")
-async def analyze_to_storyboard(script_id: str, request: AnalyzeToStoryboardRequest):
+async def analyze_to_storyboard(
+    script_id: str,
+    request: AnalyzeToStoryboardRequest,
+    background_tasks: BackgroundTasks,
+):
     """
     Analyzes script text and generates storyboard frames using AI (Prompt B).
     Replaces existing frames with newly generated ones.
+
+    Async: returns immediately with ``_task_id``; client polls ``/tasks/{task_id}``
+    for completion. The LLM call regularly takes 30–180s for long scripts and was
+    previously hitting upstream gateway timeouts (Cloudflare ~100s) when run
+    synchronously.
     """
     try:
-        updated_script = pipeline.analyze_text_to_frames(script_id, request.text)
-        return signed_response(updated_script)
+        script, task_id = pipeline.create_storyboard_analysis_task(script_id, request.text)
+        _ctx_runtime.add_background_task(
+            background_tasks, pipeline.process_storyboard_analysis_task, task_id
+        )
+        response_data = script.model_dump() if hasattr(script, "model_dump") else script.dict()
+        response_data["_task_id"] = task_id
+        return signed_response(response_data)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:

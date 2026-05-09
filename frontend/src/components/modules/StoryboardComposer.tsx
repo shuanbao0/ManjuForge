@@ -40,9 +40,13 @@ export default function StoryboardComposer() {
 
 
 
-    // NEW: Analyze script text to generate storyboard frames
+    // NEW: Analyze script text to generate storyboard frames.
+    // Async: posts the job, then polls /tasks/{task_id}. The LLM call can take
+    // minutes for long scripts; running it synchronously hit upstream gateway
+    // timeouts (Cloudflare ~100s) so the backend now returns a task_id.
     const handleAnalyzeToStoryboard = async () => {
         if (!currentProject) return;
+        const projectId = currentProject.id;
 
         const text = currentProject.originalText;
         if (!text || !text.trim()) {
@@ -56,17 +60,50 @@ export default function StoryboardComposer() {
 
         setIsAnalyzing(true);
         try {
-            const updatedProject = await api.analyzeToStoryboard(currentProject.id, text);
-            const frameCount = updatedProject.frames?.length || 0;
-            if (frameCount > 0) {
-                updateProject(currentProject.id, updatedProject);
-                alert(`成功生成 ${frameCount} 个分镜帧！`);
-            } else {
-                alert("AI 模型未生成有效分镜帧，请重新点击按钮再试一次。");
+            const initialResponse = await api.analyzeToStoryboard(projectId, text);
+            const taskId = initialResponse?._task_id;
+
+            // Backwards-compat: if the backend ever returns the script
+            // synchronously again, just apply it directly.
+            if (!taskId) {
+                const frameCount = initialResponse?.frames?.length || 0;
+                if (frameCount > 0) {
+                    updateProject(projectId, initialResponse);
+                    alert(`成功生成 ${frameCount} 个分镜帧！`);
+                } else {
+                    alert("AI 模型未生成有效分镜帧，请重新点击按钮再试一次。");
+                }
+                return;
             }
+
+            await new Promise<void>((resolve, reject) => {
+                const interval = setInterval(async () => {
+                    try {
+                        const status = await api.getTaskStatus(taskId);
+                        if (status.status === "completed") {
+                            clearInterval(interval);
+                            const updatedProject = await api.getProject(projectId);
+                            updateProject(projectId, updatedProject);
+                            const frameCount = updatedProject?.frames?.length || 0;
+                            if (frameCount > 0) {
+                                alert(`成功生成 ${frameCount} 个分镜帧！`);
+                            } else {
+                                alert("AI 模型未生成有效分镜帧，请重新点击按钮再试一次。");
+                            }
+                            resolve();
+                        } else if (status.status === "failed") {
+                            clearInterval(interval);
+                            reject(new Error(status.error || "分镜生成失败"));
+                        }
+                    } catch (err) {
+                        clearInterval(interval);
+                        reject(err);
+                    }
+                }, 2000);
+            });
         } catch (error: any) {
             console.error("Analyze to storyboard failed:", error);
-            const detail = extractErrorDetail(error, "");
+            const detail = extractErrorDetail(error, "") || error?.message || "";
             if (detail.includes("JSON") || detail.includes("格式")) {
                 alert(`分镜生成失败：AI 模型输出格式异常。\n\n这是模型偶发的格式问题，通常重试即可解决。请再次点击生成按钮。`);
             } else {
