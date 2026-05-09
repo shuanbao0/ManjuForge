@@ -53,10 +53,63 @@ class WanxImageModel(ImageGenModel):
             logger.warning("Dashscope API Key not found in config or environment variables.")
         return api_key
 
+    @staticmethod
+    def _classify_dashscope_family(model_name: str) -> str:
+        """Map a DashScope image model name to the API family it lives on.
+
+        Returns one of:
+          - ``"multimodal_sync"``: ``/api/v1/services/aigc/multimodal-generation/generation``
+            (sync). Covers ``wan2.6-t2i`` and the entire ``qwen-image`` line
+            (qwen-image, qwen-image-plus, qwen-image-edit, qwen-image-2.0,
+            qwen-image-2.0-pro). Both T2I and I2I-edit variants share this.
+          - ``"image_gen_async"``: ``/api/v1/services/aigc/image-generation/generation``
+            (async, returns task_id and polls). Covers ``wan2.6-image`` and the
+            ``wan2.5-*`` preview family.
+          - ``"legacy_sdk"``: anything else. Falls through to the deprecated
+            ``ImageSynthesis.call()`` path which only serves older models like
+            ``wanx-v1``. Modern models routed here will surface DashScope's
+            ``"url error"`` / ``InvalidParameter`` rejections.
+
+        See ``CLAUDE.md`` and the DashScope reference docs for the per-family
+        endpoint details.
+        """
+        if not model_name:
+            return "legacy_sdk"
+        n = model_name.lower()
+        if n == "wan2.6-t2i" or n.startswith("qwen-image"):
+            return "multimodal_sync"
+        if n == "wan2.6-image" or n.startswith("wan2.5-"):
+            return "image_gen_async"
+        return "legacy_sdk"
+
+    def _configure_dashscope_sdk(self) -> None:
+        """Apply per-call dashscope SDK globals.
+
+        - ``dashscope.api_key`` always comes from the active ModelInstance
+          (or env fallback).
+        - ``dashscope.base_http_api_url`` comes from ``instance.base_url`` when
+          configured. Without this plumbing, the user-facing "Base URL" field
+          in Settings would silently no-op on the SDK path. ``base_http_api_url``
+          expects the ``/api/v1`` suffix; we append it if absent so users can
+          paste either ``https://dashscope.aliyuncs.com`` or
+          ``https://dashscope.aliyuncs.com/api/v1``.
+        """
+        dashscope.api_key = self.api_key
+        try:
+            from src.runtime import current_instance
+            inst = current_instance()
+            base = getattr(inst, "base_url", None) if inst else None
+            if base:
+                base = base.rstrip("/")
+                if not base.endswith("/api/v1"):
+                    base = f"{base}/api/v1"
+                dashscope.base_http_api_url = base
+        except Exception as e:
+            logger.debug(f"Could not apply instance.base_url to dashscope SDK: {e}")
+
     def generate(self, prompt: str, output_path: str, ref_image_path: str = None, ref_image_paths: list = None, model_name: str = None, **kwargs) -> Tuple[str, float]:
         # Determine model based on whether reference image is provided
         # Support both single path (legacy) and list of paths
-        dashscope.api_key = self.api_key
 
         all_ref_paths = []
         if ref_image_path:
@@ -87,8 +140,13 @@ class WanxImageModel(ImageGenModel):
         # model_name is already handled above, remove from kwargs if present
         kwargs.pop('model_name', None)
         
-        # Determine reference image limit based on model
-        ref_limit = 4 if final_model_name == 'wan2.6-image' else 3
+        # Determine reference image limit based on model. wan2.6-image and
+        # the qwen-image edit/2.0 variants accept up to 4 refs; legacy models
+        # cap at 3.
+        if final_model_name == 'wan2.6-image' or final_model_name.startswith('qwen-image'):
+            ref_limit = 4
+        else:
+            ref_limit = 3
         if len(all_ref_paths) > ref_limit:
             logger.warning(f"Limiting reference images from {len(all_ref_paths)} to {ref_limit} for model {final_model_name}")
             all_ref_paths = all_ref_paths[:ref_limit]
@@ -97,16 +155,41 @@ class WanxImageModel(ImageGenModel):
         logger.info(f"Prompt: {prompt}")
         logger.info(f"Model: {final_model_name}, Size: {size}, N: {n}")
 
+        # Per-call SDK config: API key + (optional) base URL from the
+        # currently-bound ModelInstance. The dashscope SDK reads these as
+        # globals, so we must set them right before each call.
+        self._configure_dashscope_sdk()
+
         try:
             api_start_time = time.time()
-            # Use HTTP API for wan2.6 models (SDK not supported yet)
-            if final_model_name == 'wan2.6-t2i':
-                image_url = self._generate_wan26_http(prompt, size, n, negative_prompt)
-            elif final_model_name == 'wan2.6-image':
-                # wan2.6-image for I2I (requires reference images)
-                image_url = self._generate_wan26_image_http(prompt, size, n, negative_prompt, all_ref_paths)
+            family = self._classify_dashscope_family(final_model_name)
+            if family == "multimodal_sync":
+                # qwen-image*, wan2.6-t2i — sync /multimodal-generation/generation
+                # with optional reference images for I2I-edit variants.
+                image_url = self._generate_wan26_http(
+                    prompt,
+                    size,
+                    n,
+                    negative_prompt,
+                    model_name=final_model_name,
+                    ref_image_paths=all_ref_paths or None,
+                )
+            elif family == "image_gen_async":
+                # wan2.6-image, wan2.5-t2i-preview, wan2.5-i2i-preview —
+                # async /image-generation/generation with task polling.
+                image_url = self._generate_wan26_image_http(
+                    prompt,
+                    size,
+                    n,
+                    negative_prompt,
+                    all_ref_paths,
+                    model_name=final_model_name,
+                )
             else:
-                # Use SDK for other models
+                # Legacy SDK fallback for older DashScope models (wanx-v1 etc.)
+                # and any model name we don't explicitly recognize. New models
+                # generally live on the multimodal/image-generation endpoints
+                # above; this path is mostly here for backward compatibility.
                 image_url = self._generate_sdk(prompt, final_model_name, size, n, negative_prompt, all_ref_paths,
                                                kwargs)
 
@@ -122,47 +205,68 @@ class WanxImageModel(ImageGenModel):
 
         except Exception as e:
             import traceback
-            logger.error(f"Error during generation: {e}")
+            logger.error(f"Error during generation [model={final_model_name}, size={size}, n={n}, refs={len(all_ref_paths)}]: {e}")
             logger.error(traceback.format_exc())
             raise
 
-    def _generate_wan26_http(self, prompt: str, size: str, n: int, negative_prompt: str = None) -> str:
-        """Generate image using Wan 2.6 T2I via HTTP API (synchronous)."""
+    def _generate_wan26_http(
+        self,
+        prompt: str,
+        size: str,
+        n: int,
+        negative_prompt: str = None,
+        model_name: str = "wan2.6-t2i",
+        ref_image_paths: list = None,
+    ) -> str:
+        """Generate image via DashScope's *synchronous* multimodal-generation
+        endpoint. Used for ``wan2.6-t2i`` and the entire ``qwen-image`` family
+        (qwen-image, qwen-image-plus, qwen-image-edit, qwen-image-2.0,
+        qwen-image-2.0-pro). Supports both T2I (no refs) and I2I (with refs
+        — qwen-image-edit & qwen-image-2.0-pro) by inserting ``{"image": ...}``
+        entries before the text prompt in ``messages.content``.
+        """
         base = get_provider_base_url("DASHSCOPE")
         url = f"{base}/api/v1/services/aigc/multimodal-generation/generation"
-        
+
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}"
+            "Authorization": f"Bearer {self.api_key}",
         }
-        
+
+        content: list = []
+        if ref_image_paths:
+            ref_limit = 3
+            for path in ref_image_paths[:ref_limit]:
+                image_input = self._resolve_wan26_reference_image(path, model_name=model_name)
+                if image_input:
+                    content.append({"image": image_input})
+            if not content:
+                raise RuntimeError(
+                    f"{model_name} I2I requires at least one usable reference image. "
+                    "Please provide a valid local image, public URL, or configure OSS."
+                )
+        content.append({"text": prompt})
+
         payload = {
-            "model": "wan2.6-t2i",
+            "model": model_name,
             "input": {
                 "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "text": prompt
-                            }
-                        ]
-                    }
+                    {"role": "user", "content": content}
                 ]
             },
             "parameters": {
                 "prompt_extend": False,  # Disable auto prompt rewriting for consistency
                 "watermark": False,
                 "n": n,
-                "size": size
-            }
+                "size": size,
+            },
         }
-        
+
         # Add negative_prompt if provided
         if negative_prompt:
             payload["parameters"]["negative_prompt"] = negative_prompt
-        
-        logger.info(f"Calling Wan 2.6 T2I HTTP API...")
+
+        logger.info(f"Calling DashScope multimodal-generation HTTP API ({model_name})...")
         logger.info(f"Payload: {payload}")
         
         response = requests.post(url, headers=headers, json=payload, timeout=300)  # 5 minutes for slow API responses
@@ -195,8 +299,20 @@ class WanxImageModel(ImageGenModel):
         
         return image_url
 
-    def _generate_wan26_image_http(self, prompt: str, size: str, n: int, negative_prompt: str = None, ref_image_paths: list = None) -> str:
-        """Generate image using Wan 2.6 Image via HTTP API (asynchronous with polling)."""
+    def _generate_wan26_image_http(
+        self,
+        prompt: str,
+        size: str,
+        n: int,
+        negative_prompt: str = None,
+        ref_image_paths: list = None,
+        model_name: str = "wan2.6-image",
+    ) -> str:
+        """Generate image via DashScope's *asynchronous* image-generation
+        endpoint with task polling. Used for ``wan2.6-image`` (I2I) and the
+        ``wan2.5-*`` preview family (``wan2.5-t2i-preview``, ``wan2.5-i2i-preview``).
+        Same payload shape across these models — just the ``model`` field varies.
+        """
         base = get_provider_base_url("DASHSCOPE")
         create_url = f"{base}/api/v1/services/aigc/image-generation/generation"
         
@@ -221,36 +337,43 @@ class WanxImageModel(ImageGenModel):
 
         if ref_image_paths and not content:
             raise RuntimeError(
-                "Wan 2.6 Image requires at least one usable reference image. "
+                f"{model_name} I2I requires at least one usable reference image. "
                 "Please provide a valid local image, public URL, or configure OSS."
             )
 
         content.append({"text": prompt})
-        
+
+        # ``enable_interleave`` is the I2I-edit toggle; only relevant when
+        # we actually have reference images. Skip it for pure T2I calls
+        # (e.g. ``wan2.5-t2i-preview``) so DashScope doesn't reject the
+        # missing-images precondition.
+        parameters: Dict[str, Any] = {
+            "prompt_extend": False,  # Disable auto prompt rewriting for consistency
+            "watermark": False,
+            "n": n,
+            "size": size,
+        }
+        if ref_image_paths:
+            parameters["enable_interleave"] = False  # Image editing mode (I2I)
+
         payload = {
-            "model": "wan2.6-image",
+            "model": model_name,
             "input": {
                 "messages": [
                     {
                         "role": "user",
-                        "content": content
+                        "content": content,
                     }
                 ]
             },
-            "parameters": {
-                "prompt_extend": False,  # Disable auto prompt rewriting for consistency
-                "watermark": False,
-                "n": n,
-                "size": size,
-                "enable_interleave": False  # Image editing mode (I2I)
-            }
+            "parameters": parameters,
         }
         
         # Add negative_prompt if provided
         if negative_prompt:
             payload["parameters"]["negative_prompt"] = negative_prompt
         
-        logger.info(f"Calling Wan 2.6 Image HTTP API (async)...")
+        logger.info(f"Calling DashScope image-generation HTTP API (async) for {model_name}...")
         logger.info(f"Payload: {payload}")
         
         # Step 1: Create task
@@ -262,7 +385,7 @@ class WanxImageModel(ImageGenModel):
         if response.status_code != 200:
             error_data = response.json() if response.text else {}
             error_msg = error_data.get('message', response.text)
-            raise RuntimeError(f"Wan 2.6 Image task creation failed: {error_msg}")
+            raise RuntimeError(f"DashScope image-generation task creation failed: {error_msg}")
         
         result = response.json()
         task_id = result.get('output', {}).get('task_id')
@@ -327,15 +450,15 @@ class WanxImageModel(ImageGenModel):
                     'Unknown error - check logs for full response'
                 )
                 
-                raise RuntimeError(f"Wan 2.6 Image task failed: {error_msg}")
+                raise RuntimeError(f"DashScope image-generation task failed: {error_msg}")
 
             
             elif task_status in ['CANCELED', 'UNKNOWN']:
-                raise RuntimeError(f"Wan 2.6 Image task {task_status}: {poll_result}")
+                raise RuntimeError(f"DashScope image-generation task {task_status}: {poll_result}")
             
             # PENDING or RUNNING - continue polling
         
-        raise RuntimeError(f"Wan 2.6 Image task timed out after {max_wait_time}s")
+        raise RuntimeError(f"DashScope image-generation task timed out after {max_wait_time}s")
 
     def _resolve_wan26_reference_image(self, path: str, model_name: str = "wan2.6-image") -> str:
         uploader = OSSImageUploader()
