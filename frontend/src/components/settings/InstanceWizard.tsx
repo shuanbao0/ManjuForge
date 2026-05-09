@@ -41,13 +41,24 @@ const VENDORS: VendorMeta[] = [
         id: "dashscope",
         label: "阿里云 DashScope",
         capabilities: ["llm", "t2i", "i2i", "i2v", "t2v", "r2v", "tts"],
-        suggested_models: [
-            "qwen3.5-plus", "qwen3-max", "qwen-plus", "qwen-flash",
-            "wan2.6-t2i", "wan2.6-image", "wan2.6-i2v", "wan2.5-t2i-preview",
-            "wan2.5-i2i-preview", "wan2.5-i2v-preview",
-            "qwen-image", "qwen-image-plus", "flux-schnell", "flux-dev",
-            "cosyvoice-v3-flash", "cosyvoice-v3-plus",
-        ],
+        suggested_models: {
+            llm: ["qwen3.5-plus", "qwen3-max", "qwen-plus", "qwen-flash"],
+            t2i: [
+                "wan2.6-t2i", "wan2.6-image", "wan2.5-t2i-preview",
+                "qwen-image", "qwen-image-plus",
+                "flux-schnell", "flux-dev",
+            ],
+            // wan2.6-image is the unified image endpoint — accepts pure-text
+            // (t2i) AND reference-image edits (i2i), so it appears in both buckets.
+            i2i: ["wan2.6-image", "wan2.5-i2i-preview", "qwen-image-edit"],
+            i2v: [
+                "wan2.6-i2v", "wan2.6-i2v-flash", "wan2.5-i2v-preview",
+                "wan2.2-i2v-plus", "wan2.2-i2v-flash",
+            ],
+            t2v: ["wan2.6-i2v", "wan2.5-t2v-preview"],
+            r2v: ["wan2.6-i2v"],
+            tts: ["cosyvoice-v3-plus", "cosyvoice-v3-flash"],
+        },
         default_base_url: "https://dashscope.aliyuncs.com",
         credential_keys: [{ key: "DASHSCOPE_API_KEY", label: "API Key" }],
         docs_url: "https://help.aliyun.com/zh/model-studio/",
