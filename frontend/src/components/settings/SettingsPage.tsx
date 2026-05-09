@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
-  Save, Settings, MessageSquareCode, Database, ShieldCheck, Cpu,
+  Save, Settings, MessageSquareCode, ShieldCheck, Cpu,
   Layout, User as UserIcon, Building, Box,
 } from "lucide-react";
 import { ASPECT_RATIOS } from "@/store/projectStore";
@@ -207,23 +207,6 @@ export default function SettingsPage() {
             <Save size={16} />
             保存默认值
           </button>
-        </div>
-      </section>
-
-      {/* ── Object storage hint ── */}
-      <section className="glass-panel rounded-xl p-6 space-y-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-fuchsia-500/20 rounded-lg">
-            <Database size={20} className="text-fuchsia-400" />
-          </div>
-          <div>
-            <h2 className="text-lg font-bold text-white">对象存储</h2>
-            <p className="text-xs text-gray-500">默认仅本地保存。可选 MinIO / Aliyun OSS,管理员在 ./env 配置。</p>
-          </div>
-        </div>
-        <div className="text-xs text-gray-500">
-          对象存储凭证由管理员在服务器 <code className="bg-black/30 px-1 rounded">.env</code> 中配置;
-          此页面仅展示当前模式。需切换请联系管理员。
         </div>
       </section>
 
