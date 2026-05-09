@@ -55,8 +55,13 @@ const VENDORS: VendorMeta[] = [
     {
         id: "openai",
         label: "OpenAI",
-        capabilities: ["llm"],
-        suggested_models: ["gpt-5", "gpt-5-mini", "gpt-4o", "gpt-4o-mini", "o3-mini"],
+        capabilities: ["llm", "t2i", "i2i"],
+        suggested_models: {
+            llm: ["gpt-5", "gpt-5-mini", "gpt-4o", "gpt-4o-mini", "o3-mini"],
+            // GPT Image series — Elo 榜首,通过 Images / Edits API
+            t2i: ["gpt-image-2", "gpt-image-1.5", "gpt-image-1"],
+            i2i: ["gpt-image-2", "gpt-image-1.5", "gpt-image-1"],
+        },
         default_base_url: "https://api.openai.com/v1",
         credential_keys: [{ key: "OPENAI_API_KEY", label: "API Key" }],
         docs_url: "https://platform.openai.com/docs",
@@ -118,10 +123,20 @@ const VENDORS: VendorMeta[] = [
     {
         id: "google",
         label: "Google Gemini",
-        capabilities: ["llm"],
-        suggested_models: ["gemini-2.5-pro", "gemini-2.5-flash"],
+        // Gemini family covers LLM (Gemini 2.5/3) + Image (Nano Banana) + Video (Veo 3.1).
+        capabilities: ["llm", "t2i", "i2i", "i2v", "t2v"],
+        suggested_models: {
+            llm: ["gemini-3-pro", "gemini-3-flash", "gemini-2.5-pro", "gemini-2.5-flash"],
+            // 2026 SOTA 多参考图角色一致性
+            t2i: ["gemini-3.1-flash-image", "nano-banana-pro", "nano-banana-2"],
+            i2i: ["gemini-3.1-flash-image", "nano-banana-pro", "nano-banana-2"],
+            // Veo 3.1 — 综合第一,原生 4K + 原生音频
+            i2v: ["veo-3.1", "veo-3.1-fast"],
+            t2v: ["veo-3.1", "veo-3.1-fast"],
+        },
         default_base_url: "https://generativelanguage.googleapis.com/v1beta/openai",
-        credential_keys: [{ key: "OPENAI_API_KEY", label: "API Key" }],
+        credential_keys: [{ key: "GOOGLE_API_KEY", label: "API Key" }],
+        docs_url: "https://ai.google.dev/",
     },
     {
         id: "ollama",
@@ -136,7 +151,7 @@ const VENDORS: VendorMeta[] = [
         id: "kling",
         label: "Kling AI (vendor-direct)",
         capabilities: ["i2v", "t2v"],
-        suggested_models: ["kling-v3", "kling-2.1-master"],
+        suggested_models: ["kling-v3.0", "kling-v3", "kling-2.1-master"],
         default_base_url: "https://api-beijing.klingai.com/v1",
         credential_keys: [
             { key: "KLING_ACCESS_KEY", label: "Access Key" },
@@ -161,14 +176,87 @@ const VENDORS: VendorMeta[] = [
     },
     {
         id: "doubao",
-        label: "字节豆包 Seedance",
-        capabilities: ["i2v", "t2v"],
-        suggested_models: ["doubao-seedance-1.0-pro"],
+        label: "字节豆包 Seedance / Seedream",
+        // Volcano Engine Ark 同账号同时覆盖 Seedance 视频 + Seedream 图像。
+        capabilities: ["t2i", "i2i", "i2v", "t2v"],
+        suggested_models: {
+            t2i: ["doubao-seedream-5.0", "doubao-seedream-4.5"],
+            i2i: ["doubao-seedream-5.0", "doubao-seedream-4.5"],
+            i2v: [
+                "doubao-seedance-2.0-pro",
+                "doubao-seedance-2.0",
+                "doubao-seedance-1.5-pro",
+                "doubao-seedance-1.0-pro",
+            ],
+            t2v: [
+                "doubao-seedance-2.0-pro",
+                "doubao-seedance-2.0",
+                "doubao-seedance-1.5-pro",
+                "doubao-seedance-1.0-pro",
+            ],
+        },
         default_base_url: "https://ark.cn-beijing.volces.com/api/v3",
         credential_keys: [{ key: "DOUBAO_API_KEY", label: "API Key" }],
+        docs_url: "https://www.volcengine.com/docs/82379",
     },
     // (Hailuo merged into the unified `minimax` entry above so a single
     // MINIMAX_API_KEY covers LLM / TTS / T2I / I2V on the same plan.)
+    // ── 2026 新增 ────────────────────────────────────────────────────
+    {
+        id: "bfl",
+        label: "Black Forest Labs FLUX",
+        // FLUX.2 Pro / Max / Flash — 2026 写实摄影基准,支持最多 10 张参考图
+        capabilities: ["t2i", "i2i"],
+        suggested_models: ["flux-2-pro", "flux-2-max", "flux-2-flash"],
+        default_base_url: "https://api.bfl.ai/v1",
+        credential_keys: [{ key: "BFL_API_KEY", label: "API Key" }],
+        docs_url: "https://docs.bfl.ai/",
+    },
+    {
+        id: "elevenlabs",
+        label: "ElevenLabs",
+        // 英语长篇朗读黄金标准
+        capabilities: ["tts"],
+        suggested_models: ["eleven_turbo_v2_5", "eleven_multilingual_v2", "eleven_v3"],
+        default_base_url: "https://api.elevenlabs.io/v1",
+        credential_keys: [{ key: "ELEVENLABS_API_KEY", label: "API Key" }],
+        docs_url: "https://elevenlabs.io/docs/api-reference/text-to-speech",
+    },
+    {
+        id: "fish-audio",
+        label: "Fish Audio",
+        // 80+ 语言,15 秒克隆,公开榜单 ELO #1
+        capabilities: ["tts"],
+        suggested_models: ["fish-s2", "fish-s1"],
+        default_base_url: "https://api.fish.audio/v1",
+        credential_keys: [{ key: "FISH_AUDIO_API_KEY", label: "API Key" }],
+        docs_url: "https://docs.fish.audio/",
+    },
+    {
+        id: "cartesia",
+        label: "Cartesia",
+        // 首字节 ~40-90ms,语音 Agent 实时对话最佳
+        capabilities: ["tts"],
+        suggested_models: ["sonic-3", "sonic-2"],
+        default_base_url: "https://api.cartesia.ai",
+        credential_keys: [{ key: "CARTESIA_API_KEY", label: "API Key" }],
+        docs_url: "https://docs.cartesia.ai/",
+    },
+    {
+        id: "fal",
+        label: "fal.ai (聚合)",
+        // 一个 key 直连 600+ 模型 — Veo 3.1 / Sora 2 / Kling 3.0 / Seedance / FLUX.2 等
+        capabilities: ["t2i", "i2i", "i2v", "t2v"],
+        suggested_models: {
+            t2i: ["fal-flux-2-pro", "fal-seedream-5.0", "fal-nano-banana-pro"],
+            i2i: ["fal-flux-2-pro", "fal-gemini-3.1-flash-image"],
+            i2v: ["fal-veo-3.1", "fal-kling-3.0", "fal-seedance-1.5-pro"],
+            t2v: ["fal-veo-3.1", "fal-kling-3.0", "fal-seedance-1.5-pro"],
+        },
+        default_base_url: "https://fal.run",
+        credential_keys: [{ key: "FAL_API_KEY", label: "API Key (KEY_ID:KEY_SECRET)" }],
+        docs_url: "https://fal.ai/docs",
+    },
 ];
 
 const TYPE_LABELS: Record<InstanceTypeId, string> = {

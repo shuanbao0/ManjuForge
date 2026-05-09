@@ -71,17 +71,40 @@ class AudioGenerator:
             voice = character.voice_id
 
             # Route by vendor of the currently-scoped TTS ModelInstance.
-            # When vendor_id == "minimax", use MiniMax T2A v2; otherwise
-            # default to DashScope CosyVoice (the legacy path).
+            # Each vendor's client lives under src/audio/<vendor>_tts.py and
+            # exposes the same ``synthesize_*(text, output_path, *, voice,
+            # speech_rate, pitch_rate, volume) -> (path, latency_ms,
+            # request_id)`` shape so the dispatch is one switch.
             from src.runtime import current_instance
             inst = current_instance()
-            if inst and inst.vendor_id == "minimax":
+            vendor = inst.vendor_id if inst else None
+
+            if vendor == "minimax":
                 from src.audio.minimax_tts import synthesize_minimax_tts
                 synthesize_minimax_tts(
                     text, output_path,
                     voice=voice, speech_rate=speed, pitch_rate=pitch, volume=volume,
                 )
+            elif vendor == "elevenlabs":
+                from src.audio.elevenlabs_tts import synthesize_elevenlabs_tts
+                synthesize_elevenlabs_tts(
+                    text, output_path,
+                    voice=voice, speech_rate=speed, pitch_rate=pitch, volume=volume,
+                )
+            elif vendor == "fish-audio":
+                from src.audio.fish_tts import synthesize_fish_tts
+                synthesize_fish_tts(
+                    text, output_path,
+                    voice=voice, speech_rate=speed, pitch_rate=pitch, volume=volume,
+                )
+            elif vendor == "cartesia":
+                from src.audio.cartesia_tts import synthesize_cartesia_tts
+                synthesize_cartesia_tts(
+                    text, output_path,
+                    voice=voice, speech_rate=speed, pitch_rate=pitch, volume=volume,
+                )
             else:
+                # Default: DashScope CosyVoice (the legacy path).
                 self.tts.synthesize(text, output_path, voice=voice, speech_rate=speed, pitch_rate=pitch, volume=volume)
 
             rel_path = os.path.relpath(output_path, self.data_root)

@@ -80,6 +80,13 @@ def _default_llm_base_url(vendor_id: str) -> str:
         "google": "https://generativelanguage.googleapis.com/v1beta/openai",
         "ollama": "http://localhost:11434/v1",
         "dashscope": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        # New 2026 vendors — not LLM, but listed for safety in case the LLM
+        # tester is invoked with an unsupported vendor id.
+        "bfl": "https://api.bfl.ai/v1",
+        "fal": "https://fal.run",
+        "elevenlabs": "https://api.elevenlabs.io/v1",
+        "fish-audio": "https://api.fish.audio/v1",
+        "cartesia": "https://api.cartesia.ai",
     }.get(vendor_id, "https://api.openai.com/v1")
 
 
@@ -111,18 +118,31 @@ def _vendor_direct_required_keys(vendor_id: str) -> tuple[str, ...]:
         "hailuo": ("HAILUO_API_KEY",),
         # MiniMax token plan covers I2V/T2I/TTS — one MINIMAX_API_KEY is enough.
         "minimax": ("MINIMAX_API_KEY",),
+        # 2026 additions — vendor-direct keys validated by presence only;
+        # actual network probes get wired once each adapter lands.
+        "bfl": ("BFL_API_KEY",),
+        "google": ("GOOGLE_API_KEY",),
+        "openai": ("OPENAI_API_KEY",),
+        "fal": ("FAL_API_KEY",),
     }.get(vendor_id, ())
 
 
 def _tts_probe(instance: ModelInstance) -> TestResult:
-    """TTS supports two backends:
+    """TTS supports several backends:
     - DashScope CosyVoice → needs DASHSCOPE_API_KEY
     - MiniMax T2A v2 → needs MINIMAX_API_KEY
+    - ElevenLabs / Fish Audio / Cartesia → vendor-direct, presence check
     """
-    if instance.vendor_id == "minimax":
-        if instance.credentials.get("MINIMAX_API_KEY"):
+    vendor_required = {
+        "minimax": "MINIMAX_API_KEY",
+        "elevenlabs": "ELEVENLABS_API_KEY",
+        "fish-audio": "FISH_AUDIO_API_KEY",
+        "cartesia": "CARTESIA_API_KEY",
+    }.get(instance.vendor_id)
+    if vendor_required is not None:
+        if instance.credentials.get(vendor_required):
             return TestResult(ok=True)
-        return TestResult(ok=False, error="MINIMAX_API_KEY missing")
+        return TestResult(ok=False, error=f"{vendor_required} missing")
     if not instance.credentials.get("DASHSCOPE_API_KEY"):
         return TestResult(ok=False, error="DASHSCOPE_API_KEY missing")
     return TestResult(ok=True)

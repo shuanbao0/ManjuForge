@@ -179,13 +179,74 @@ def make_pixverse_vendor_adapter() -> VideoAdapter:
     )
 
 
+class DoubaoSeedanceVendorAdapter(VideoAdapter):
+    """ByteDance Seedance vendor-direct adapter (Volcano Engine Ark).
+
+    Bridges the dispatcher's :class:`VideoGenerationContext` to
+    :func:`src.models.seedance.generate_seedance_video`.
+    """
+
+    def generate(self, ctx: VideoGenerationContext) -> Tuple[str, float]:
+        from .seedance import generate_seedance_video
+
+        task = ctx.task
+        return generate_seedance_video(
+            prompt=task.prompt,
+            output_path=ctx.output_path,
+            img_url=ctx.img_url,
+            img_path=ctx.img_path,
+            duration=int(task.duration or 5),
+            resolution=(task.resolution or "1080p"),
+            model=task.model,
+        )
+
+
 def make_doubao_vendor_adapter() -> VideoAdapter:
-    return _NotImplementedAdapter(
-        family="doubao-seedance",
-        hint="Doubao Seedance is currently in preview. The vendor client "
-        "(src/models/doubao.py) needs to be implemented; see "
-        "src/utils/model_catalog.py for the model card.",
-    )
+    return DoubaoSeedanceVendorAdapter()
+
+
+class VeoVendorAdapter(VideoAdapter):
+    """Google Veo vendor-direct adapter (Gemini API)."""
+
+    def generate(self, ctx: VideoGenerationContext) -> Tuple[str, float]:
+        from .veo import generate_veo_video
+
+        task = ctx.task
+        return generate_veo_video(
+            prompt=task.prompt,
+            output_path=ctx.output_path,
+            img_url=ctx.img_url,
+            img_path=ctx.img_path,
+            duration=int(task.duration or 8),
+            resolution=(task.resolution or "1080p"),
+            model=task.model,
+        )
+
+
+def make_veo_vendor_adapter() -> VideoAdapter:
+    return VeoVendorAdapter()
+
+
+class FalVideoVendorAdapter(VideoAdapter):
+    """fal.ai aggregator video adapter (Veo / Kling / Seedance / etc.)."""
+
+    def generate(self, ctx: VideoGenerationContext) -> Tuple[str, float]:
+        from .fal_aggregator import generate_fal_video
+
+        task = ctx.task
+        return generate_fal_video(
+            prompt=task.prompt,
+            output_path=ctx.output_path,
+            img_url=ctx.img_url,
+            img_path=ctx.img_path,
+            duration=int(task.duration or 5),
+            resolution=(task.resolution or "720p"),
+            model=task.model,
+        )
+
+
+def make_fal_vendor_adapter() -> VideoAdapter:
+    return FalVideoVendorAdapter()
 
 
 class HailuoVendorAdapter(VideoAdapter):
@@ -307,6 +368,9 @@ def build_default_dispatcher(video_generator: Any) -> VideoModelDispatcher:
     dispatcher.register("hailuo-", "vendor", make_hailuo_vendor_adapter)
     # MiniMax-Hailuo-* (canonical API model ids) shares the same adapter.
     dispatcher.register("minimax-hailuo-", "vendor", make_hailuo_vendor_adapter)
+    # 2026 additions: Google Veo + fal.ai aggregator video.
+    dispatcher.register("veo-", "vendor", make_veo_vendor_adapter)
+    dispatcher.register("fal-", "vendor", make_fal_vendor_adapter)
     return dispatcher
 
 

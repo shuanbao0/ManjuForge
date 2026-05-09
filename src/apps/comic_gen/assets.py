@@ -44,53 +44,88 @@ ASPECT_RATIO_TO_SIZE = {
     "1:1": "1024*1024",   # Square
 }
 
-class _MinimaxImageAdapter:
-    """Adapter making :mod:`src.models.minimax_image` look like ``WanxImageModel.generate``.
-
-    Only T2I (no ref_image_path) is supported for now — i2i / image edit is
-    not on MiniMax image-01 yet, so callers that pass ``ref_image_path``
-    silently fall through to Wanx. This keeps the route safe without
-    requiring AssetGenerator to know which model can do which.
+def _make_function_adapter(generate_fn, *, supports_i2i: bool, vendor_label: str):
+    """Wrap a top-level ``generate_*_image(prompt, output_path, *, size, n,
+    negative_prompt, ref_image_paths) -> (saved_paths, latency)`` function so
+    it presents the ``WanxImageModel.generate(prompt, output_path,
+    ref_image_path, ref_image_paths, model_name, size, negative_prompt)``
+    signature ``AssetGenerator``/``StoryboardGenerator`` already drive.
     """
 
-    def generate(self, prompt, output_path, ref_image_path=None, negative_prompt=None,
-                 model_name=None, size=None, **kwargs):
-        if ref_image_path:
-            raise NotImplementedError("MiniMax image-01 doesn't support ref_image_path; use Wan for I2I")
-        from ..models.minimax_image import generate_minimax_image  # type: ignore
-        # NOTE: relative-import path uses two dots because assets.py lives
-        # in src/apps/comic_gen/. Compensate by going up two levels: ../..
-        # = src/  → models.minimax_image lives at src/models/minimax_image.py
-        from ...models.minimax_image import generate_minimax_image as _gen
-        saved, latency = _gen(prompt=prompt, output_path=output_path,
-                              size=size or "1024*1024",
-                              n=1, negative_prompt=negative_prompt)
-        return saved[0], latency
+    class _Adapter:
+        def generate(self, prompt, output_path, ref_image_path=None,
+                     ref_image_paths=None, negative_prompt=None,
+                     model_name=None, size=None, **kwargs):
+            refs = []
+            if ref_image_path:
+                refs.append(ref_image_path)
+            if ref_image_paths:
+                refs.extend(ref_image_paths)
+            refs = [r for r in refs if r]
+            if refs and not supports_i2i:
+                raise NotImplementedError(
+                    f"{vendor_label} does not support reference images; "
+                    "use Wan / FLUX.2 / Gemini Image / GPT Image / Seedream for I2I"
+                )
+            saved, latency = generate_fn(
+                prompt=prompt, output_path=output_path,
+                size=size or "1024*1024", n=1,
+                negative_prompt=negative_prompt,
+                ref_image_paths=refs or None,
+            )
+            return saved[0] if saved else output_path, latency
+
+    return _Adapter()
+
+
+# Vendor id → factory that produces the matching adapter. Adapter creation
+# is lazy so providers we never hit don't import their (potentially heavy)
+# HTTP clients.
+def _build_vendor_adapters() -> Dict[str, Any]:
+    from ...models.minimax_image import generate_minimax_image
+    from ...models.seedream import generate_seedream_image
+    from ...models.flux2 import generate_flux2_image
+    from ...models.gemini_image import generate_gemini_image
+    from ...models.openai_image import generate_openai_image
+    from ...models.fal_aggregator import generate_fal_image
+
+    return {
+        "minimax": _make_function_adapter(generate_minimax_image, supports_i2i=False, vendor_label="MiniMax image-01"),
+        "doubao": _make_function_adapter(generate_seedream_image, supports_i2i=True, vendor_label="Seedream"),
+        "bfl": _make_function_adapter(generate_flux2_image, supports_i2i=True, vendor_label="FLUX.2"),
+        "google": _make_function_adapter(generate_gemini_image, supports_i2i=True, vendor_label="Gemini Image"),
+        "openai": _make_function_adapter(generate_openai_image, supports_i2i=True, vendor_label="GPT Image"),
+        "fal": _make_function_adapter(generate_fal_image, supports_i2i=True, vendor_label="fal.ai"),
+    }
 
 
 class AssetGenerator:
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
-        # Default backend = Wanx. The minimax adapter is held alongside so
-        # ``_route_for_call`` can pick the right one based on the active
-        # ModelInstance's vendor_id without re-allocating per call.
+        # Default backend = Wanx (DashScope). Per-vendor adapters are
+        # populated lazily on first dispatch so the import graph stays
+        # cheap when the user only uses the default route.
         self.model = WanxImageModel(self.config.get('model', {}))
-        self._minimax_adapter = _MinimaxImageAdapter()
+        self._vendor_adapters: Dict[str, Any] = {}
         self.data_root = self.config.get('data_root', 'output')
         self.output_dir = self.config.get('output_dir', os.path.join(self.data_root, 'assets'))
 
     def _route_for_call(self):
         """Pick the underlying T2I/I2I client based on the scoped ModelInstance.
 
-        ``current_instance().vendor_id`` decides: ``minimax`` → image-01
-        adapter, anything else (or no scope) → Wanx default. Caller still
-        passes ``model_name`` along, but with MiniMax that string already
-        matches the API id (``image-01``)."""
+        ``current_instance().vendor_id`` decides which adapter handles the
+        call; ``dashscope`` / unknown / no scope → Wanx default. Adapters
+        are built once on first use and cached on the instance."""
         try:
             from src.runtime import current_instance
             inst = current_instance()
-            if inst and inst.vendor_id == "minimax":
-                return self._minimax_adapter
+            if not inst or not inst.vendor_id or inst.vendor_id == "dashscope":
+                return self.model
+            if not self._vendor_adapters:
+                self._vendor_adapters = _build_vendor_adapters()
+            adapter = self._vendor_adapters.get(inst.vendor_id)
+            if adapter is not None:
+                return adapter
         except Exception:
             pass
         return self.model
@@ -191,11 +226,17 @@ class AssetGenerator:
                                 effective_generation_prompt = f"{reverse_enhancement}{generation_prompt}"
                                 logger.debug(f"Reverse generation enhanced prompt: {effective_generation_prompt[:100]}...")
                         
-                        # Route to MiniMax image-01 only when there's no
-                        # reference image (pure T2I); ref-image flows stay on
-                        # Wanx since MiniMax image-01 is T2I-only.
-                        _client = self._route_for_call() if ref_image_path is None else self.model
-                        _client.generate(effective_generation_prompt, fullbody_path, ref_image_path=ref_image_path, negative_prompt=negative_prompt, model_name=effective_model_name, size=effective_size)
+                        # Route by active ModelInstance vendor. Adapters
+                        # that can't handle a reference (e.g. MiniMax
+                        # image-01) raise NotImplementedError below — fall
+                        # back to Wanx for those legacy paths so the
+                        # storyboard pipeline stays unblocked.
+                        _client = self._route_for_call()
+                        try:
+                            _client.generate(effective_generation_prompt, fullbody_path, ref_image_path=ref_image_path, negative_prompt=negative_prompt, model_name=effective_model_name, size=effective_size)
+                        except NotImplementedError:
+                            logger.info("Vendor adapter rejected I2I; falling back to Wan for ref-image generation")
+                            self.model.generate(effective_generation_prompt, fullbody_path, ref_image_path=ref_image_path, negative_prompt=negative_prompt, model_name=effective_model_name, size=effective_size)
                         
                         rel_fullbody_path = os.path.relpath(fullbody_path, self.data_root)
                         

@@ -12,8 +12,34 @@ class StoryboardGenerator:
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or {}
         self.model = WanxImageModel(self.config.get('model', {}))
+        self._vendor_adapters: Dict[str, Any] = {}
         self.data_root = self.config.get('data_root', 'output')
         self.output_dir = self.config.get('output_dir', os.path.join(self.data_root, 'storyboard'))
+
+    def _route_for_call(self):
+        """Pick the underlying T2I/I2I client by active ModelInstance vendor.
+
+        Mirrors :meth:`AssetGenerator._route_for_call`. Storyboard frames
+        are typically multi-reference I2I, so vendors that support refs
+        (FLUX.2 / Gemini Image / Seedream / GPT Image / fal.ai) shine
+        here; vendors that don't (MiniMax image-01) raise
+        ``NotImplementedError`` and the caller falls back to Wanx.
+        """
+        try:
+            from src.runtime import current_instance
+            inst = current_instance()
+            if not inst or not inst.vendor_id or inst.vendor_id == "dashscope":
+                return self.model
+            if not self._vendor_adapters:
+                # Lazy import to keep cold-start cheap when only Wanx is used.
+                from .assets import _build_vendor_adapters
+                self._vendor_adapters = _build_vendor_adapters()
+            adapter = self._vendor_adapters.get(inst.vendor_id)
+            if adapter is not None:
+                return adapter
+        except Exception:
+            pass
+        return self.model
 
     def generate_storyboard(self, script: Any) -> Any:
         """Generates images for all frames in the storyboard."""
@@ -174,7 +200,12 @@ class StoryboardGenerator:
                 # Use I2I if reference images are available
                 # Pass collected asset paths to model
                 logger.info(f"[Storyboard] Calling model.generate with {len(asset_ref_paths)} reference images using model {model_name or 'default'}")
-                self.model.generate(prompt, output_path, ref_image_paths=asset_ref_paths, size=effective_size, model_name=model_name)
+                _client = self._route_for_call()
+                try:
+                    _client.generate(prompt, output_path, ref_image_paths=asset_ref_paths, size=effective_size, model_name=model_name)
+                except NotImplementedError:
+                    logger.info("Vendor adapter rejected I2I; falling back to Wan for storyboard frame")
+                    self.model.generate(prompt, output_path, ref_image_paths=asset_ref_paths, size=effective_size, model_name=model_name)
                 
                 # Store relative path for frontend serving
                 rel_path = os.path.relpath(output_path, self.data_root)

@@ -92,14 +92,30 @@ def test_dual_mode_connectors_declare_their_mode_env_key():
 
 
 def test_every_credential_key_is_in_credentials_allowlist():
-    """Every env key the FE could ask the user to fill must be acceptable
-    on the backend; otherwise saving would 400."""
-    registry = get_default_vendor_registry()
-    leaked = []
-    for key in registry.all_credential_keys():
-        if key not in ALLOWED_KEYS:
-            leaked.append(key)
-    assert not leaked, f"vendor connector keys missing from credentials allowlist: {leaked}"
+    """Legacy global-env vendors round-trip credentials through
+    ``src.auth.credentials.ALLOWED_KEYS`` (the historical ``/config/env``
+    path). Newer vendors store credentials only on the per-user
+    ``ModelInstance`` row's encrypted blob and do NOT need to be in
+    ``ALLOWED_KEYS`` — see CLAUDE.md "Settings is ModelInstance-driven"."""
+    LEGACY_GLOBAL_ENV_VENDORS = frozenset(
+        {"dashscope", "kling", "vidu", "pixverse", "doubao", "hailuo"}
+    )
+    leaked: list[str] = []
+    for connector in DEFAULT_VENDOR_CONNECTORS:
+        if connector.id not in LEGACY_GLOBAL_ENV_VENDORS:
+            continue
+        for f in connector.common_fields:
+            if f.key not in ALLOWED_KEYS:
+                leaked.append(f.key)
+        for mode in connector.modes:
+            for f in mode.fields:
+                if f.key not in ALLOWED_KEYS:
+                    leaked.append(f.key)
+        if connector.mode_env_key and connector.mode_env_key not in ALLOWED_KEYS:
+            leaked.append(connector.mode_env_key)
+    assert not leaked, (
+        f"legacy vendor connector keys missing from credentials allowlist: {leaked}"
+    )
 
 
 def test_connector_family_prefixes_resolve_in_provider_registry():

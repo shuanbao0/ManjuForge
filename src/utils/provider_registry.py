@@ -220,6 +220,20 @@ DEFAULT_PROVIDER_FAMILIES: Tuple[ProviderFamilyConfig, ...] = (
             "vendor": "doubao_vendor_video_url",
         },
     ),
+    # Seedream — ByteDance's image companion to Seedance. Same Volcano Ark
+    # account / DOUBAO_API_KEY, T2I/I2I only (no video).
+    ProviderFamilyConfig(
+        model_family="doubao-seedream-",
+        backend_default="vendor",
+        backend_env_key="DOUBAO_PROVIDER_MODE",
+        credential_sources={
+            "vendor": ("DOUBAO_API_KEY",),
+        },
+        supported_modalities=("t2i", "i2i"),
+        image_input_mode={
+            "vendor": "doubao_vendor_image_url",
+        },
+    ),
     ProviderFamilyConfig(
         model_family="hailuo-",
         backend_default="vendor",
@@ -244,6 +258,107 @@ DEFAULT_PROVIDER_FAMILIES: Tuple[ProviderFamilyConfig, ...] = (
         supported_modalities=("t2v", "i2v"),
         image_input_mode={
             "vendor": "hailuo_vendor_image_url",
+        },
+    ),
+    # ── Black Forest Labs FLUX.2 (vendor-direct only) ──────────────────────
+    ProviderFamilyConfig(
+        model_family="flux-2",
+        backend_default="vendor",
+        backend_env_key="BFL_PROVIDER_MODE",
+        credential_sources={
+            "vendor": ("BFL_API_KEY",),
+        },
+        supported_modalities=("t2i", "i2i"),
+        image_input_mode={
+            "vendor": "bfl_vendor_image_url",
+        },
+    ),
+    # ── Google (Gemini Image / Veo 3.1) — keys carried on instance row ────
+    ProviderFamilyConfig(
+        model_family="gemini-",
+        backend_default="vendor",
+        credential_sources={
+            "vendor": ("GOOGLE_API_KEY", "GEMINI_API_KEY"),
+        },
+        supported_modalities=("t2i", "i2i"),
+        image_input_mode={
+            "vendor": "gemini_vendor_image_part",
+        },
+    ),
+    ProviderFamilyConfig(
+        model_family="nano-banana",
+        backend_default="vendor",
+        credential_sources={
+            "vendor": ("GOOGLE_API_KEY", "GEMINI_API_KEY"),
+        },
+        supported_modalities=("t2i", "i2i"),
+        image_input_mode={
+            "vendor": "gemini_vendor_image_part",
+        },
+    ),
+    ProviderFamilyConfig(
+        model_family="veo-",
+        backend_default="vendor",
+        credential_sources={
+            "vendor": ("GOOGLE_API_KEY", "GEMINI_API_KEY"),
+        },
+        supported_modalities=("t2v", "i2v"),
+        image_input_mode={
+            "vendor": "veo_vendor_image_url",
+        },
+    ),
+    # ── OpenAI GPT Image (vendor-direct only) ─────────────────────────────
+    ProviderFamilyConfig(
+        model_family="gpt-image-",
+        backend_default="vendor",
+        credential_sources={
+            "vendor": ("OPENAI_API_KEY",),
+        },
+        supported_modalities=("t2i", "i2i"),
+        image_input_mode={
+            "vendor": "openai_vendor_image_url",
+        },
+    ),
+    # ── ElevenLabs TTS (vendor-direct only) ───────────────────────────────
+    ProviderFamilyConfig(
+        model_family="eleven_",
+        backend_default="vendor",
+        credential_sources={
+            "vendor": ("ELEVENLABS_API_KEY",),
+        },
+        supported_modalities=("tts",),
+    ),
+    # ── Fish Audio TTS (vendor-direct only) ───────────────────────────────
+    ProviderFamilyConfig(
+        model_family="fish-",
+        backend_default="vendor",
+        credential_sources={
+            "vendor": ("FISH_AUDIO_API_KEY",),
+        },
+        supported_modalities=("tts",),
+    ),
+    # ── Cartesia TTS (vendor-direct only) ─────────────────────────────────
+    ProviderFamilyConfig(
+        model_family="sonic-",
+        backend_default="vendor",
+        credential_sources={
+            "vendor": ("CARTESIA_API_KEY",),
+        },
+        supported_modalities=("tts",),
+    ),
+    # ── fal.ai aggregator ────────────────────────────────────────────────
+    ProviderFamilyConfig(
+        model_family="fal-",
+        backend_default="vendor",
+        credential_sources={
+            "vendor": ("FAL_API_KEY",),
+        },
+        supported_modalities=("t2i", "i2i", "i2v", "t2v"),
+        image_input_mode={
+            "vendor": "fal_vendor_image_url",
+        },
+        reference_video_input_mode={
+            "vendor": "fal_vendor_video_url",
         },
     ),
 )

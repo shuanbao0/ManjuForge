@@ -229,9 +229,9 @@ _PIXVERSE = _dual_mode_video_connector(
 
 _DOUBAO = VendorConnector(
     id="doubao",
-    display_name="字节豆包 Seedance",
-    description="ByteDance Seedance 1.0 Pro,长镜头与电影级运动",
-    capabilities=("i2v", "t2v"),
+    display_name="字节豆包 Seedance / Seedream",
+    description="ByteDance Seedance(视频)+ Seedream(图像),火山引擎 Ark API",
+    capabilities=("t2i", "i2i", "i2v", "t2v"),
     common_fields=(
         CredentialField(
             key="DOUBAO_API_KEY", label="API Key",
@@ -243,7 +243,7 @@ _DOUBAO = VendorConnector(
             required=False,
         ),
     ),
-    family_prefixes=("doubao-seedance-",),
+    family_prefixes=("doubao-seedance-", "doubao-seedream-"),
     docs_url="https://www.volcengine.com/docs/82379",
     badges=("preview", "premium"),
     accent="orange",
@@ -270,6 +270,123 @@ _HAILUO = VendorConnector(
 )
 
 
+# ── Black Forest Labs FLUX.2 (T2I/I2I, vendor-direct) ─────────────────────
+_BFL = VendorConnector(
+    id="bfl",
+    display_name="Black Forest Labs FLUX",
+    description="FLUX.2 Pro / Max / Flash,2026 写实图像基准,支持最多 10 张参考图",
+    capabilities=("t2i", "i2i"),
+    common_fields=(
+        CredentialField(key="BFL_API_KEY", label="API Key", placeholder="BFL API Key", secret=True),
+        CredentialField(
+            key="BFL_BASE_URL", label="Base URL",
+            placeholder="https://api.bfl.ai/v1",
+            required=False,
+        ),
+    ),
+    family_prefixes=("flux-2",),
+    docs_url="https://docs.bfl.ai/",
+    badges=("new", "premium"),
+    accent="indigo",
+)
+
+
+# ── ElevenLabs TTS (vendor-direct) ─────────────────────────────────────────
+_ELEVENLABS = VendorConnector(
+    id="elevenlabs",
+    display_name="ElevenLabs",
+    description="英语长篇朗读黄金标准,Turbo v2.5 / Multilingual v2 / v3,情感与韵律最强",
+    capabilities=("tts",),
+    common_fields=(
+        CredentialField(
+            key="ELEVENLABS_API_KEY", label="API Key",
+            placeholder="ElevenLabs API Key", secret=True,
+        ),
+        CredentialField(
+            key="ELEVENLABS_BASE_URL", label="Base URL",
+            placeholder="https://api.elevenlabs.io/v1",
+            required=False,
+        ),
+    ),
+    family_prefixes=("eleven_",),
+    docs_url="https://elevenlabs.io/docs/api-reference/text-to-speech",
+    badges=("premium", "new"),
+    accent="emerald",
+)
+
+
+# ── Fish Audio (open-weights TTS, voice cloning) ───────────────────────────
+_FISH_AUDIO = VendorConnector(
+    id="fish-audio",
+    display_name="Fish Audio",
+    description="Fish Audio S2,80+ 语言,15 秒克隆,公开榜单 ELO #1,价格约 ElevenLabs 的 1/10",
+    capabilities=("tts",),
+    common_fields=(
+        CredentialField(
+            key="FISH_AUDIO_API_KEY", label="API Key",
+            placeholder="Fish Audio API Key", secret=True,
+        ),
+        CredentialField(
+            key="FISH_AUDIO_BASE_URL", label="Base URL",
+            placeholder="https://api.fish.audio/v1",
+            required=False,
+        ),
+    ),
+    family_prefixes=("fish-",),
+    docs_url="https://docs.fish.audio/",
+    badges=("new", "open-source"),
+    accent="teal",
+)
+
+
+# ── Cartesia (low-latency TTS, voice agents) ──────────────────────────────
+_CARTESIA = VendorConnector(
+    id="cartesia",
+    display_name="Cartesia",
+    description="Sonic 3,首字节延迟 ~40-90ms,语音 Agent 实时对话首选",
+    capabilities=("tts",),
+    common_fields=(
+        CredentialField(
+            key="CARTESIA_API_KEY", label="API Key",
+            placeholder="Cartesia API Key", secret=True,
+        ),
+        CredentialField(
+            key="CARTESIA_BASE_URL", label="Base URL",
+            placeholder="https://api.cartesia.ai",
+            required=False,
+        ),
+    ),
+    family_prefixes=("sonic-",),
+    docs_url="https://docs.cartesia.ai/",
+    badges=("new", "fast"),
+    accent="lime",
+)
+
+
+# ── fal.ai (聚合服务,一个 key 调度数百个模型) ───────────────────────────
+_FAL = VendorConnector(
+    id="fal",
+    display_name="fal.ai",
+    description="模型聚合服务,一个 key 直连 Veo 3.1 / Sora 2 / Kling 3.0 / Seedance / FLUX.2 / Wan 2.6 等 600+ 模型",
+    capabilities=("t2i", "i2i", "i2v", "t2v"),
+    common_fields=(
+        CredentialField(
+            key="FAL_API_KEY", label="API Key",
+            placeholder="fal.ai API Key (KEY_ID:KEY_SECRET)", secret=True,
+        ),
+        CredentialField(
+            key="FAL_BASE_URL", label="Base URL",
+            placeholder="https://fal.run",
+            required=False,
+        ),
+    ),
+    family_prefixes=("fal-",),
+    docs_url="https://fal.ai/docs",
+    badges=("new",),
+    accent="fuchsia",
+)
+
+
 # ── LLM-only OpenAI-compatible vendors (DeepSeek / Anthropic / Kimi / ...) ──
 #
 # These all share the same OPENAI_API_KEY / OPENAI_BASE_URL / OPENAI_MODEL
@@ -284,6 +401,11 @@ DEFAULT_VENDOR_CONNECTORS: Tuple[VendorConnector, ...] = (
     _PIXVERSE,
     _DOUBAO,
     _HAILUO,
+    _BFL,
+    _ELEVENLABS,
+    _FISH_AUDIO,
+    _CARTESIA,
+    _FAL,
 )
 
 

@@ -141,16 +141,76 @@ def test_default_dispatcher_routes_vidu_vendor_to_vidu_adapter():
 
 
 def test_preview_vendor_adapters_raise_clear_not_implemented():
+    """Pixverse vendor-direct still has no client adapter — its dispatcher
+    entry must raise a clearly-labelled NotImplementedError so a stale
+    project state surfaces a readable error instead of falling through.
+
+    (Doubao Seedance and Hailuo were promoted to real adapters in the
+    2026-05 vendor expansion; they're covered by their own credential
+    error paths instead of NotImplementedError.)"""
     video_generator = SimpleNamespace(model=None)
     d = build_default_dispatcher(video_generator)
     task = SimpleNamespace(
-        model="doubao-seedance-1.0-pro", prompt="x", duration=5, seed=None,
+        model="pixverse-v4", prompt="x", duration=5, seed=None,
         resolution="720p", prompt_extend=False, negative_prompt="",
         shot_type=None, reference_video_urls=[], generation_mode="i2v",
         mode=None, sound=None, cfg_scale=None, vidu_audio=None, movement_amplitude=None,
     )
-    adapter = d.resolve("doubao-seedance-1.0-pro", "vendor")
+    adapter = d.resolve("pixverse-v4", "vendor")
     ctx = VideoGenerationContext(task=task, output_path="/tmp/out.mp4")
     with pytest.raises(NotImplementedError) as exc_info:
         adapter.generate(ctx)
-    assert "doubao" in str(exc_info.value).lower()
+    assert "pixverse" in str(exc_info.value).lower()
+
+
+def test_doubao_seedance_vendor_adapter_calls_real_client():
+    """The Seedance vendor-direct adapter dispatches to
+    ``src.models.seedance.generate_seedance_video`` — verify the wiring
+    by raising a credential error (the deepest reachable failure without
+    network access)."""
+    video_generator = SimpleNamespace(model=None)
+    d = build_default_dispatcher(video_generator)
+    task = SimpleNamespace(
+        model="doubao-seedance-2.0-pro", prompt="x", duration=5, seed=None,
+        resolution="720p", prompt_extend=False, negative_prompt="",
+        shot_type=None, reference_video_urls=[], generation_mode="i2v",
+        mode=None, sound=None, cfg_scale=None, vidu_audio=None, movement_amplitude=None,
+    )
+    adapter = d.resolve("doubao-seedance-2.0-pro", "vendor")
+    ctx = VideoGenerationContext(task=task, output_path="/tmp/out.mp4")
+    with pytest.raises(RuntimeError) as exc_info:
+        adapter.generate(ctx)
+    # Real client reached; missing creds is the expected first failure.
+    assert "DOUBAO_API_KEY" in str(exc_info.value)
+
+
+def test_veo_vendor_adapter_dispatches_to_real_client():
+    video_generator = SimpleNamespace(model=None)
+    d = build_default_dispatcher(video_generator)
+    task = SimpleNamespace(
+        model="veo-3.1", prompt="x", duration=8, seed=None,
+        resolution="1080p", prompt_extend=False, negative_prompt="",
+        shot_type=None, reference_video_urls=[], generation_mode="i2v",
+        mode=None, sound=None, cfg_scale=None, vidu_audio=None, movement_amplitude=None,
+    )
+    adapter = d.resolve("veo-3.1", "vendor")
+    ctx = VideoGenerationContext(task=task, output_path="/tmp/out.mp4")
+    with pytest.raises(RuntimeError) as exc_info:
+        adapter.generate(ctx)
+    assert "GOOGLE_API_KEY" in str(exc_info.value)
+
+
+def test_fal_vendor_adapter_dispatches_to_real_client():
+    video_generator = SimpleNamespace(model=None)
+    d = build_default_dispatcher(video_generator)
+    task = SimpleNamespace(
+        model="fal-veo-3.1", prompt="x", duration=5, seed=None,
+        resolution="720p", prompt_extend=False, negative_prompt="",
+        shot_type=None, reference_video_urls=[], generation_mode="i2v",
+        mode=None, sound=None, cfg_scale=None, vidu_audio=None, movement_amplitude=None,
+    )
+    adapter = d.resolve("fal-veo-3.1", "vendor")
+    ctx = VideoGenerationContext(task=task, output_path="/tmp/out.mp4")
+    with pytest.raises(RuntimeError) as exc_info:
+        adapter.generate(ctx)
+    assert "FAL_API_KEY" in str(exc_info.value)
