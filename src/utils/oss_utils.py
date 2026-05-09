@@ -346,24 +346,36 @@ class OSSImageUploader:
 def sign_oss_urls_in_data(data, uploader: OSSImageUploader = None):
     """
     Recursively traverse data structure and convert Object Keys to signed URLs.
-    
+
     This is the core function for the "Dynamic Signing" strategy.
     Called before returning API responses to frontend.
-    
+
+    When the storage endpoint is internal-only (self-hosted MinIO behind a
+    Docker hostname), object keys are left in place so the browser routes
+    them through ``/files/{object_key}`` instead — that endpoint proxies
+    the bytes via the backend, since the browser can't reach
+    ``http://minio:9000`` directly.
+
     Args:
         data: Dict, list, or primitive value to process
         uploader: OSSImageUploader instance (created if not provided)
-    
+
     Returns:
         Processed data with Object Keys converted to signed URLs
     """
     if uploader is None:
         uploader = OSSImageUploader()
-    
+
     if not uploader.is_configured:
         # OSS not configured, return data as-is (local mode)
         return data
-    
+
+    if uploader.prefers_inline_for_api:
+        # Internal-only endpoint: leave object keys for the frontend to
+        # route through ``/files/{key}``. Avoids handing out signed URLs
+        # the browser can't dereference.
+        return data
+
     def process_value(value):
         if isinstance(value, str):
             if is_object_key(value):
@@ -377,7 +389,7 @@ def sign_oss_urls_in_data(data, uploader: OSSImageUploader = None):
             return [process_value(item) for item in value]
         else:
             return value
-    
+
     return process_value(data)
 
 

@@ -148,14 +148,16 @@ async def serve_user_file(rel_path: str):
     """Authenticated counterpart of the old ``/files/*`` static mount.
 
     If ``rel_path`` looks like an object-storage Object Key and the user
-    has S3/MinIO configured, redirects to a short-lived presigned URL so
-    the browser fetches the bytes directly from object storage. Otherwise
-    streams the file from the user's local ``output/users/<uid>/`` dir.
+    has S3/MinIO configured: when the storage endpoint is publicly
+    reachable we redirect to a short-lived presigned URL so the browser
+    bypasses FastAPI; when the endpoint is internal-only (self-hosted
+    MinIO at ``http://minio:9000``) we proxy the bytes through this
+    endpoint instead, since a redirect URL the browser can't resolve is
+    worse than a slightly-slower proxy. Otherwise streams the file from
+    the user's local ``output/users/<uid>/`` dir.
     """
     pipe = _current_pipeline_for_user()
 
-    # Object-storage redirect path: avoids hauling bytes through FastAPI
-    # when the user has remote storage configured.
     try:
         if _is_object_key(rel_path):
             client = ObjectStorageClient.for_current_user()
@@ -168,9 +170,22 @@ async def serve_user_file(rel_path: str):
                 normalized = rel_path.lstrip("/")
                 if user_prefix and not normalized.startswith(user_prefix + "/") and normalized != user_prefix:
                     raise HTTPException(status_code=403, detail="object key outside current user's namespace")
-                url = client.presigned_get_url(rel_path)
-                if url:
-                    return RedirectResponse(url, status_code=302)
+
+                if client.endpoint_is_internal:
+                    data = client.download_bytes(rel_path)
+                    if data is not None:
+                        import mimetypes as _mimetypes
+                        from fastapi.responses import Response
+                        media_type, _ = _mimetypes.guess_type(rel_path)
+                        return Response(
+                            content=data,
+                            media_type=media_type or "application/octet-stream",
+                            headers={"Cache-Control": "private, max-age=300"},
+                        )
+                else:
+                    url = client.presigned_get_url(rel_path)
+                    if url:
+                        return RedirectResponse(url, status_code=302)
     except HTTPException:
         raise
     except Exception:
