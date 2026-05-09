@@ -41,6 +41,26 @@ def _is_prefix_match(path: str, prefixes: Iterable[str]) -> bool:
     return any(path == p or path.startswith(p + "/") or path.startswith(p + "?") for p in prefixes)
 
 
+# GET routes where ``?token=<jwt>`` may stand in for the Authorization header.
+# Browser ``<img src=...>`` tags can't attach Authorization, so any endpoint
+# whose URL is consumed by ``<img>`` / ``<video>`` / similar tags needs this
+# escape hatch. Keep the list narrow — leaking a JWT in the query string for
+# arbitrary API calls would defeat the point of Bearer auth.
+#
+# No trailing slash here so ``_is_prefix_match`` matches ``/files/<key>``
+# (it appends ``/`` and ``?`` itself when comparing).
+QUERY_TOKEN_GET_PREFIXES: tuple[str, ...] = ("/files", "/me/files")
+
+
+def _bearer_from_query(request: Request) -> str:
+    """Pull a Bearer JWT out of ``?token=...`` for whitelisted GET routes."""
+    if request.method != "GET":
+        return ""
+    if not _is_prefix_match(request.url.path, QUERY_TOKEN_GET_PREFIXES):
+        return ""
+    return request.query_params.get("token", "").strip()
+
+
 # Routes that *must* be reachable without auth. Login flows, swagger, the
 # bootstrap-status check the SetupGate uses, and a couple of platform
 # probes (favicon, redoc).
@@ -99,11 +119,16 @@ class AuthContextMiddleware(BaseHTTPMiddleware):
         if request.method == "OPTIONS":
             return await call_next(request)
 
-        # Extract bearer token.
+        # Extract bearer token. ``Authorization: Bearer …`` is the canonical
+        # path; for whitelisted GET routes (file serving) we also accept
+        # ``?token=<jwt>`` so ``<img src>`` tags work — they can't carry a
+        # custom Authorization header but they DO inherit the URL.
         authz = request.headers.get("authorization", "")
-        if not authz.lower().startswith("bearer "):
-            return _unauthorized("UNAUTHORIZED", "authorization header is required")
-        token = authz.split(" ", 1)[1].strip()
+        token = ""
+        if authz.lower().startswith("bearer "):
+            token = authz.split(" ", 1)[1].strip()
+        if not token:
+            token = _bearer_from_query(request)
         if not token:
             return _unauthorized("UNAUTHORIZED", "authorization header is required")
 

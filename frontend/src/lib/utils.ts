@@ -1,4 +1,5 @@
 import { API_URL } from "./api";
+import { getToken } from "./auth";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -12,7 +13,13 @@ export function getAssetUrl(path: string | null | undefined): string {
 
     // Remove leading slash if present to avoid double slashes with API_URL/files/
     const cleanPath = path.startsWith("/") ? path.slice(1) : path;
-    return `${API_URL}/files/${cleanPath}`;
+    // /files/* is auth-protected. <img>/<video> tags can't send Authorization
+    // headers, so append the JWT as ?token=… — the auth middleware accepts it
+    // for the /files/* (and /me/files/*) GET prefix only.
+    const base = `${API_URL}/files/${cleanPath}`;
+    const token = getToken();
+    if (!token) return base;
+    return base + (base.includes("?") ? "&" : "?") + `token=${encodeURIComponent(token)}`;
 }
 
 export function getAssetUrlWithTimestamp(path: string | null | undefined, timestamp?: number): string {
