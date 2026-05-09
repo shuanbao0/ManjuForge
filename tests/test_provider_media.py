@@ -1,5 +1,6 @@
 import base64
 from pathlib import Path
+from typing import Optional
 
 import pytest
 
@@ -17,9 +18,18 @@ PNG_1X1_BASE64 = (
 
 
 class FakeUploader:
-    def __init__(self, configured: bool):
+    def __init__(
+        self,
+        configured: bool,
+        *,
+        prefers_inline_for_api: bool = False,
+        download_payload: Optional[dict] = None,
+    ):
         self.is_configured = configured
         self.uploaded_paths = []
+        self.prefers_inline_for_api = prefers_inline_for_api
+        self._download_payload = download_payload or {}
+        self.downloaded_keys: list = []
 
     def upload_file(self, local_path: str, sub_path: str = "", custom_filename=None):
         if not self.is_configured:
@@ -30,6 +40,10 @@ class FakeUploader:
 
     def sign_url_for_api(self, object_key: str):
         return f"https://oss.example/{object_key}"
+
+    def download_bytes(self, object_key: str):
+        self.downloaded_keys.append(object_key)
+        return self._download_payload.get(object_key)
 
 
 def _write_output_png(project_root: Path, rel_path: str) -> Path:
@@ -116,6 +130,51 @@ def test_dashscope_local_uses_oss_signed_url_when_configured(tmp_path):
     assert resolved.value.startswith("https://oss.example/manju-forge/temp/provider_media/")
     assert resolved.headers == {}
     assert uploader.uploaded_paths
+
+
+def test_dashscope_local_uses_data_uri_when_endpoint_is_internal(tmp_path):
+    """Self-hosted MinIO behind ``http://minio:9000`` is unreachable from
+    DashScope. The uploader signals this via ``prefers_inline_for_api``;
+    we should bypass OSS and inline bytes as base64."""
+    _write_output_png(tmp_path, "uploads/ref.png")
+    uploader = FakeUploader(configured=True, prefers_inline_for_api=True)
+
+    resolved = resolve_media_input(
+        "uploads/ref.png",
+        model_name="wan2.6-image",
+        backend="dashscope",
+        modality="image",
+        uploader=uploader,
+        project_root=str(tmp_path),
+    )
+
+    assert resolved.value.startswith("data:image/png;base64,")
+    assert not uploader.uploaded_paths  # no OSS upload happened
+
+
+def test_dashscope_object_key_inlines_via_download_when_internal(tmp_path):
+    """When the endpoint is internal, an OSS object key should be
+    materialized to bytes via the uploader's download path and inlined
+    as a data URI rather than handed out as a useless presigned URL."""
+    raw = base64.b64decode(PNG_1X1_BASE64)
+    uploader = FakeUploader(
+        configured=True,
+        prefers_inline_for_api=True,
+        download_payload={"manju-forge/objects/foo.png": raw},
+    )
+
+    resolved = resolve_media_input(
+        "manju-forge/objects/foo.png",
+        model_name="wan2.6-image",
+        backend="dashscope",
+        modality="image",
+        uploader=uploader,
+        project_root=str(tmp_path),
+    )
+
+    assert resolved.value.startswith("data:image/png;base64,")
+    assert resolved.value.endswith(PNG_1X1_BASE64)
+    assert "manju-forge/objects/foo.png" in uploader.downloaded_keys
 
 
 def test_vendor_kling_image_local_uses_plain_base64(tmp_path):

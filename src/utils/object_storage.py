@@ -18,13 +18,43 @@ Storage modes (per-user):
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import os
 import threading
 from dataclasses import dataclass
 from typing import Optional
+from urllib.parse import urlparse
 
 from src.runtime import current_user_id, get_cred
+
+
+def _endpoint_is_internal(endpoint: str) -> bool:
+    """Heuristic: is this endpoint host unreachable from the public net?
+
+    True for:
+      - empty/missing endpoint
+      - hostnames without a dot (Docker compose service names like ``minio``)
+      - ``localhost``
+      - RFC1918 / loopback IPs (10/8, 172.16/12, 192.168/16, 127/8)
+      - link-local (169.254/16)
+    False for everything else (FQDNs like ``oss-cn-beijing.aliyuncs.com``).
+    """
+    if not endpoint:
+        return True
+    try:
+        host = (urlparse(endpoint).hostname or "").lower()
+    except Exception:
+        return False
+    if not host:
+        return True
+    if host == "localhost" or "." not in host:
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return ip.is_private or ip.is_loopback or ip.is_link_local
 
 logger = logging.getLogger(__name__)
 
@@ -235,6 +265,38 @@ class ObjectStorageClient:
         except Exception as e:
             logger.warning("presigned_get_url failed: %s", e)
             return None
+
+    def download_bytes(self, key: str) -> Optional[bytes]:
+        """Fetch the raw bytes of ``key`` from the bucket.
+
+        Used when a presigned URL would point at an internal-only endpoint
+        (e.g. ``http://minio:9000``) that an external API like DashScope
+        can't reach. Reading via the same boto3 client uses whichever
+        endpoint the backend can reach (typically the Docker-internal one),
+        so the bytes can then be inlined as base64.
+        """
+        if not self.is_configured:
+            return None
+        full_key = key
+        if not full_key.startswith(self.config.path_prefix):
+            full_key = self._full_key(key)
+        try:
+            resp = self._s3.get_object(Bucket=self.config.bucket, Key=full_key)
+            return resp["Body"].read()
+        except Exception as e:
+            logger.warning("download_bytes failed for %s: %s", full_key, e)
+            return None
+
+    @property
+    def endpoint_is_internal(self) -> bool:
+        """True when the configured endpoint host is unreachable from the
+        public internet (Docker hostname, localhost, RFC1918 IP, …).
+
+        Used by callers that need a publicly reachable URL — like
+        DashScope image inputs — to decide between handing out a presigned
+        URL vs. downloading bytes and inlining as base64.
+        """
+        return _endpoint_is_internal(self.config.endpoint)
 
     def presigned_put_url(self, key: str, expires_in: int = 600) -> Optional[str]:
         if not self.is_configured:

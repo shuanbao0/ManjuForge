@@ -161,6 +161,38 @@ class OSSImageUploader:
     def is_configured(self) -> bool:
         """Check if OSS is properly configured and ready."""
         return self.bucket is not None
+
+    @property
+    def prefers_inline_for_api(self) -> bool:
+        """True when outbound API callers should inline bytes as base64
+        instead of handing out a presigned URL.
+
+        Self-hosted MinIO behind a Docker hostname (``http://minio:9000``)
+        is unreachable from external services like DashScope. Detected
+        automatically from the configured S3 endpoint; cloud OSS
+        endpoints (``*.aliyuncs.com``) return False so payloads stay
+        small.
+        """
+        if self._s3_backend is not None:
+            return self._s3_backend.endpoint_is_internal
+        # Legacy oss2 path is always Aliyun cloud — public.
+        return False
+
+    def download_bytes(self, object_key: str) -> Optional[bytes]:
+        """Fetch raw bytes for an already-uploaded object.
+
+        Used when ``prefers_inline_for_api`` is True so callers can
+        base64-inline references that came in as object keys.
+        """
+        if not self.bucket:
+            return None
+        if self._s3_backend is not None:
+            return self._s3_backend.download_bytes(object_key)
+        try:
+            return self.bucket.get_object(object_key).read()
+        except Exception as e:
+            logger.warning("download_bytes failed for %s: %s", object_key, e)
+            return None
     
     def _build_object_key(self, sub_path: str, filename: str) -> str:
         """
