@@ -11,6 +11,7 @@ import CharacterWorkbench from "./CharacterWorkbench";
 import { VariantSelector } from "../common/VariantSelector";
 import { VideoVariantSelector } from "../common/VideoVariantSelector";
 import UploadAssetModal from "../modals/UploadAssetModal";
+import { confirmDialog } from "@/components/common/dialogs";
 
 export default function ConsistencyVault() {
     const { t } = useTranslation();
@@ -166,7 +167,13 @@ export default function ConsistencyVault() {
     // Delete asset handler
     const handleDeleteAsset = async (assetId: string, type: string) => {
         if (!currentProject) return;
-        if (!confirm(t("modules.assets.deleteAssetTypedConfirm", { type }, `Are you sure you want to delete this ${type}?`))) return;
+        const ok = await confirmDialog({
+            title: t("modules.assets.deleteAssetTitle", undefined, "删除资产"),
+            message: t("modules.assets.deleteAssetTypedConfirm", { type }, `Are you sure you want to delete this ${type}?`),
+            variant: "danger",
+            confirmLabel: t("common.delete", undefined, "删除"),
+        });
+        if (!ok) return;
 
         try {
             if (type === "character") {
@@ -302,7 +309,13 @@ export default function ConsistencyVault() {
 
     const handleDeleteVideo = async (assetId: string, type: string, videoId: string) => {
         if (!currentProject) return;
-        if (!confirm(t("modules.assets.deleteVideoConfirm", undefined, "Are you sure you want to delete this video? This action cannot be undone."))) return;
+        const ok = await confirmDialog({
+            title: t("modules.assets.deleteVideoTitle", undefined, "删除视频"),
+            message: t("modules.assets.deleteVideoConfirm", undefined, "Are you sure you want to delete this video? This action cannot be undone."),
+            variant: "danger",
+            confirmLabel: t("common.delete", undefined, "删除"),
+        });
+        if (!ok) return;
 
         try {
             await api.deleteAssetVideo(currentProject.id, type, assetId, videoId);
@@ -318,13 +331,16 @@ export default function ConsistencyVault() {
     const handleSyncDescriptions = async () => {
         if (!currentProject) return;
 
-        const confirmed = confirm(
-            t(
+        const confirmed = await confirmDialog({
+            title: t("modules.assets.syncDescriptionsTitle", undefined, "同步描述"),
+            message: t(
                 "modules.assets.syncDescriptionsConfirm",
                 undefined,
                 "同步描述说明：\n\n此操作会将 Script 页面中的最新描述同步到所有素材。\n已生成的图片不会被删除，但后续重新生成时将使用新描述。\n\n是否继续？"
-            )
-        );
+            ),
+            variant: "warning",
+            confirmLabel: t("common.confirm", undefined, "继续"),
+        });
 
         if (!confirmed) return;
 

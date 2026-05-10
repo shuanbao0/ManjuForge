@@ -14,6 +14,7 @@ import { getAssetUrl, getAssetUrlWithTimestamp, extractErrorDetail } from "@/lib
 import { useTranslation } from "@/i18n";
 
 import StoryboardFrameEditor from "./StoryboardFrameEditor";
+import { confirmDialog } from "@/components/common/dialogs";
 
 export default function StoryboardComposer() {
     const { t } = useTranslation();
@@ -66,7 +67,13 @@ export default function StoryboardComposer() {
         }
 
         if (currentProject.frames?.length > 0) {
-            if (!confirm(t("modules.storyboard.overwriteFramesConfirm", undefined, "这将覆盖当前的所有分镜帧。是否继续？"))) return;
+            const ok = await confirmDialog({
+                title: t("modules.storyboard.overwriteFramesTitle", undefined, "覆盖现有分镜"),
+                message: t("modules.storyboard.overwriteFramesConfirm", undefined, "这将覆盖当前的所有分镜帧。是否继续？"),
+                variant: "warning",
+                confirmLabel: t("common.confirm", undefined, "继续"),
+            });
+            if (!ok) return;
         }
 
         setIsAnalyzing(true);
@@ -148,7 +155,13 @@ export default function StoryboardComposer() {
             { count: pendingFrameCount },
             `About to render ${pendingFrameCount} pending frame(s). Continue?`
         );
-        if (!confirm(confirmMsg)) return;
+        const ok = await confirmDialog({
+            title: t("modules.storyboard.renderAllTitle", undefined, "批量渲染"),
+            message: confirmMsg,
+            variant: "warning",
+            confirmLabel: t("modules.storyboard.renderAllAction", undefined, "开始渲染"),
+        });
+        if (!ok) return;
 
         setBatchRender({ active: true, current: 0, total: pendingFrameCount });
 
@@ -229,7 +242,13 @@ export default function StoryboardComposer() {
     const handleDeleteFrame = async (frameId: string, e: React.MouseEvent) => {
         e.stopPropagation();
         if (!currentProject) return;
-        if (!confirm(t("modules.storyboard.deleteFrameConfirm"))) return;
+        const ok = await confirmDialog({
+            title: t("modules.storyboard.deleteFrameTitle", undefined, "删除分镜"),
+            message: t("modules.storyboard.deleteFrameConfirm"),
+            variant: "danger",
+            confirmLabel: t("common.delete", undefined, "删除"),
+        });
+        if (!ok) return;
 
         try {
             await crudApi.deleteFrame(currentProject.id, frameId);

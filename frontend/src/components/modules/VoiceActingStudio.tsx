@@ -8,6 +8,7 @@ import { api } from "@/lib/api";
 import { getAssetUrl } from "@/lib/utils";
 import { useTranslation } from "@/i18n";
 import { useAsyncTask } from "@/hooks/useAsyncTask";
+import { confirmDialog } from "@/components/common/dialogs";
 
 // Mirror of pipeline._should_render_audio for accurate pending count.
 function isFramePendingAudio(frame: any): boolean {
@@ -118,7 +119,7 @@ export default function VoiceActingStudio() {
         }
     };
 
-    const handleGenerateAll = () => {
+    const handleGenerateAll = async () => {
         if (!currentProject) return;
         if (pendingAudioCount === 0) return;
         const msg = t(
@@ -126,7 +127,13 @@ export default function VoiceActingStudio() {
             { count: pendingAudioCount },
             `Synthesize audio for ${pendingAudioCount} frames? This may take a few minutes.`
         );
-        if (!confirm(msg)) return;
+        const ok = await confirmDialog({
+            title: t("modules.audio.batchTitle", undefined, "批量合成配音"),
+            message: msg,
+            variant: "warning",
+            confirmLabel: t("modules.audio.batchConfirmLabel", undefined, "开始合成"),
+        });
+        if (!ok) return;
         audioBatch.start();
     };
 

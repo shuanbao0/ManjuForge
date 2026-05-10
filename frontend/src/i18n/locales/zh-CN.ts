@@ -2,6 +2,11 @@
 // Keys are dot-paths. Add new strings under the most fitting namespace.
 
 const messages = {
+  dialogs: {
+    confirm: "确认",
+    cancel: "取消",
+    close: "关闭",
+  },
   common: {
     cancel: "取消",
     confirm: "确定",

@@ -15,6 +15,7 @@ import { api } from "@/lib/api";
 import { isAdmin, isAuthenticated, onAuthChange } from "@/lib/auth";
 import AuthGate from "@/components/auth/AuthGate";
 import { useTranslation } from "@/i18n";
+import { confirmDialog } from "@/components/common/dialogs";
 
 const ProjectClient = dynamic(() => import("@/components/project/ProjectClient"), { ssr: false });
 const SeriesDetailPage = dynamic(() => import("@/components/series/SeriesDetailPage"), { ssr: false });
@@ -130,11 +131,15 @@ function SeriesCard({
     window.location.hash = `#/series/${series.id}`;
   };
 
-  const handleDelete = (e: React.MouseEvent) => {
+  const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm(t("series.confirmDelete", { title: series.title }))) {
-      onDelete(series.id);
-    }
+    const ok = await confirmDialog({
+      title: t("series.deleteTitle", undefined, "删除剧集"),
+      message: t("series.confirmDelete", { title: series.title }),
+      variant: "danger",
+      confirmLabel: t("common.delete", undefined, "删除"),
+    });
+    if (ok) onDelete(series.id);
   };
 
   const handleInlineAddEpisode = async (e: React.MouseEvent) => {

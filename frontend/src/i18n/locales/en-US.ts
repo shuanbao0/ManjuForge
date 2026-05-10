@@ -2,6 +2,11 @@
 // If a key is missing here, the runtime falls back to zh-CN.
 
 const messages = {
+  dialogs: {
+    confirm: "Confirm",
+    cancel: "Cancel",
+    close: "Close",
+  },
   common: {
     cancel: "Cancel",
     confirm: "OK",

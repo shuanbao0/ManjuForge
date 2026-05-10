@@ -5,6 +5,7 @@ import { Calendar, Trash2, Play } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Project } from "@/store/projectStore";
 import { useTranslation } from "@/i18n";
+import { confirmDialog } from "@/components/common/dialogs";
 
 interface ProjectCardProps {
     project: Project;
@@ -19,11 +20,15 @@ export default function ProjectCard({ project, onDelete }: ProjectCardProps) {
         window.location.hash = `#/project/${project.id}`;
     };
 
-    const handleDelete = (e: React.MouseEvent) => {
+    const handleDelete = async (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (confirm(t("project.confirmDelete", { title: project.title }))) {
-            onDelete(project.id);
-        }
+        const ok = await confirmDialog({
+            title: t("project.deleteTitle", undefined, "删除项目"),
+            message: t("project.confirmDelete", { title: project.title }),
+            variant: "danger",
+            confirmLabel: t("common.delete", undefined, "删除"),
+        });
+        if (ok) onDelete(project.id);
     };
 
     const statusColors = {

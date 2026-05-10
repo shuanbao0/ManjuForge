@@ -1,5 +1,6 @@
 import "./globals.css";
 import { I18nProvider } from "@/i18n";
+import { DialogProvider } from "@/components/common/dialogs";
 
 // Note: the legacy EnvConfigChecker auto-popup was removed when the multi-user
 // rewrite moved provider keys (DashScope, OSS, Kling, Vidu, OpenAI) to
@@ -18,7 +19,9 @@ export default function RootLayout({
         <meta name="description" content="AI-Native Motion Comic Creation Platform" />
       </head>
       <body className="font-sans bg-background text-foreground antialiased">
-        <I18nProvider>{children}</I18nProvider>
+        <I18nProvider>
+          <DialogProvider>{children}</DialogProvider>
+        </I18nProvider>
       </body>
     </html>
   );

@@ -4,6 +4,7 @@ import { Trash2, Check, ChevronLeft, ChevronRight, Layers, X, Maximize2, Star } 
 import { API_URL } from '@/lib/api';
 import { getAssetUrl } from '@/lib/utils';
 import { useTranslation } from '@/i18n';
+import { confirmDialog } from '@/components/common/dialogs';
 
 interface VariantSelectorProps {
     asset: ImageAsset | undefined;
@@ -206,11 +207,15 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
                                         {/* Delete button - only show if NOT favorited */}
                                         {!isFavorited && (
                                             <button
-                                                onClick={(e) => {
+                                                onClick={async (e) => {
                                                     e.stopPropagation();
-                                                    if (confirm(t("modals.variantSelector.deleteConfirm", undefined, "Delete this variant?"))) {
-                                                        onDelete(variant.id);
-                                                    }
+                                                    const ok = await confirmDialog({
+                                                        title: t("modals.variantSelector.deleteVariantShort", undefined, "Delete variant"),
+                                                        message: t("modals.variantSelector.deleteConfirm", undefined, "Delete this variant?"),
+                                                        variant: "danger",
+                                                        confirmLabel: t("common.delete", undefined, "删除"),
+                                                    });
+                                                    if (ok) onDelete(variant.id);
                                                 }}
                                                 className="absolute bottom-1 right-1 p-1 bg-red-500/80 hover:bg-red-500 rounded-full text-white opacity-0 group-hover/variant:opacity-100 transition-all"
                                                 title={t("modals.variantSelector.deleteVariantShort", undefined, "Delete variant")}

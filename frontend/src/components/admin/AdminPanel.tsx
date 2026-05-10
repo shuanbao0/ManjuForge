@@ -24,6 +24,7 @@ import {
 } from "@/lib/api";
 import { type CurrentUser, getCurrentUser } from "@/lib/auth";
 import { useTranslation } from "@/i18n";
+import { confirmDialog, promptDialog } from "@/components/common/dialogs";
 
 type Tab = "users" | "stats" | "audit" | "settings";
 
@@ -213,12 +214,15 @@ function UserRow({
   };
 
   const resetPwd = async () => {
-    const pw = window.prompt(t("admin.promptNewPassword", { email: user.email }, `为 ${user.email} 设置新密码（≥ 8 位）`));
+    const pw = await promptDialog({
+      title: t("admin.resetPasswordTitle", undefined, "重置密码"),
+      message: t("admin.promptNewPassword", { email: user.email }, `为 ${user.email} 设置新密码（≥ 8 位）`),
+      placeholder: t("admin.passwordPlaceholder", undefined, "新密码"),
+      inputType: "password",
+      confirmLabel: t("admin.resetPasswordAction", undefined, "重置"),
+      validate: (v) => (v.length < 8 ? t("auth.passwordTooShort") : null),
+    });
     if (!pw) return;
-    if (pw.length < 8) {
-      alert(t("auth.passwordTooShort"));
-      return;
-    }
     setBusy(true);
     try {
       await admin.updateUser(user.id, { new_password: pw });
@@ -231,7 +235,13 @@ function UserRow({
   };
 
   const forceLogout = async () => {
-    if (!window.confirm(t("admin.confirmForceLogout", { email: user.email }, `将 ${user.email} 的所有 token 失效？`))) return;
+    const ok = await confirmDialog({
+      title: t("admin.forceLogoutTitle", undefined, "强制下线"),
+      message: t("admin.confirmForceLogout", { email: user.email }, `将 ${user.email} 的所有 token 失效？`),
+      variant: "warning",
+      confirmLabel: t("admin.forceLogout", undefined, "强制下线"),
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       await admin.forceLogout(user.id);
@@ -244,7 +254,13 @@ function UserRow({
   };
 
   const remove = async () => {
-    if (!window.confirm(t("admin.confirmDeleteUserDestructive", { email: user.email }, `删除用户 ${user.email}？此操作不可撤销。`))) return;
+    const ok = await confirmDialog({
+      title: t("admin.deleteUserTitle", undefined, "删除用户"),
+      message: t("admin.confirmDeleteUserDestructive", { email: user.email }, `删除用户 ${user.email}？此操作不可撤销。`),
+      variant: "danger",
+      confirmLabel: t("common.delete", undefined, "删除"),
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       await admin.deleteUser(user.id);

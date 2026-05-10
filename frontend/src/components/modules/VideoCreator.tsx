@@ -23,6 +23,7 @@ import PromptBuilder, { PromptSegment, PromptBuilderRef } from "./PromptBuilder"
 import type { VideoParams } from "@/store/projectStore";
 import { useTranslation } from "@/i18n";
 import { useAsyncTask } from "@/hooks/useAsyncTask";
+import { confirmDialog } from "@/components/common/dialogs";
 
 interface VideoCreatorProps {
     onTaskCreated: (project: any) => void;
@@ -67,14 +68,20 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
         },
         onFail: (err) => alert(`${t("modules.video.batchFailed", undefined, "Batch video gen failed")}: ${err.message}`),
     });
-    const handleBatchVideo = () => {
+    const handleBatchVideo = async () => {
         if (!currentProject || pendingVideoCount === 0 || videoBatch.active) return;
         const msg = t(
             "modules.video.batchConfirm",
             { count: pendingVideoCount },
             `Generate ${pendingVideoCount} videos? This may take several minutes.`
         );
-        if (!confirm(msg)) return;
+        const ok = await confirmDialog({
+            title: t("modules.video.batchTitle", undefined, "批量生成视频"),
+            message: msg,
+            variant: "warning",
+            confirmLabel: t("modules.video.batchConfirmLabel", undefined, "开始生成"),
+        });
+        if (!ok) return;
         videoBatch.start();
     };
 

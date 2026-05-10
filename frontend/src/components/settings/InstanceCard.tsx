@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { instances as instancesApi, type ModelInstanceOut } from "@/lib/api";
 import { useTranslation } from "@/i18n";
+import { confirmDialog } from "@/components/common/dialogs";
 
 const VENDOR_ACCENT: Record<string, string> = {
     dashscope: "border-amber-500/40 bg-amber-500/5",
@@ -78,7 +79,13 @@ export function InstanceCard({ instance, onSetDefault, onDelete, onEdit }: Insta
     };
 
     const handleDelete = async () => {
-        if (!confirm(t("instances.deleteConfirm", { name: instance.display_name }))) return;
+        const ok = await confirmDialog({
+            title: t("instances.deleteTitle", undefined, "删除配置"),
+            message: t("instances.deleteConfirm", { name: instance.display_name }),
+            variant: "danger",
+            confirmLabel: t("common.delete", undefined, "删除"),
+        });
+        if (!ok) return;
         await onDelete(instance.id);
     };
 

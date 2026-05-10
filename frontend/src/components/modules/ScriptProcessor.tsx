@@ -6,6 +6,7 @@ import { Wand2, User, MapPin, Box, ChevronRight, ChevronLeft, Save, Sparkles, Pl
 import { api, crudApi } from "@/lib/api";
 import { useProjectStore } from "@/store/projectStore";
 import { useTranslation } from "@/i18n";
+import { confirmDialog } from "@/components/common/dialogs";
 
 interface ScriptNode {
     type: "character" | "scene" | "prop";
@@ -83,7 +84,13 @@ export default function ScriptProcessor() {
     const handleDeleteNode = async (node: ScriptNode, e: React.MouseEvent) => {
         e.stopPropagation();
         if (!currentProject) return;
-        if (!confirm(t("modules.script.deleteNodeConfirm", { name: node.name }, `Are you sure you want to delete ${node.name}?`))) return;
+        const ok = await confirmDialog({
+            title: t("modules.script.deleteNodeTitle", undefined, "删除条目"),
+            message: t("modules.script.deleteNodeConfirm", { name: node.name }, `Are you sure you want to delete ${node.name}?`),
+            variant: "danger",
+            confirmLabel: t("common.delete", undefined, "删除"),
+        });
+        if (!ok) return;
 
         try {
             if (node.type === "character" && node.id) {
