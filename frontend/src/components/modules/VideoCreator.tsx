@@ -477,7 +477,9 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
                     params.cfgScale,
                     // Vidu params
                     params.viduAudio,
-                    params.movementAmplitude
+                    params.movementAmplitude,
+                    // ModelInstance picked in sidebar
+                    params.i2vInstanceId,
                 );
             }
 
@@ -643,10 +645,9 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
                             <button
                                 onClick={() => {
                                     setGenerationMode("r2v");
-                                    onParamsChange({
-                                        generationMode: "r2v",
-                                        model: "wan2.6-i2v" // Force Wan 2.6 when switching to R2V
-                                    });
+                                    // Picker auto-redirects to a wan2.6 instance
+                                    // if the active one isn't R2V-eligible.
+                                    onParamsChange({ generationMode: "r2v" });
                                 }}
                                 className={`px-5 py-2.5 text-sm rounded-lg flex items-center gap-2 transition-all font-medium ${generationMode === "r2v"
                                     ? "bg-purple-600 text-white shadow-lg"

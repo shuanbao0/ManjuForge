@@ -400,7 +400,9 @@ export const api = {
         cfgScale?: number,
         // Vidu params
         viduAudio?: boolean,
-        movementAmplitude?: string
+        movementAmplitude?: string,
+        // ModelInstance picked in the UI (per-task override).
+        i2vInstanceId?: string | null
     ) => {
         const res = await axios.post(`${API_URL}/projects/${id}/video_tasks`, {
             image_url,
@@ -424,7 +426,8 @@ export const api = {
             cfg_scale: cfgScale,
             // Vidu
             vidu_audio: viduAudio,
-            movement_amplitude: movementAmplitude
+            movement_amplitude: movementAmplitude,
+            i2v_instance_id: i2vInstanceId,
         });
         return res.data;
     },

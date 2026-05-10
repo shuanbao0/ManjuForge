@@ -1761,7 +1761,7 @@ class ComicGenPipeline:
         self._save_data()
         return script
 
-    def create_video_task(self, script_id: str, image_url: str, prompt: str, duration: int = 5, seed: int = None, resolution: str = "720p", generate_audio: bool = False, audio_url: str = None, prompt_extend: bool = True, negative_prompt: str = None, model: str = "wan2.6-i2v", frame_id: str = None, shot_type: str = "single", generation_mode: str = "i2v", reference_video_urls: list = None, mode: str = None, sound: str = None, cfg_scale: float = None, vidu_audio: bool = None, movement_amplitude: str = None) -> Tuple[Script, str]:
+    def create_video_task(self, script_id: str, image_url: str, prompt: str, duration: int = 5, seed: int = None, resolution: str = "720p", generate_audio: bool = False, audio_url: str = None, prompt_extend: bool = True, negative_prompt: str = None, model: str = "wan2.6-i2v", frame_id: str = None, shot_type: str = "single", generation_mode: str = "i2v", reference_video_urls: list = None, mode: str = None, sound: str = None, cfg_scale: float = None, vidu_audio: bool = None, movement_amplitude: str = None, i2v_instance_id: Optional[str] = None) -> Tuple[Script, str]:
         """Creates a new video generation task."""
         script = self.get_script(script_id)
         if not script:
@@ -1824,6 +1824,7 @@ class ComicGenPipeline:
             cfg_scale=cfg_scale,
             vidu_audio=vidu_audio,
             movement_amplitude=movement_amplitude,
+            i2v_instance_id=i2v_instance_id,
             created_at=time.time()
         )
         
@@ -2621,8 +2622,12 @@ class ComicGenPipeline:
             # ``__init__``), so use ``getattr`` for a safe lazy build.
             if getattr(self, "_video_dispatcher", None) is None:
                 self._video_dispatcher = build_default_dispatcher(self.video_generator)
+            # Override chain: task-level pick (Settings sidebar) → script-level
+            # default (Settings page) → user's default instance (loaded inside
+            # scoped_instance when both are None).
             ms = getattr(script, "model_settings", None) if script else None
-            i2v_instance_id = getattr(ms, "i2v_instance_id", None) if ms else None
+            script_instance_id = getattr(ms, "i2v_instance_id", None) if ms else None
+            i2v_instance_id = task.i2v_instance_id or script_instance_id
             with scoped_instance(i2v_instance_id, InstanceType.I2V) as i2v_inst:
                 # If task didn't specify a model and we have an instance,
                 # use the instance's model_name; otherwise honor task.model.

@@ -166,90 +166,9 @@ export const I2I_MODELS = [
     { id: 'qwen-image-edit', name: 'Qwen-Image Edit', description: 'modelCatalog.descriptions.qwenimageedit' },
 ];
 
-export type DurationConfig =
-    | { type: 'slider'; min: number; max: number; step: number; default: number }
-    | { type: 'buttons'; options: number[]; default: number }
-    | { type: 'fixed'; value: number };
-
-export interface ModelParamSupport {
-    resolution?: { options: string[]; default: string };
-    seed?: boolean;
-    negativePrompt?: boolean;
-    promptExtend?: boolean;
-    shotType?: boolean;
-    audio?: boolean;
-    // Kling
-    mode?: { options: string[]; default: string };
-    sound?: boolean;
-    cfgScale?: { min: number; max: number; step: number; default: number };
-    // Vidu
-    viduAudio?: boolean;
-    movementAmplitude?: { options: string[]; default: string };
-}
-
-export interface I2VModelConfig {
-    id: string;
-    name: string;
-    description: string;
-    duration: DurationConfig;
-    params: ModelParamSupport;
-}
-
-const WAN26_PARAMS: ModelParamSupport = {
-    resolution: { options: ['480p', '720p', '1080p'], default: '720p' },
-    seed: true, negativePrompt: true, promptExtend: true, shotType: true, audio: true,
-};
-
-const WAN25_PARAMS: ModelParamSupport = {
-    resolution: { options: ['480p', '720p', '1080p'], default: '720p' },
-    seed: true, negativePrompt: true, audio: true,
-};
-
-const WAN22_PARAMS: ModelParamSupport = {
-    resolution: { options: ['480p', '720p', '1080p'], default: '720p' },
-    seed: true, negativePrompt: true,
-};
-
-const KLING_PARAMS: ModelParamSupport = {
-    negativePrompt: true,
-    mode: { options: ['std', 'pro'], default: 'std' },
-    sound: true,
-    cfgScale: { min: 0, max: 1, step: 0.1, default: 0.5 },
-};
-
-const VIDU_PARAMS: ModelParamSupport = {
-    resolution: { options: ['540p', '720p', '1080p'], default: '720p' },
-    seed: true, viduAudio: true,
-    movementAmplitude: { options: ['auto', 'small', 'medium', 'large'], default: 'auto' },
-};
-
-const PIXVERSE_PARAMS: ModelParamSupport = {
-    resolution: { options: ['480p', '720p', '1080p'], default: '720p' },
-    seed: true, negativePrompt: true,
-};
-
-export const I2V_MODELS: I2VModelConfig[] = [
-    { id: 'wan2.6-i2v', name: 'Wan 2.6 I2V / R2V', description: 'modelCatalog.descriptions.wan26i2v',
-      duration: { type: 'slider', min: 2, max: 15, step: 1, default: 5 }, params: WAN26_PARAMS },
-    { id: 'wan2.6-i2v-flash', name: 'Wan 2.6 I2V Flash', description: 'modelCatalog.descriptions.wan26i2vflash',
-      duration: { type: 'slider', min: 2, max: 15, step: 1, default: 5 }, params: WAN26_PARAMS },
-    { id: 'wan2.5-i2v-preview', name: 'Wan 2.5 I2V Preview', description: 'modelCatalog.descriptions.wan25i2vpreview',
-      duration: { type: 'buttons', options: [5, 10], default: 5 }, params: WAN25_PARAMS },
-    { id: 'wan2.2-i2v-plus', name: 'Wan 2.2 I2V Plus', description: 'modelCatalog.descriptions.wan22i2vplus',
-      duration: { type: 'fixed', value: 5 }, params: WAN22_PARAMS },
-    { id: 'wan2.2-i2v-flash', name: 'Wan 2.2 I2V Flash', description: 'modelCatalog.descriptions.wan22i2vflash',
-      duration: { type: 'fixed', value: 5 }, params: WAN22_PARAMS },
-    { id: 'kling-v3', name: 'Kling v3', description: 'modelCatalog.descriptions.klingv3',
-      duration: { type: 'slider', min: 3, max: 15, step: 1, default: 5 }, params: KLING_PARAMS },
-    { id: 'kling-2.1-master', name: 'Kling 2.1 Master', description: 'modelCatalog.descriptions.kling21master',
-      duration: { type: 'slider', min: 3, max: 10, step: 1, default: 5 }, params: KLING_PARAMS },
-    { id: 'viduq3-pro', name: 'Vidu Q3 Pro', description: 'modelCatalog.descriptions.viduq3pro',
-      duration: { type: 'slider', min: 1, max: 16, step: 1, default: 5 }, params: VIDU_PARAMS },
-    { id: 'viduq3-turbo', name: 'Vidu Q3 Turbo', description: 'modelCatalog.descriptions.viduq3turbo',
-      duration: { type: 'slider', min: 1, max: 16, step: 1, default: 5 }, params: VIDU_PARAMS },
-    { id: 'pixverse-v4', name: 'Pixverse v4', description: 'modelCatalog.descriptions.pixversev4',
-      duration: { type: 'buttons', options: [5, 8], default: 5 }, params: PIXVERSE_PARAMS },
-];
+// I2V capability metadata (DurationConfig / ModelParamSupport / per-family
+// schemas) was moved to ``@/lib/i2vFamilies``. Selection is now driven by
+// ``ModelInstance``s — see ``ModelInstancePicker`` + ``useI2VInstances``.
 
 export const ASPECT_RATIOS = [
     { id: '9:16', name: '9:16', description: 'modelCatalog.aspectRatios.portrait' },
@@ -268,7 +187,10 @@ export interface VideoParams {
     batchSize: number;
     cameraMovement: string;
     subjectMotion: string;
+    /** ``model_name`` of the selected ``ModelInstance``; drives capability lookup. */
     model: string;
+    /** ``ModelInstance.id`` chosen in the picker; ``null`` falls back to user default. */
+    i2vInstanceId: string | null;
     shotType: string;
     generationMode: string;
     referenceVideoUrls: string[];
@@ -280,14 +202,6 @@ export interface VideoParams {
     viduAudio: boolean;
     movementAmplitude: string;
 }
-
-/** 将动态列数映射为完整的 Tailwind class（避免 JIT 扫描不到动态拼接） */
-export const GRID_COLS_CLASS: Record<number, string> = {
-    2: 'grid-cols-2',
-    3: 'grid-cols-3',
-    4: 'grid-cols-4',
-    5: 'grid-cols-5',
-};
 
 export interface PromptConfig {
     storyboard_polish: string;

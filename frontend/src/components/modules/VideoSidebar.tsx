@@ -4,8 +4,18 @@ import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Settings2, List, RefreshCw, ChevronDown, ChevronUp, Mic, Music, VolumeX, Wand2 } from "lucide-react";
 import VideoQueue from "./VideoQueue";
+import ModelInstancePicker from "./video/ModelInstancePicker";
 import { VideoTask, api } from "@/lib/api";
-import { I2V_MODELS, DurationConfig, ModelParamSupport, VideoParams, GRID_COLS_CLASS } from "@/store/projectStore";
+import { VideoParams } from "@/store/projectStore";
+import {
+    resolveI2VFamily,
+    clampDuration,
+    familyDefaults,
+    GRID_COLS_CLASS,
+    type DurationConfig,
+    type ModelParamSupport,
+} from "@/lib/i2vFamilies";
+import type { EnrichedInstance } from "@/hooks/useI2VInstances";
 import { useTranslation } from "@/i18n";
 
 interface VideoSidebarProps {
@@ -22,45 +32,47 @@ export default function VideoSidebar({ tasks, onRemix, params, setParams }: Vide
     const audioInputRef = useRef<HTMLInputElement>(null);
     const [showNegative, setShowNegative] = useState(false);
 
-    const currentModelConfig = I2V_MODELS.find(m => m.id === params.model);
-    const modelParams: ModelParamSupport = currentModelConfig?.params ?? {};
+    // Capabilities (resolution / duration / kling / vidu) come from the
+    // family registry, keyed by the active instance's ``model_name``. The
+    // Settings → Instance → reference layering means this same lookup works
+    // regardless of which vendor the user picks.
+    const currentFamily = resolveI2VFamily(params.model);
+    const modelParams: ModelParamSupport = currentFamily?.params ?? {};
 
     const updateParam = (key: string, value: any) => {
-        const newParams = { ...params, [key]: value };
-        // When model changes, clamp duration and reset model-specific params
-        if (key === "model") {
-            const newModelConfig = I2V_MODELS.find(m => m.id === value);
-            if (newModelConfig?.duration) {
-                const dc = newModelConfig.duration;
-                if (dc.type === 'fixed') {
-                    newParams.duration = dc.value;
-                } else if (dc.type === 'slider') {
-                    if (newParams.duration < dc.min || newParams.duration > dc.max) {
-                        newParams.duration = dc.default;
-                    }
-                } else if (dc.type === 'buttons') {
-                    if (!dc.options.includes(newParams.duration)) {
-                        newParams.duration = dc.default;
-                    }
-                }
-            }
-            // Reset model-specific params to defaults
-            const np = newModelConfig?.params ?? {};
-            newParams.resolution = np.resolution?.default ?? "720p";
-            newParams.promptExtend = !!np.promptExtend;
-            newParams.negativePrompt = "";
-            newParams.shotType = "single";
-            newParams.generateAudio = false;
-            newParams.audioUrl = "";
-            // Kling defaults
-            newParams.mode = np.mode?.default ?? "std";
-            newParams.sound = false;
-            newParams.cfgScale = np.cfgScale?.default ?? 0.5;
-            // Vidu defaults
-            newParams.viduAudio = true;
-            newParams.movementAmplitude = np.movementAmplitude?.default ?? "auto";
-        }
-        setParams(newParams);
+        setParams({ ...params, [key]: value });
+    };
+
+    /**
+     * Switch the picked instance + reset family-specific params to defaults.
+     * Duration is clamped (not reset) when the new family's range still
+     * accepts the previous value.
+     */
+    const handleInstanceChange = (inst: EnrichedInstance) => {
+        const family = inst.family;
+        const defaults = family ? familyDefaults(family) : null;
+        const nextDuration = family ? clampDuration(family, params.duration) : params.duration;
+        setParams({
+            ...params,
+            i2vInstanceId: inst.id,
+            model: inst.model_name,
+            ...(defaults
+                ? {
+                      resolution: defaults.resolution,
+                      promptExtend: defaults.promptExtend,
+                      negativePrompt: defaults.negativePrompt,
+                      shotType: defaults.shotType,
+                      generateAudio: defaults.generateAudio,
+                      audioUrl: defaults.audioUrl,
+                      mode: defaults.mode,
+                      sound: defaults.sound,
+                      cfgScale: defaults.cfgScale,
+                      viduAudio: defaults.viduAudio,
+                      movementAmplitude: defaults.movementAmplitude,
+                      duration: nextDuration,
+                  }
+                : {}),
+        });
     };
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -154,47 +166,24 @@ export default function VideoSidebar({ tasks, onRemix, params, setParams }: Vide
                                     {t("modules.video.basicSettings", undefined, "Basic Settings")}
                                 </h3>
 
-                                {/* Model Selection - R2V mode: only Wan 2.6 is selectable */}
+                                {/* Model Instance — driven by user-configured /me/instances?type=i2v */}
                                 <div>
                                     <label className="block text-xs text-gray-400 mb-2">
-                                        {t("modules.video.modelLabelLong", undefined, "Model (模型)")}
+                                        {t("modules.video.modelInstanceLabel", undefined, "Model Instance (模型实例)")}
                                         {params.generationMode === "r2v" && (
-                                            <span className="text-purple-400 ml-2">{t("modules.video.r2vOnlyWan26", undefined, "(R2V仅支持 Wan 2.6)")}</span>
+                                            <span className="text-purple-400 ml-2">{t("modules.video.r2vOnlyWan26", undefined, "(R2V 仅支持 Wan 2.6)")}</span>
                                         )}
                                     </label>
-                                    <div className="space-y-2">
-                                        {I2V_MODELS.map((model) => {
-                                            const isR2VMode = params.generationMode === "r2v";
-                                            const isWan26 = model.id === "wan2.6-i2v";
-                                            const isDisabled = isR2VMode && !isWan26;
-                                            const isSelected = isR2VMode ? isWan26 : params.model === model.id;
-
-                                            return (
-                                                <button
-                                                    key={model.id}
-                                                    onClick={() => !isDisabled && updateParam("model", model.id)}
-                                                    disabled={isDisabled}
-                                                    className={`w-full flex items-center justify-between p-2.5 rounded-lg border transition-all text-left ${isSelected
-                                                        ? 'border-primary/50 bg-primary/10'
-                                                        : 'border-white/10 hover:border-white/20 bg-white/5'
-                                                        } ${isDisabled ? 'opacity-40 cursor-not-allowed' : ''}`}
-                                                >
-                                                    <div>
-                                                        <span className="text-xs font-medium text-white">{model.name}</span>
-                                                        <p className="text-[10px] text-gray-500">{t(model.description)}</p>
-                                                    </div>
-                                                    {isSelected && (
-                                                        <div className="w-2 h-2 bg-primary rounded-full" />
-                                                    )}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
+                                    <ModelInstancePicker
+                                        value={params.i2vInstanceId}
+                                        mode={params.generationMode === "r2v" ? "r2v" : "i2v"}
+                                        onChange={handleInstanceChange}
+                                    />
                                 </div>
 
-                                {/* Duration - Dynamic per model */}
+                                {/* Duration — driven by the active family's capability schema */}
                                 {(() => {
-                                    const durationConfig: DurationConfig = currentModelConfig?.duration ?? { type: 'buttons', options: [5, 10], default: 5 };
+                                    const durationConfig: DurationConfig = currentFamily?.duration ?? { type: 'buttons', options: [5, 10], default: 5 };
 
                                     if (durationConfig.type === 'fixed') {
                                         return (

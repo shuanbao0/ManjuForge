@@ -107,6 +107,8 @@ class VideoTask(BaseModel):
     # Vidu params
     vidu_audio: Optional[bool] = Field(None, description="Vidu audio output")
     movement_amplitude: Optional[str] = Field(None, description="Vidu movement amplitude: auto/small/medium/large")
+    # Per-task override for ModelInstance — takes precedence over script.model_settings.i2v_instance_id.
+    i2v_instance_id: Optional[str] = Field(None, description="ModelInstance.id picked at submit time; overrides project default")
     created_at: float = Field(default_factory=time.time)
 
 class Character(BaseModel):

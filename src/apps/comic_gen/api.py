@@ -1517,6 +1517,8 @@ class CreateVideoTaskRequest(BaseModel):
     # Vidu params
     vidu_audio: Optional[bool] = None
     movement_amplitude: Optional[str] = None
+    # ModelInstance picked in the UI for this submit (per-task override).
+    i2v_instance_id: Optional[str] = None
 
 
 async def process_video_task(script_id: str, task_id: str):
@@ -1554,6 +1556,7 @@ async def create_video_task(script_id: str, request: CreateVideoTaskRequest, bac
                 cfg_scale=request.cfg_scale,
                 vidu_audio=request.vidu_audio,
                 movement_amplitude=request.movement_amplitude,
+                i2v_instance_id=request.i2v_instance_id,
             )
 
             # Find the created task object

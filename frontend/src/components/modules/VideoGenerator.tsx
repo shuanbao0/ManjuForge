@@ -29,6 +29,7 @@ export default function VideoGenerator() {
         cameraMovement: "none" as string,
         subjectMotion: "still" as string,
         model: "",
+        i2vInstanceId: null as string | null,
         shotType: "single" as string,
         generationMode: "i2v" as string,
         referenceVideoUrls: [] as string[],
