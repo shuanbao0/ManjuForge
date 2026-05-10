@@ -79,6 +79,15 @@ _WAN26_PARAMS: Dict[str, object] = {
     "shotType": True,
     "audio": True,
 }
+_WAN27_PARAMS: Dict[str, object] = {
+    # wan2.7 dropped shot_type and (pre-task) negative_prompt; promptExtend
+    # and seed remain. Audio is provided as ``driving_audio`` inside the
+    # unified ``input.media`` array.
+    "resolution": _RES_LADDER,
+    "seed": True,
+    "promptExtend": True,
+    "audio": True,
+}
 _WAN25_PARAMS: Dict[str, object] = {
     "resolution": _RES_LADDER,
     "seed": True,
@@ -126,6 +135,24 @@ def _duration(kind: str, **kw) -> Dict[str, object]:
 # ── Catalog: T2I / I2I (image generation) ────────────────────────────────
 
 T2I_CARDS: Tuple[ModelCard, ...] = (
+    ModelCard(
+        id="wan2.7-image-pro",
+        family="wan2.7-",
+        display_name="Wan 2.7 Image Pro",
+        description="通义万相 2.7 旗舰版,支持 4K 分辨率与组图生成",
+        capabilities=("t2i", "i2i"),
+        params={"size_presets": ["1024*1024", "2048*2048", "4096*4096", "1024*576", "576*1024"]},
+        badges=("new", "premium"),
+    ),
+    ModelCard(
+        id="wan2.7-image",
+        family="wan2.7-",
+        display_name="Wan 2.7 Image",
+        description="通义万相 2.7 标准版,统一 multimodal-generation 接口",
+        capabilities=("t2i", "i2i"),
+        params={"size_presets": ["1024*1024", "2048*2048", "1024*576", "576*1024"]},
+        badges=("new",),
+    ),
     ModelCard(
         id="wan2.6-t2i",
         family="wan2.6-",
@@ -306,6 +333,9 @@ T2I_CARDS: Tuple[ModelCard, ...] = (
 
 
 I2I_CARDS: Tuple[ModelCard, ...] = (
+    # Note: wan2.7-image / wan2.7-image-pro are NOT duplicated here. They live
+    # in T2I_CARDS with ``capabilities=("t2i", "i2i")`` and surface in the I2I
+    # dropdown via ``ModelCatalog.by_capability("i2i")`` filtering.
     ModelCard(
         id="wan2.6-image",
         family="wan2.6-",
@@ -359,6 +389,18 @@ I2I_CARDS: Tuple[ModelCard, ...] = (
 # ── Catalog: I2V / T2V / R2V (video generation) ──────────────────────────
 
 I2V_CARDS: Tuple[ModelCard, ...] = (
+    ModelCard(
+        id="wan2.7-i2v",
+        family="wan2.7-",
+        display_name="Wan 2.7 I2V / R2V",
+        description="通义万相 2.7,统一 input.media 接口;R2V 模式自动切到 wan2.7-r2v",
+        # Bundle i2v + r2v under one card (same convention as wan2.6-i2v).
+        # Pipeline auto-translates ``wan2.7-i2v`` → ``wan2.7-r2v`` when the
+        # task is submitted with ``generation_mode="r2v"``.
+        capabilities=("i2v", "r2v"),
+        params={**_WAN27_PARAMS, "duration": _duration("slider", min=2, max=15, step=1, default=5)},
+        badges=("new", "recommended"),
+    ),
     ModelCard(
         id="wan2.6-i2v",
         family="wan2.6-",

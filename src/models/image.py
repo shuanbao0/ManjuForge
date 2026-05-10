@@ -76,7 +76,10 @@ class WanxImageModel(ImageGenModel):
         if not model_name:
             return "legacy_sdk"
         n = model_name.lower()
-        if n == "wan2.6-t2i" or n.startswith("qwen-image"):
+        # wan2.7-image / wan2.7-image-pro share the same multimodal-generation
+        # endpoint + ``input.messages.content`` shape as wan2.6-t2i / qwen-image.
+        # Reference image goes in as ``{"image": "<url>"}`` content blocks.
+        if n.startswith("wan2.7-image") or n == "wan2.6-t2i" or n.startswith("qwen-image"):
             return "multimodal_sync"
         if n == "wan2.6-image" or n.startswith("wan2.5-"):
             return "image_gen_async"

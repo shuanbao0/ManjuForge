@@ -1784,9 +1784,19 @@ class ComicGenPipeline:
         
         task_id = str(uuid.uuid4())
         
-        # If R2V mode is selected, use the R2V model
+        # If R2V mode is selected, swap the I2V model id for its R2V sibling.
+        # Each Wan family has paired SKUs that share the same instance/key but
+        # use different request shapes (wan2.7 uses media[reference_video],
+        # wan2.6 uses input.ref_video_urls). Without this translation, R2V
+        # mode would always run on wan2.6-r2v regardless of the user's pick.
         if generation_mode == "r2v":
-            model = "wan2.6-r2v"
+            current = (model or "").lower()
+            if current.startswith("wan2.7-i2v"):
+                model = "wan2.7-r2v"
+            elif current.startswith("wan2.6-i2v"):
+                model = "wan2.6-r2v"
+            else:
+                model = "wan2.6-r2v"
         
         # Snapshot the input image to ensure consistency
         snapshot_url = image_url

@@ -317,6 +317,97 @@ class WanxModel(VideoGenModel):
                     shot_type=shot_type,
                     extra_headers=extra_media_headers,
                 )
+            elif final_model_name.startswith('wan2.7-i2v'):
+                # wan2.7-i2v uses a unified ``input.media`` array schema
+                # (https://help.aliyun.com/zh/model-studio/wan-image-to-video-guide).
+                # The legacy ``input.img_url`` field is rejected with
+                # "Field required: input.media".
+                resolver_model = self._resolver_model_for_media(final_model_name)
+                backend = self._resolve_provider_backend_for_model(resolver_model)
+                temp_url_resolver = self._build_dashscope_temp_url_resolver(resolver_model)
+
+                image_ref = img_path or img_url
+                if not image_ref:
+                    raise ValueError(f"{final_model_name} requires a source image (img_url or img_path)")
+                resolved_image = resolve_media_input(
+                    image_ref,
+                    model_name=resolver_model,
+                    modality="image",
+                    backend=backend,
+                    uploader=uploader,
+                    dashscope_temp_url_resolver=temp_url_resolver,
+                )
+                if resolved_image.value.startswith("data:image/"):
+                    resolved_image = resolve_media_input(
+                        image_ref,
+                        model_name=resolver_model,
+                        modality="reference_video",
+                        backend=backend,
+                        uploader=uploader,
+                        dashscope_temp_url_resolver=temp_url_resolver,
+                    )
+                img_url = resolved_image.value
+                self._merge_media_headers(extra_media_headers, resolved_image.headers)
+
+                if audio_url:
+                    resolved_audio = resolve_media_input(
+                        audio_url,
+                        model_name=resolver_model,
+                        modality="audio",
+                        backend=backend,
+                        uploader=uploader,
+                        dashscope_temp_url_resolver=temp_url_resolver,
+                    )
+                    audio_url = resolved_audio.value
+                    self._merge_media_headers(extra_media_headers, resolved_audio.headers)
+
+                video_url = self._generate_wan27_i2v_http(
+                    prompt=prompt,
+                    img_url=img_url,
+                    model_name=final_model_name,
+                    resolution=resolution,
+                    duration=duration,
+                    prompt_extend=prompt_extend,
+                    audio_url=audio_url,
+                    watermark=watermark,
+                    seed=seed,
+                    extra_headers=extra_media_headers,
+                )
+            elif final_model_name.startswith('wan2.7-r2v'):
+                # wan2.7-r2v shares the unified ``input.media`` schema with
+                # ``reference_video`` entries
+                # (https://help.aliyun.com/zh/model-studio/wan-video-to-video-api-reference).
+                ref_video_urls = kwargs.get('ref_video_urls', [])
+                if not ref_video_urls:
+                    raise ValueError(f"ref_video_urls is required for {final_model_name}")
+
+                resolver_model = self._resolver_model_for_media(final_model_name)
+                backend = self._resolve_provider_backend_for_model(resolver_model)
+                temp_url_resolver = self._build_dashscope_temp_url_resolver(resolver_model)
+
+                resolved_ref_urls = resolve_media_inputs(
+                    ref_video_urls,
+                    model_name=resolver_model,
+                    modality="reference_video",
+                    backend=backend,
+                    uploader=uploader,
+                    dashscope_temp_url_resolver=temp_url_resolver,
+                )
+                ref_video_urls = [item.value for item in resolved_ref_urls]
+                for resolved_item in resolved_ref_urls:
+                    self._merge_media_headers(extra_media_headers, resolved_item.headers)
+
+                video_url = self._generate_wan27_r2v_http(
+                    prompt=prompt,
+                    ref_video_urls=ref_video_urls,
+                    model_name=final_model_name,
+                    resolution=resolution,
+                    duration=duration,
+                    prompt_extend=prompt_extend,
+                    watermark=watermark,
+                    seed=seed,
+                    extra_headers=extra_media_headers,
+                )
             elif final_model_name == 'wan2.6-r2v':
                 # R2V generation
                 ref_video_urls = kwargs.get('ref_video_urls', [])
@@ -597,6 +688,157 @@ class WanxModel(VideoGenModel):
                 raise RuntimeError(f"{model_name} task {task_status}: {poll_result}")
             
         raise RuntimeError(f"{model_name} task timed out after {max_wait_time}s")
+
+    def _submit_and_poll_video_task(
+        self,
+        create_url: str,
+        headers: Dict[str, str],
+        payload: Dict,
+        model_name: str,
+        max_wait_time: int = 900,
+        poll_interval: int = 15,
+    ) -> str:
+        """Submit a video-synthesis task and poll until SUCCEEDED.
+
+        Shared helper used by the new wan2.7-* HTTP paths. The legacy
+        wan2.6 helpers still inline their own poll loops; consolidate
+        only when touching them next.
+        """
+        base = get_provider_base_url("DASHSCOPE")
+        logger.info(f"Calling {model_name} HTTP API (async)...")
+        logger.info(f"Payload: {payload}")
+
+        response = requests.post(create_url, headers=headers, json=payload, timeout=120)
+        logger.info(f"Create task response status: {response.status_code}")
+        logger.info(f"Create task response body: {response.text[:500] if response.text else 'empty'}")
+
+        if response.status_code != 200:
+            error_data = response.json() if response.text else {}
+            error_msg = error_data.get('message', response.text)
+            raise RuntimeError(f"{model_name} task creation failed: {error_msg}")
+
+        result = response.json()
+        task_id = result.get('output', {}).get('task_id')
+        if not task_id:
+            raise RuntimeError(f"No task_id in response: {result}")
+        logger.info(f"Task created: {task_id}")
+
+        poll_url = f"{base}/api/v1/tasks/{task_id}"
+        poll_headers = {"Authorization": f"Bearer {self.api_key}"}
+        elapsed = 0
+        while elapsed < max_wait_time:
+            time.sleep(poll_interval)
+            elapsed += poll_interval
+            poll_response = requests.get(poll_url, headers=poll_headers, timeout=30)
+            if poll_response.status_code != 200:
+                logger.warning(f"Poll request failed: {poll_response.status_code}")
+                continue
+            poll_result = poll_response.json()
+            task_status = poll_result.get('output', {}).get('task_status')
+            logger.info(f"Task {task_id} status: {task_status} (elapsed: {elapsed}s)")
+
+            if task_status == 'SUCCEEDED':
+                video_url = poll_result.get('output', {}).get('video_url')
+                if not video_url:
+                    raise RuntimeError(f"No video_url in completed task: {poll_result}")
+                logger.info(f"Task completed. Video URL: {video_url}")
+                return video_url
+            if task_status == 'FAILED':
+                error_msg = poll_result.get('output', {}).get('message', 'Unknown error')
+                code = poll_result.get('output', {}).get('code', '')
+                raise RuntimeError(f"{model_name} task failed: {code} - {error_msg}")
+            if task_status in ('CANCELED', 'UNKNOWN'):
+                raise RuntimeError(f"{model_name} task {task_status}: {poll_result}")
+            # PENDING / RUNNING — keep polling
+
+        raise RuntimeError(f"{model_name} task timed out after {max_wait_time}s")
+
+    def _generate_wan27_i2v_http(
+        self,
+        prompt: str,
+        img_url: str,
+        model_name: str,
+        resolution: str = "720P",
+        duration: int = 5,
+        prompt_extend: bool = True,
+        audio_url: Optional[str] = None,
+        watermark: bool = False,
+        seed: Optional[int] = None,
+        extra_headers: Optional[Mapping[str, str]] = None,
+    ) -> str:
+        """Wan 2.7 I2V via the unified ``input.media`` schema."""
+        base = get_provider_base_url("DASHSCOPE")
+        create_url = f"{base}/api/v1/services/aigc/video-generation/video-synthesis"
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+            "X-DashScope-Async": "enable",
+        }
+        if extra_headers:
+            headers.update(dict(extra_headers))
+
+        media: List[Dict[str, str]] = [{"type": "first_frame", "url": img_url}]
+        if audio_url:
+            media.append({"type": "driving_audio", "url": audio_url})
+
+        parameters: Dict[str, object] = {
+            "resolution": resolution,
+            "duration": duration,
+            "prompt_extend": prompt_extend,
+            "watermark": watermark,
+        }
+        if seed is not None:
+            parameters["seed"] = seed
+
+        payload = {
+            "model": model_name,
+            "input": {"prompt": prompt, "media": media},
+            "parameters": parameters,
+        }
+        return self._submit_and_poll_video_task(create_url, headers, payload, model_name)
+
+    def _generate_wan27_r2v_http(
+        self,
+        prompt: str,
+        ref_video_urls: List[str],
+        model_name: str,
+        resolution: str = "720P",
+        duration: int = 5,
+        prompt_extend: bool = False,
+        watermark: bool = False,
+        seed: Optional[int] = None,
+        extra_headers: Optional[Mapping[str, str]] = None,
+    ) -> str:
+        """Wan 2.7 R2V via the unified ``input.media`` schema with reference_video entries."""
+        base = get_provider_base_url("DASHSCOPE")
+        create_url = f"{base}/api/v1/services/aigc/video-generation/video-synthesis"
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+            "X-DashScope-Async": "enable",
+        }
+        if extra_headers:
+            headers.update(dict(extra_headers))
+
+        media = [{"type": "reference_video", "url": v} for v in ref_video_urls]
+
+        parameters: Dict[str, object] = {
+            "resolution": resolution,
+            "duration": duration,
+            "prompt_extend": prompt_extend,
+            "watermark": watermark,
+        }
+        if seed is not None:
+            parameters["seed"] = seed
+
+        payload = {
+            "model": model_name,
+            "input": {"prompt": prompt, "media": media},
+            "parameters": parameters,
+        }
+        return self._submit_and_poll_video_task(create_url, headers, payload, model_name)
 
     def _generate_sdk(self, prompt: str, model_name: str, img_url: str = None, size: str = "1280*720",
                       duration: int = 5, prompt_extend: bool = True, negative_prompt: str = None,
