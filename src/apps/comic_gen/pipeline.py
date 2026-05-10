@@ -20,6 +20,7 @@ from .instance_resolver import scoped_instance, model_name_or
 from ...models.instance import InstanceType
 from ...utils import get_logger
 from ...utils.oss_utils import is_object_key
+from ...utils.provider_media import MediaResolver
 from ...utils.provider_registry import resolve_provider_backend
 from ...utils.system_check import get_ffmpeg_path, get_ffmpeg_install_instructions
 from ...i18n import t as _t
@@ -1877,17 +1878,14 @@ class ComicGenPipeline:
         if not video_task or video_task.status != "completed" or not video_task.video_url:
             raise ValueError("Video task not found or not completed")
 
-        # Resolve video path
-        video_path = video_task.video_url
-        if not video_path.startswith("/") and not video_path.startswith("http"):
-            video_path = _safe_resolve_path(self.data_root, video_path)
-
-        if video_path.startswith("http"):
-            # Download to temp file first
-            video_path = self._download_temp_image(video_path)
-
-        if not os.path.exists(video_path):
-            raise ValueError(f"Video file not found: {video_path}")
+        # Materialize video on local disk (handles local paths, OSS object
+        # keys, and http URLs uniformly).
+        import tempfile as _tempfile
+        try:
+            video_path = MediaResolver().to_local_file(video_task.video_url, suffix=".mp4")
+        except Exception as e:
+            raise ValueError(f"Video file not accessible: {e}")
+        cleanup_video = video_path.startswith(_tempfile.gettempdir())
 
         # Extract last frame using FFmpeg
         ffmpeg_path = get_ffmpeg_path()
@@ -1909,14 +1907,21 @@ class ComicGenPipeline:
         ]
 
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            if result.returncode != 0:
-                raise RuntimeError(f"FFmpeg error: {result.stderr}")
-        except subprocess.TimeoutExpired:
-            raise RuntimeError("FFmpeg frame extraction timed out")
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                if result.returncode != 0:
+                    raise RuntimeError(f"FFmpeg error: {result.stderr}")
+            except subprocess.TimeoutExpired:
+                raise RuntimeError("FFmpeg frame extraction timed out")
 
-        if not os.path.exists(output_path):
-            raise RuntimeError("Failed to extract last frame from video")
+            if not os.path.exists(output_path):
+                raise RuntimeError("Failed to extract last frame from video")
+        finally:
+            if cleanup_video:
+                try:
+                    os.remove(video_path)
+                except OSError:
+                    pass
 
         # Upload to OSS if configured
         from ...utils.oss_utils import OSSImageUploader
@@ -1989,27 +1994,11 @@ class ComicGenPipeline:
         return script
 
     def _download_temp_image(self, url: str) -> str:
-        """Downloads an image to a temporary file."""
-        import requests
-        import tempfile
-        
-        # If it's a local file path (relative to output)
-        if not url.startswith("http"):
-            local_path = _safe_resolve_path(self.data_root, url)
-            if os.path.exists(local_path):
-                return local_path
-                
-        # Download from URL
+        """Materialize a media reference (http URL, local path under
+        ``output/``, OSS object key, or data URI) as a local file path
+        the model adapter can read."""
         try:
-            response = requests.get(url, stream=True)
-            response.raise_for_status()
-            
-            # Create temp file
-            fd, path = tempfile.mkstemp(suffix=".png")
-            with os.fdopen(fd, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            return path
+            return MediaResolver().to_local_file(url, suffix=".png")
         except Exception as e:
             logger.error(f"Failed to download image: {e}")
             raise
@@ -2102,21 +2091,28 @@ class ComicGenPipeline:
         
         logger.info(f"[MERGE] Found {len(video_paths)} videos to merge")
             
-        # Create file list for ffmpeg
+        # Materialize each clip on local disk for ffmpeg's concat demuxer.
+        # Local paths under output/ resolve to themselves; object keys and
+        # remote URLs are downloaded to temp files we clean up at the end.
+        import tempfile as _tempfile
         list_path = _safe_resolve_path(self.data_root, f"merge_list_{script_id}.txt")
         abs_video_paths = []
+        resolver = MediaResolver()
+        tmp_root = _tempfile.gettempdir()
+        temp_files: List[str] = []
 
         with open(list_path, "w") as f:
             for path in video_paths:
-                # Resolve to absolute path
-                if not path.startswith("http"):
-                    abs_path = _safe_resolve_path(self.data_root, path)
-                    if os.path.exists(abs_path):
-                        f.write(f"file '{abs_path}'\n")
-                        abs_video_paths.append(abs_path)
-                        logger.debug(f"[MERGE] Added to list: {abs_path}")
-                    else:
-                        logger.warning(f"[MERGE] Video file not found: {abs_path}")
+                try:
+                    abs_path = resolver.to_local_file(path, suffix=".mp4")
+                except Exception as e:
+                    logger.warning(f"[MERGE] Could not materialize video {path}: {e}")
+                    continue
+                if abs_path.startswith(tmp_root):
+                    temp_files.append(abs_path)
+                f.write(f"file '{abs_path}'\n")
+                abs_video_paths.append(abs_path)
+                logger.debug(f"[MERGE] Added to list: {abs_path}")
                         
         if not abs_video_paths:
             logger.error("[MERGE] No valid video files found on disk!")
@@ -2163,11 +2159,11 @@ class ComicGenPipeline:
             result = subprocess.run(cmd, check=True, capture_output=True, timeout=600)  # 10 min timeout for re-encoding
             logger.debug(f"[MERGE] FFmpeg stdout: {result.stdout.decode()[:500] if result.stdout else 'empty'}")
             logger.info(f"[MERGE] FFmpeg completed successfully")
-            
+
             # Update script with merged video path
             # Use 'videos/' (plural) to match the /files/videos route
             script.merged_video_url = f"videos/{output_filename}"
-            
+
             # Verify file was created and log details
             if os.path.exists(output_path):
                 file_size_mb = os.path.getsize(output_path) / (1024 * 1024)
@@ -2176,13 +2172,8 @@ class ComicGenPipeline:
             else:
                 logger.error(f"[MERGE] ❌ Merged video file NOT found at: {output_path}")
                 raise RuntimeError(f"Video merge completed but output file not found: {output_path}")
-                
+
             self._save_data()
-            
-            # Cleanup list file
-            if os.path.exists(list_path):
-                os.remove(list_path)
-                
             return script
         except subprocess.TimeoutExpired:
             logger.error("[MERGE] FFmpeg timed out after 600 seconds")
@@ -2190,17 +2181,28 @@ class ComicGenPipeline:
         except subprocess.CalledProcessError as e:
             stderr_msg = e.stderr.decode() if e.stderr else "No error output"
             stdout_msg = e.stdout.decode() if e.stdout else "No output"
-            
+
             # Log full details for debugging
             logger.error(f"[MERGE] FFmpeg failed with exit code {e.returncode}")
             logger.error(f"[MERGE] FFmpeg command: {' '.join(cmd)}")
             logger.error(f"[MERGE] FFmpeg stderr: {stderr_msg}")
             logger.error(f"[MERGE] FFmpeg stdout: {stdout_msg}")
             logger.error(f"[MERGE] Video files attempted: {[os.path.basename(p) for p in abs_video_paths]}")
-            
+
             # Extract user-friendly error message
             user_msg = self._extract_ffmpeg_error_message(stderr_msg, abs_video_paths)
             raise RuntimeError(user_msg)
+        finally:
+            if os.path.exists(list_path):
+                try:
+                    os.remove(list_path)
+                except OSError:
+                    pass
+            for tmp in temp_files:
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
     
     # === Video batch render (async) =======================================
 

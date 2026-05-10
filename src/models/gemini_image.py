@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import base64
 import logging
-import mimetypes
 import os
 import time
 from typing import List, Optional, Tuple
@@ -75,25 +74,17 @@ def _resolve_model(default: str = _DEFAULT_MODEL) -> str:
     return default
 
 
-def _to_inline_part(local_path: str) -> dict:
-    mime, _ = mimetypes.guess_type(local_path)
-    mime = mime or "image/png"
-    with open(local_path, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode("ascii")
-    return {"inline_data": {"mime_type": mime, "data": b64}}
-
-
-def _http_url_to_inline_part(url: str) -> Optional[dict]:
-    """Fetch a remote image and inline it. Gemini does not accept image URLs
-    directly in image-generation requests; everything must be base64."""
+def _ref_to_inline_part(ref: str) -> Optional[dict]:
+    """Resolve any media ref (URL / local / OSS key / data URI) into a
+    Gemini ``inline_data`` part. Gemini's image-generation API does not
+    accept URLs for reference images, so every input is inlined as base64."""
+    from ..utils.provider_media import MediaResolver
     try:
-        r = requests.get(url, timeout=60)
-        r.raise_for_status()
-    except Exception as e:  # pragma: no cover — network failure path
-        logger.warning("Gemini Image: failed to fetch reference URL %s: %s", url, e)
+        mime, b64 = MediaResolver().to_inline_blob(ref)
+    except Exception as e:  # pragma: no cover — network / OSS failure path
+        logger.warning("Gemini Image: failed to inline reference %s: %s", ref, e)
         return None
-    mime = r.headers.get("Content-Type", "image/png").split(";")[0]
-    return {"inline_data": {"mime_type": mime, "data": base64.b64encode(r.content).decode("ascii")}}
+    return {"inline_data": {"mime_type": mime, "data": b64}}
 
 
 def generate_gemini_image(
@@ -127,12 +118,9 @@ def generate_gemini_image(
         for ref in ref_image_paths[:_MAX_REF_IMAGES]:
             if not ref:
                 continue
-            if ref.startswith("http"):
-                part = _http_url_to_inline_part(ref)
-                if part:
-                    parts.append(part)
-            elif os.path.exists(ref):
-                parts.append(_to_inline_part(ref))
+            part = _ref_to_inline_part(ref)
+            if part:
+                parts.append(part)
 
     payload = {
         "contents": [{"parts": parts}],

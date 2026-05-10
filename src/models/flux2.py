@@ -13,9 +13,7 @@ Auth: ``x-key: <BFL_API_KEY>``.
 """
 from __future__ import annotations
 
-import base64
 import logging
-import mimetypes
 import os
 import time
 from typing import List, Optional, Tuple
@@ -73,13 +71,6 @@ def _aspect_for_size(size: str) -> str:
     return min(candidates, key=lambda r: abs(r[1] - target))[0]
 
 
-def _to_base64(local_path: str) -> str:
-    mime, _ = mimetypes.guess_type(local_path)
-    mime = mime or "image/png"
-    with open(local_path, "rb") as f:
-        return f"data:{mime};base64,{base64.b64encode(f.read()).decode('ascii')}"
-
-
 def generate_flux2_image(
     prompt: str,
     output_path: str,
@@ -110,14 +101,13 @@ def generate_flux2_image(
     if negative_prompt:
         base_payload["prompt_upsampling"] = False
     if ref_image_paths:
+        from ..utils.provider_media import MediaResolver
+        resolver = MediaResolver()
         encoded: List[str] = []
         for ref in ref_image_paths[:10]:  # FLUX.2 caps at 10 references
             if not ref:
                 continue
-            if ref.startswith("http"):
-                encoded.append(ref)
-            elif os.path.exists(ref):
-                encoded.append(_to_base64(ref))
+            encoded.append(resolver.to_url_or_inline(ref))
         if encoded:
             base_payload["image_prompts"] = encoded
 

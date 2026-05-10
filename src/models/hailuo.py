@@ -15,9 +15,7 @@ which is registered for ``("hailuo-", "vendor")``.
 """
 from __future__ import annotations
 
-import base64
 import logging
-import mimetypes
 import os
 import time
 from typing import Optional, Tuple
@@ -58,15 +56,6 @@ def _resolve_model(default: str = "MiniMax-Hailuo-2.3") -> str:
     return default
 
 
-def _encode_image(local_path: str) -> str:
-    """Inline-encode the reference frame as a data URL."""
-    mime, _ = mimetypes.guess_type(local_path)
-    mime = mime or "image/jpeg"
-    with open(local_path, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode("ascii")
-    return f"data:{mime};base64,{b64}"
-
-
 def _headers(api_key: str) -> dict:
     return {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
@@ -95,12 +84,13 @@ def generate_hailuo_video(
         "duration": int(duration or 6),
         "resolution": resolution,
     }
-    # Frame source: prefer the public URL when supplied (OSS); else fall
-    # back to inline base64 from the local downloaded copy.
-    if img_url and img_url.startswith("http"):
-        payload["first_frame_image"] = img_url
-    elif img_path and os.path.exists(img_path):
-        payload["first_frame_image"] = _encode_image(img_path)
+    # Frame source: prefer a public URL when handed out (OSS), else inline
+    # the bytes as a data URI. Object keys + local paths both flow through
+    # the resolver so the call still works under internal-only storage.
+    ref = img_url or img_path
+    if ref:
+        from ..utils.provider_media import MediaResolver
+        payload["first_frame_image"] = MediaResolver().to_url_or_inline(ref)
 
     started = time.time()
     logger.info("Hailuo submit model=%s duration=%ds resolution=%s", target_model, duration, resolution)

@@ -1,6 +1,8 @@
 import base64
 import logging
 import mimetypes
+import os
+import tempfile
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Callable, Dict, List, Mapping, Optional, Sequence
@@ -430,3 +432,253 @@ def resolve_media_inputs(
         )
         for ref in list(refs)
     ]
+
+
+def _write_temp_file(data: bytes, suffix: str) -> str:
+    fd, path = tempfile.mkstemp(suffix=suffix)
+    with os.fdopen(fd, "wb") as f:
+        f.write(data)
+    return path
+
+
+def _download_to_temp_file(url: str, suffix: str, *, timeout: int = 120) -> str:
+    response = requests.get(url, stream=True, timeout=timeout)
+    response.raise_for_status()
+    fd, path = tempfile.mkstemp(suffix=suffix)
+    with os.fdopen(fd, "wb") as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            if chunk:
+                f.write(chunk)
+    return path
+
+
+class MediaResolver:
+    """Facade that turns any media reference into the form a caller wants.
+
+    Use this when a provider adapter just needs a ready-to-send representation
+    of a media reference and does NOT need the registry-driven backend ×
+    modality dispatch performed by :func:`resolve_media_input`. The two are
+    complementary:
+
+    * :func:`resolve_media_input` — registered model families (Wan / Kling /
+      Vidu / Pixverse). Picks DashScope multimodal vs vendor base64 vs vendor
+      URL based on ``ProviderFamilyConfig``.
+    * :class:`MediaResolver` — vendor adapters that already know what shape
+      they want (Seedream, FLUX.2, Gemini Image, fal, Seedance, Hailuo,
+      Veo, …). Just hand back a URL or a data URI / a local file.
+
+    Every method accepts the four ref shapes used across the project:
+    full http(s) URL, ``data:`` URI, output-relative local path, OSS
+    object key.
+    """
+
+    def __init__(self, uploader=None, *, project_root: Optional[str] = None):
+        self._uploader = uploader
+        self._project_root = project_root
+
+    @property
+    def uploader(self):
+        if self._uploader is None:
+            from .oss_utils import OSSImageUploader
+            self._uploader = OSSImageUploader()
+        return self._uploader
+
+    def _classify(self, ref: str) -> str:
+        oss_base = None
+        try:
+            cfg = getattr(self.uploader, "base_path", None)
+            if cfg:
+                oss_base = cfg
+        except Exception:
+            oss_base = None
+        return classify_media_ref(
+            ref, oss_base_path=oss_base, project_root=self._project_root
+        )
+
+    def _resolve_local(self, ref: str) -> Optional[str]:
+        return resolve_local_media_path(ref, project_root=self._project_root)
+
+    def _prefers_inline(self) -> bool:
+        try:
+            return bool(getattr(self.uploader, "prefers_inline_for_api", False))
+        except Exception:
+            return False
+
+    @staticmethod
+    def _validate(ref: str) -> str:
+        if not isinstance(ref, str) or not ref.strip():
+            raise ValueError("media ref must be a non-empty string")
+        return ref
+
+    def to_url_or_inline(self, ref: str) -> str:
+        """Return a URL the public internet can fetch, or a data URI when
+        we can't hand one out (internal-only storage). Best fit for vendor
+        APIs that accept either form on the same field.
+        """
+        self._validate(ref)
+        rt = self._classify(ref)
+        prefer_inline = self._prefers_inline()
+
+        if rt == MEDIA_REF_DATA_URI:
+            return ref
+
+        if rt == MEDIA_REF_REMOTE_URL:
+            if prefer_inline:
+                inlined = _fetch_url_as_data_uri(ref)
+                if inlined:
+                    return inlined
+            return ref
+
+        if rt == MEDIA_REF_OBJECT_KEY:
+            if not prefer_inline:
+                signed = _signed_url_from_object_key(ref, self.uploader)
+                if signed:
+                    return signed
+            inlined = _download_object_as_data_uri(ref, self.uploader)
+            if inlined:
+                return inlined
+            raise RuntimeError(
+                f"Cannot resolve OSS object key '{ref}': storage backend unavailable"
+            )
+
+        if rt == MEDIA_REF_LOCAL_PATH:
+            local = self._resolve_local(ref)
+            if not local or not os.path.exists(local):
+                raise FileNotFoundError(f"Local media not found: {ref}")
+            return _encode_image_as_data_uri(local)
+
+        if rt == MEDIA_REF_BLOB_URL:
+            raise ValueError(
+                "Blob URLs are ephemeral and unsupported for backend media resolution"
+            )
+
+        # Last-ditch: an absolute path that classify didn't recognize as
+        # output-relative (e.g. tests or callers passing temp files).
+        if os.path.isabs(ref) and os.path.exists(ref):
+            return _encode_image_as_data_uri(ref)
+        raise ValueError(f"Unrecognized media reference: {ref}")
+
+    def to_local_file(self, ref: str, *, suffix: str = ".bin") -> str:
+        """Materialize as an on-disk file. Returns the existing path when ref
+        is already a local file under ``output/``; otherwise writes a temp
+        file the caller is responsible for cleaning up. Use this for
+        ffmpeg / PIL / any API that expects a real file.
+        """
+        self._validate(ref)
+        rt = self._classify(ref)
+
+        if rt == MEDIA_REF_LOCAL_PATH:
+            local = self._resolve_local(ref)
+            if not local or not os.path.exists(local):
+                raise FileNotFoundError(f"Local media not found: {ref}")
+            return local
+
+        if rt == MEDIA_REF_OBJECT_KEY:
+            if not getattr(self.uploader, "is_configured", False):
+                raise RuntimeError(
+                    f"Cannot fetch OSS object '{ref}': storage backend not configured"
+                )
+            data = self.uploader.download_bytes(ref)
+            if not data:
+                raise RuntimeError(f"OSS object not found or empty: {ref}")
+            return _write_temp_file(data, suffix)
+
+        if rt == MEDIA_REF_REMOTE_URL:
+            return _download_to_temp_file(ref, suffix)
+
+        if rt == MEDIA_REF_DATA_URI:
+            payload = _strip_data_uri_prefix(ref)
+            return _write_temp_file(base64.b64decode(payload), suffix)
+
+        if os.path.isabs(ref) and os.path.exists(ref):
+            return ref
+
+        raise ValueError(f"Unrecognized media reference: {ref}")
+
+    def to_data_uri(self, ref: str) -> str:
+        """Always inline as a ``data:`` URI. Use when the protocol does not
+        accept URL forms (e.g. some OpenAI-compatible chat-completion
+        ``image_url`` payloads must be self-contained)."""
+        self._validate(ref)
+        rt = self._classify(ref)
+
+        if rt == MEDIA_REF_DATA_URI:
+            return ref
+
+        if rt == MEDIA_REF_REMOTE_URL:
+            inlined = _fetch_url_as_data_uri(ref)
+            if not inlined:
+                raise RuntimeError(f"Failed to fetch URL for inlining: {ref}")
+            return inlined
+
+        if rt == MEDIA_REF_OBJECT_KEY:
+            inlined = _download_object_as_data_uri(ref, self.uploader)
+            if not inlined:
+                raise RuntimeError(
+                    f"Failed to inline OSS object (not configured or unreachable): {ref}"
+                )
+            return inlined
+
+        if rt == MEDIA_REF_LOCAL_PATH:
+            local = self._resolve_local(ref)
+            if not local or not os.path.exists(local):
+                raise FileNotFoundError(f"Local media not found: {ref}")
+            return _encode_image_as_data_uri(local)
+
+        if os.path.isabs(ref) and os.path.exists(ref):
+            return _encode_image_as_data_uri(ref)
+        raise ValueError(f"Unrecognized media reference: {ref}")
+
+    def to_bytes(self, ref: str) -> bytes:
+        """Raw bytes. Used for protocols that need explicit base64 encoding
+        with their own field structure (e.g. Veo's ``inlineData``)."""
+        data, _mime = self._fetch_bytes_and_mime(ref)
+        return data
+
+    def to_inline_blob(self, ref: str, *, default_mime: str = "image/png") -> "tuple[str, str]":
+        """Return ``(mime_type, base64_data)`` for protocols that take raw
+        inline blobs split across two fields (e.g. Gemini Image's
+        ``inline_data``, Veo's ``image.bytesBase64Encoded``)."""
+        data, mime = self._fetch_bytes_and_mime(ref)
+        return mime or default_mime, base64.b64encode(data).decode("ascii")
+
+    def _fetch_bytes_and_mime(self, ref: str) -> "tuple[bytes, Optional[str]]":
+        self._validate(ref)
+        rt = self._classify(ref)
+
+        if rt == MEDIA_REF_DATA_URI:
+            mime = None
+            if ref.startswith("data:") and ";base64," in ref:
+                mime = ref[len("data:"):].split(";", 1)[0] or None
+            return base64.b64decode(_strip_data_uri_prefix(ref)), mime
+
+        if rt == MEDIA_REF_REMOTE_URL:
+            response = requests.get(ref, timeout=60)
+            response.raise_for_status()
+            mime = (response.headers.get("Content-Type") or "").split(";")[0].strip() or None
+            return response.content, mime
+
+        if rt == MEDIA_REF_OBJECT_KEY:
+            if not getattr(self.uploader, "is_configured", False):
+                raise RuntimeError(
+                    f"Cannot fetch OSS object '{ref}': storage backend not configured"
+                )
+            data = self.uploader.download_bytes(ref)
+            if not data:
+                raise RuntimeError(f"OSS object not found or empty: {ref}")
+            mime, _ = mimetypes.guess_type(ref)
+            return data, mime
+
+        if rt == MEDIA_REF_LOCAL_PATH:
+            local = self._resolve_local(ref)
+            if not local or not os.path.exists(local):
+                raise FileNotFoundError(f"Local media not found: {ref}")
+            mime, _ = mimetypes.guess_type(local)
+            with open(local, "rb") as f:
+                return f.read(), mime
+
+        if os.path.isabs(ref) and os.path.exists(ref):
+            mime, _ = mimetypes.guess_type(ref)
+            with open(ref, "rb") as f:
+                return f.read(), mime
+        raise ValueError(f"Unrecognized media reference: {ref}")

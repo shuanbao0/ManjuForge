@@ -15,9 +15,7 @@ Auth: ``Authorization: Key <FAL_API_KEY>``.
 """
 from __future__ import annotations
 
-import base64
 import logging
-import mimetypes
 import os
 import time
 from typing import Any, Dict, List, Optional, Tuple
@@ -78,13 +76,6 @@ def _headers(api_key: str) -> Dict[str, str]:
         "Authorization": f"Key {api_key}",
         "Content-Type": "application/json",
     }
-
-
-def _to_data_url(local_path: str) -> str:
-    mime, _ = mimetypes.guess_type(local_path)
-    mime = mime or "image/png"
-    with open(local_path, "rb") as f:
-        return f"data:{mime};base64,{base64.b64encode(f.read()).decode('ascii')}"
 
 
 def _submit_and_wait(api_key: str, model_path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -162,7 +153,16 @@ def generate_fal_image(
     if negative_prompt:
         payload["negative_prompt"] = negative_prompt
     if ref_image_paths:
-        urls = [r if r.startswith("http") else _to_data_url(r) for r in ref_image_paths if r and (r.startswith("http") or os.path.exists(r))]
+        from ..utils.provider_media import MediaResolver
+        resolver = MediaResolver()
+        urls = []
+        for r in ref_image_paths:
+            if not r:
+                continue
+            try:
+                urls.append(resolver.to_url_or_inline(r))
+            except Exception as e:
+                logger.warning("fal: skipping unresolvable ref %s: %s", r, e)
         if urls:
             payload["image_urls"] = urls[:10]
             payload["image_url"] = urls[0]  # legacy single-ref endpoints
@@ -236,10 +236,10 @@ def generate_fal_video(
         "duration": int(duration or 5),
         "resolution": resolution or "720p",
     }
-    if img_url and img_url.startswith("http"):
-        payload["image_url"] = img_url
-    elif img_path and os.path.exists(img_path):
-        payload["image_url"] = _to_data_url(img_path)
+    ref = img_url or img_path
+    if ref:
+        from ..utils.provider_media import MediaResolver
+        payload["image_url"] = MediaResolver().to_url_or_inline(ref)
 
     started = time.time()
     body = _submit_and_wait(api_key, model_path, payload)

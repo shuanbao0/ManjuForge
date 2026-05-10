@@ -24,9 +24,7 @@ API surface (Volcano Engine Ark):
 """
 from __future__ import annotations
 
-import base64
 import logging
-import mimetypes
 import os
 import time
 from typing import Optional, Tuple
@@ -80,13 +78,6 @@ def _resolve_model(override: Optional[str] = None) -> str:
     return _MODEL_ID_MAP.get(name, name)
 
 
-def _encode_image_data_url(local_path: str) -> str:
-    mime, _ = mimetypes.guess_type(local_path)
-    mime = mime or "image/png"
-    with open(local_path, "rb") as f:
-        return f"data:{mime};base64,{base64.b64encode(f.read()).decode('ascii')}"
-
-
 def generate_seedance_video(
     *,
     prompt: str,
@@ -108,10 +99,10 @@ def generate_seedance_video(
     # and --duration is the supported way to override the defaults.
     decorated = f"{prompt or ''} --resolution {resolution or '1080p'} --duration {int(duration or 5)} --watermark false"
     content = [{"type": "text", "text": decorated.strip()}]
-    if img_url and img_url.startswith("http"):
-        content.append({"type": "image_url", "image_url": {"url": img_url}})
-    elif img_path and os.path.exists(img_path):
-        content.append({"type": "image_url", "image_url": {"url": _encode_image_data_url(img_path)}})
+    ref = img_url or img_path
+    if ref:
+        from ..utils.provider_media import MediaResolver
+        content.append({"type": "image_url", "image_url": {"url": MediaResolver().to_url_or_inline(ref)}})
 
     payload = {"model": target_model, "content": content}
     headers = {

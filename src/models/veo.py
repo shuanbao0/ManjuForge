@@ -29,9 +29,7 @@ API surface:
 """
 from __future__ import annotations
 
-import base64
 import logging
-import mimetypes
 import os
 import time
 from typing import Optional, Tuple
@@ -84,14 +82,18 @@ def _resolve_model(default: str = _DEFAULT_MODEL, override: Optional[str] = None
     return _MODEL_ID_MAP.get(name, name)
 
 
-def _encode_local_image(local_path: str) -> dict:
-    mime, _ = mimetypes.guess_type(local_path)
-    mime = mime or "image/png"
-    with open(local_path, "rb") as f:
-        return {
-            "bytesBase64Encoded": base64.b64encode(f.read()).decode("ascii"),
-            "mimeType": mime,
-        }
+def _resolve_veo_image(ref: str) -> dict:
+    """Veo accepts either ``imageUri`` (public URL) or
+    ``bytesBase64Encoded`` + ``mimeType``. Pick the URL form when one is
+    publicly reachable, fall back to inline bytes (works for OSS object
+    keys, local paths, and internal-only storage)."""
+    from ..utils.provider_media import MediaResolver
+    resolver = MediaResolver()
+    resolved = resolver.to_url_or_inline(ref)
+    if resolved.startswith("data:"):
+        mime, b64 = resolver.to_inline_blob(ref)
+        return {"bytesBase64Encoded": b64, "mimeType": mime}
+    return {"imageUri": resolved}
 
 
 def _aspect_for_resolution(resolution: str) -> str:
@@ -119,11 +121,9 @@ def generate_veo_video(
     target_model = _resolve_model(override=model)
 
     instance: dict = {"prompt": prompt or ""}
-    if img_url and img_url.startswith("http"):
-        # Veo accepts ``imageUri`` for HTTP-fetchable images directly.
-        instance["image"] = {"imageUri": img_url}
-    elif img_path and os.path.exists(img_path):
-        instance["image"] = _encode_local_image(img_path)
+    ref = img_url or img_path
+    if ref:
+        instance["image"] = _resolve_veo_image(ref)
 
     parameters = {
         "aspectRatio": _aspect_for_resolution(resolution),

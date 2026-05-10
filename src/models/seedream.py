@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import base64
 import logging
-import mimetypes
 import os
 import time
 from typing import List, Optional, Tuple
@@ -75,13 +74,6 @@ def _size_for_seedream(size: str) -> str:
     return f"{w}x{h}"
 
 
-def _encode_image_data_url(local_path: str) -> str:
-    mime, _ = mimetypes.guess_type(local_path)
-    mime = mime or "image/png"
-    with open(local_path, "rb") as f:
-        return f"data:{mime};base64,{base64.b64encode(f.read()).decode('ascii')}"
-
-
 def generate_seedream_image(
     prompt: str,
     output_path: str,
@@ -116,10 +108,8 @@ def generate_seedream_image(
     if ref_image_paths:
         first_ref = next((p for p in ref_image_paths if p), None)
         if first_ref:
-            if first_ref.startswith("http"):
-                payload["image"] = first_ref
-            elif os.path.exists(first_ref):
-                payload["image"] = _encode_image_data_url(first_ref)
+            from ..utils.provider_media import MediaResolver
+            payload["image"] = MediaResolver().to_url_or_inline(first_ref)
 
     headers = {
         "Authorization": f"Bearer {api_key}",

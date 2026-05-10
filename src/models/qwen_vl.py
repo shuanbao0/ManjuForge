@@ -1,6 +1,4 @@
-import os
 import logging
-import base64
 import time
 from typing import Tuple
 
@@ -66,17 +64,12 @@ class QwenVLModel:
             self._client._manju_forge_key = self.api_key
         return self._client
 
-    def _encode_image_to_base64(self, image_path: str) -> str:
-        """Convert local image to base64 string"""
-        with open(image_path, "rb") as image_file:
-            return base64.b64encode(image_file.read()).decode('utf-8')
-
     def optimize_prompt(self, image_path: str, original_prompt: str) -> Tuple[str, float]:
         """
         Optimize prompt using Qwen-VL model via OpenAI-compatible API.
 
         Args:
-            image_path: Path to the reference image
+            image_path: Reference image — http URL, local path, OSS object key, or data URI
             original_prompt: Original user prompt
 
         Returns:
@@ -84,14 +77,8 @@ class QwenVLModel:
         """
         start_time = time.time()
 
-        # Prepare image URL
-        if image_path.startswith('http'):
-            image_url = image_path
-        else:
-            base64_image = self._encode_image_to_base64(image_path)
-            ext = os.path.splitext(image_path)[1].lower()
-            mime_type = "image/png" if ext == ".png" else "image/jpeg"
-            image_url = f"data:{mime_type};base64,{base64_image}"
+        from ..utils.provider_media import MediaResolver
+        image_url = MediaResolver().to_url_or_inline(image_path)
 
         system_prompt = I2V_OPTIMIZATION_PROMPT.format(original_prompt=original_prompt)
 

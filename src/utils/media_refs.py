@@ -7,6 +7,7 @@ LOCAL_MEDIA_PREFIXES = (
     "assets/",
     "storyboard/",
     "video/",
+    "video_inputs/",
     "audio/",
     "export/",
     "uploads/",
