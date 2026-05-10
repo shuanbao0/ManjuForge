@@ -60,6 +60,34 @@ class ProviderRegistry:
             return mode
         return family.backend_default
 
+    def swap_modality(self, model_name: str, target_modality: str) -> Optional[str]:
+        """Return the sibling SKU of ``model_name`` for ``target_modality``.
+
+        Works on families whose model ids follow the ``<family><modality>``
+        convention (e.g. ``wan2.7-i2v`` ↔ ``wan2.7-r2v``). Returns ``None``
+        when the family doesn't follow that convention or doesn't expose the
+        requested modality — caller decides whether to fall back.
+
+        Used by the video task pipeline to translate a user's picked I2V
+        instance to its R2V sibling without hardcoding the model strings.
+        """
+        target = (target_modality or "").strip().lower()
+        if not target:
+            return None
+        try:
+            family = self.get_family_config(model_name)
+        except (KeyError, ValueError):
+            return None
+        if target not in family.supported_modalities:
+            return None
+        prefix = family.model_family
+        suffix = (model_name or "").strip().lower()[len(prefix):]
+        if suffix in family.supported_modalities:
+            if suffix == target:
+                return model_name
+            return f"{prefix}{target}"
+        return None
+
 
 DEFAULT_PROVIDER_FAMILIES: Tuple[ProviderFamilyConfig, ...] = (
     ProviderFamilyConfig(
@@ -370,3 +398,7 @@ def get_default_provider_registry() -> ProviderRegistry:
 
 def resolve_provider_backend(model_name: str, env: Optional[Mapping[str, str]] = None) -> str:
     return get_default_provider_registry().resolve_backend(model_name=model_name, env=env)
+
+
+def swap_provider_modality(model_name: str, target_modality: str) -> Optional[str]:
+    return get_default_provider_registry().swap_modality(model_name, target_modality)

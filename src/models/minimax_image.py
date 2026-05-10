@@ -47,11 +47,9 @@ def _resolve_api_key() -> str:
     return get_cred("MINIMAX_API_KEY") or get_cred("OPENAI_API_KEY")
 
 
-def _resolve_model(default: str = "image-01") -> str:
-    inst = current_instance()
-    if inst and inst.model_name:
-        return inst.model_name
-    return default
+def _resolve_model() -> str:
+    from .instance import InstanceType, required_model_name
+    return required_model_name(InstanceType.T2I)
 
 
 # Map ManjuForge size strings ("1024*1024") to MiniMax aspect_ratio strings.

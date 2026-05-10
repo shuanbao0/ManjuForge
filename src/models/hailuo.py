@@ -49,11 +49,9 @@ def _resolve_api_key() -> str:
     return get_cred("MINIMAX_API_KEY") or get_cred("HAILUO_API_KEY")
 
 
-def _resolve_model(default: str = "MiniMax-Hailuo-2.3") -> str:
-    inst = current_instance()
-    if inst and inst.model_name:
-        return inst.model_name
-    return default
+def _resolve_model(override: Optional[str] = None) -> str:
+    from .instance import InstanceType, required_model_name
+    return required_model_name(InstanceType.I2V, override=override)
 
 
 def _headers(api_key: str) -> dict:
@@ -76,7 +74,7 @@ def generate_hailuo_video(
     if not api_key:
         raise RuntimeError("Hailuo video requires MINIMAX_API_KEY in the active instance credentials")
     base = _resolve_base_url()
-    target_model = model or _resolve_model()
+    target_model = _resolve_model(override=model)
 
     payload: dict = {
         "model": target_model,

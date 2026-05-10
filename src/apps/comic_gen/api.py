@@ -44,6 +44,26 @@ logger = logging.getLogger(__name__)
 # Setup logging to user directory
 setup_logging()
 
+
+from ...models.instance import InstanceNotConfiguredError as _InstanceNotConfiguredError
+
+
+@app.exception_handler(_InstanceNotConfiguredError)
+async def _instance_not_configured_handler(request: Request, exc: _InstanceNotConfiguredError):
+    """Surface "no usable model instance" as a 400 with a structured code so
+    the frontend can route the user to Settings → 模型实例 instead of showing
+    a 500 stack trace."""
+    return JSONResponse(
+        status_code=400,
+        content={
+            "detail": {
+                "code": "INSTANCE_NOT_CONFIGURED",
+                "instance_type": exc.instance_type.value,
+                "message": str(exc),
+            }
+        },
+    )
+
 # Use absolute path for .env file (api.py is in src/apps/comic_gen/)
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 env_path = os.path.join(_project_root, ".env")
@@ -1506,7 +1526,8 @@ class CreateVideoTaskRequest(BaseModel):
     prompt_extend: bool = True
     negative_prompt: Optional[str] = None
     batch_size: int = 1
-    model: str = "wan2.6-i2v"
+    # Optional override; backend resolves from i2v_instance_id when omitted.
+    model: Optional[str] = None
     shot_type: str = "single"  # 'single' or 'multi' (only for wan2.6-i2v)
     generation_mode: str = "i2v"  # 'i2v' (image-to-video) or 'r2v' (reference-to-video)
     reference_video_urls: List[str] = []  # Reference video URLs for R2V (max 3)

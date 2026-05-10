@@ -57,7 +57,7 @@ class TTSProcessor:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "cosyvoice-v3-flash",
+        model: Optional[str] = None,
         voice: str = "longanyang"
     ):
         """
@@ -67,12 +67,17 @@ class TTSProcessor:
         user's DASHSCOPE_API_KEY is used. ``api_key`` here is only an
         explicit override for tests / scripts that don't run inside a
         request — it's still saved but doesn't pin the dashscope module.
+
+        ``model`` is optional — at call time the actual SKU is resolved
+        from the bound TTS :class:`ModelInstance` (or, for voices in the
+        catalog, from the voice → model mapping). No literal default is
+        applied here; if neither resolves, the call raises.
         """
         self._explicit_api_key = api_key
         self.model = model
         self.voice = voice
 
-        logger.info(f"TTS Processor initialized with model={model}, voice={voice}")
+        logger.info(f"TTS Processor initialized (model={model or '<from instance>'}, voice={voice})")
 
     def _bind_dashscope_key(self) -> None:
         """Set dashscope module-level api_key right before each call.
@@ -89,10 +94,11 @@ class TTSProcessor:
         if key:
             dashscope.api_key = key
 
-    def _resolve_active_model(self) -> str:
+    def _resolve_active_model(self) -> Optional[str]:
         """Use the bound :class:`ModelInstance`'s ``model_name`` when one is
-        scoped (e.g. ``cosyvoice-v3-plus`` set per-project). Falls back to
-        the constructor-provided default for CLI / tests."""
+        scoped (e.g. ``cosyvoice-v3-plus`` set per-project). Returns the
+        constructor-provided ``model`` (which may be ``None``) when no
+        instance is bound — caller decides whether that's acceptable."""
         from src.runtime import current_instance
         inst = current_instance()
         if inst and inst.model_name:
@@ -130,12 +136,15 @@ class TTSProcessor:
         start_time = time.time()
         voice = voice or self.voice
 
-        # Voice → model preferred; otherwise honor the active ModelInstance
-        # so per-project TTS picks (cosyvoice-v3-flash vs v3-plus) flow
-        # through. Falls back to constructor default outside an HTTP request.
+        # Voice → model preferred (the voice catalog encodes which CosyVoice
+        # SKU each voice ID lives on); otherwise the active ModelInstance's
+        # model_name. No literal fallback — if neither resolves we raise.
         model = self._resolve_model_for_voice(voice)
-        if model == self.model:
+        if not model:
             model = self._resolve_active_model()
+        if not model:
+            from src.models.instance import InstanceType, InstanceNotConfiguredError
+            raise InstanceNotConfiguredError(InstanceType.TTS)
 
         logger.info(f"Synthesizing with model={model}, voice='{voice}' (rate={speech_rate}, pitch={pitch_rate}, vol={volume})...")
         logger.info(f"Text: {text[:100]}{'...' if len(text) > 100 else ''}")
@@ -170,16 +179,17 @@ class TTSProcessor:
 
         return output_path, first_package_delay, request_id
 
-    def _resolve_model_for_voice(self, voice_id: str) -> str:
+    def _resolve_model_for_voice(self, voice_id: str) -> Optional[str]:
         """Resolve the correct model for a given voice ID.
 
         v2 voices require cosyvoice-v2, v3 voices require cosyvoice-v3-flash/plus.
-        Falls back to self.model if voice is not in the registry (e.g. cloned voices).
+        Returns ``None`` when the voice isn't in the catalog (e.g. cloned
+        voices) so the caller falls back to the bound ModelInstance.
         """
         for meta in VOICES.values():
             if meta['model_id'] == voice_id:
-                return meta.get('model', self.model)
-        return self.model
+                return meta.get('model')
+        return None
 
     @staticmethod
     def list_voices():

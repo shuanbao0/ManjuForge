@@ -63,12 +63,26 @@ def _resolve_api_key() -> str:
     return get_cred("FAL_API_KEY")
 
 
-def _resolve_model_path(default_path: str) -> str:
-    inst = current_instance()
-    if inst and inst.model_name:
-        name = inst.model_name
-        return _MODEL_PATH_MAP.get(name, name if "/" in name else default_path)
-    return default_path
+def _resolve_model_path(instance_type) -> str:
+    """Resolve fal.ai model path from the bound ModelInstance.
+
+    Accepts catalog ids that we know how to translate (``_MODEL_PATH_MAP``)
+    or any literal path containing a ``/`` (advanced users plug raw fal ids
+    via the instance row). Raises if no instance is bound — no hardcoded
+    SKU fallback.
+    """
+    from .instance import required_model_name
+    name = required_model_name(instance_type)
+    mapped = _MODEL_PATH_MAP.get(name)
+    if mapped:
+        return mapped
+    if "/" in name:
+        return name
+    raise ValueError(
+        f"fal.ai instance model_name {name!r} is not a known catalog id and "
+        "doesn't look like a raw fal model path (no '/'). Please update the "
+        "instance to a supported id."
+    )
 
 
 def _headers(api_key: str) -> Dict[str, str]:
@@ -140,7 +154,8 @@ def generate_fal_image(
     if not api_key:
         raise RuntimeError("fal.ai requires FAL_API_KEY in the active instance credentials")
 
-    model_path = _resolve_model_path("fal-ai/flux-2-pro/text-to-image")
+    from .instance import InstanceType
+    model_path = _resolve_model_path(InstanceType.I2I if ref_image_paths else InstanceType.T2I)
     if ref_image_paths and "/text-to-image" in model_path:
         # Promote to image-to-image variant when reference images are provided.
         model_path = model_path.replace("/text-to-image", "/image-to-image")
@@ -226,10 +241,20 @@ def generate_fal_video(
     api_key = _resolve_api_key()
     if not api_key:
         raise RuntimeError("fal.ai requires FAL_API_KEY in the active instance credentials")
+    from .instance import InstanceType
     if model:
-        model_path = _MODEL_PATH_MAP.get(model, model if "/" in model else "fal-ai/veo3.1/image-to-video")
+        mapped = _MODEL_PATH_MAP.get(model)
+        if mapped:
+            model_path = mapped
+        elif "/" in model:
+            model_path = model
+        else:
+            raise ValueError(
+                f"fal.ai I2V/T2V override {model!r} is not a known catalog id "
+                "and doesn't look like a raw fal model path (no '/')."
+            )
     else:
-        model_path = _resolve_model_path("fal-ai/veo3.1/image-to-video")
+        model_path = _resolve_model_path(InstanceType.I2V)
 
     payload: Dict[str, Any] = {
         "prompt": prompt or "",

@@ -35,7 +35,6 @@ logger = logging.getLogger(__name__)
 
 
 _DEFAULT_BASE_URL = "https://api.fish.audio/v1"
-_DEFAULT_MODEL = "s2"
 
 
 def _resolve_base_url() -> str:
@@ -54,16 +53,14 @@ def _resolve_api_key() -> str:
     return get_cred("FISH_AUDIO_API_KEY")
 
 
-def _resolve_model(default: str = _DEFAULT_MODEL) -> str:
-    inst = current_instance()
-    if inst and inst.model_name:
-        # Fish Audio model ids may carry our internal "fish-" prefix
-        # (fish-s2 / fish-s1) — strip it before sending.
-        name = inst.model_name
-        if name.startswith("fish-"):
-            return name[5:]
-        return name
-    return default
+def _resolve_model() -> str:
+    """Resolve Fish Audio model id from the bound TTS instance.
+
+    Fish Audio model ids may carry our internal ``fish-`` prefix
+    (``fish-s2`` / ``fish-s1``) — strip it before sending."""
+    from src.models.instance import InstanceType, required_model_name
+    name = required_model_name(InstanceType.TTS)
+    return name[5:] if name.startswith("fish-") else name
 
 
 def synthesize_fish_tts(

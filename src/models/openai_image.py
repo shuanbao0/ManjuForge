@@ -29,7 +29,6 @@ logger = logging.getLogger(__name__)
 
 
 _DEFAULT_BASE_URL = "https://api.openai.com/v1"
-_DEFAULT_MODEL = "gpt-image-1"
 
 
 def _resolve_base_url() -> str:
@@ -48,11 +47,9 @@ def _resolve_api_key() -> str:
     return get_cred("OPENAI_API_KEY")
 
 
-def _resolve_model(default: str = _DEFAULT_MODEL) -> str:
-    inst = current_instance()
-    if inst and inst.model_name:
-        return inst.model_name
-    return default
+def _resolve_model() -> str:
+    from .instance import InstanceType, required_model_name
+    return required_model_name(InstanceType.T2I)
 
 
 def _size_for_openai(size: str) -> str:

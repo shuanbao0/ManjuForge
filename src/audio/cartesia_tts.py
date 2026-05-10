@@ -38,7 +38,6 @@ logger = logging.getLogger(__name__)
 
 
 _DEFAULT_BASE_URL = "https://api.cartesia.ai"
-_DEFAULT_MODEL = "sonic-3"
 _DEFAULT_VOICE_ID = "a0e99841-438c-4a64-b679-ae501e7d6091"  # public catalog default
 _API_VERSION = "2024-11-13"
 
@@ -59,11 +58,9 @@ def _resolve_api_key() -> str:
     return get_cred("CARTESIA_API_KEY")
 
 
-def _resolve_model(default: str = _DEFAULT_MODEL) -> str:
-    inst = current_instance()
-    if inst and inst.model_name:
-        return inst.model_name
-    return default
+def _resolve_model() -> str:
+    from src.models.instance import InstanceType, required_model_name
+    return required_model_name(InstanceType.TTS)
 
 
 def _speed_label(rate: float) -> str:

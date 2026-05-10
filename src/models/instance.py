@@ -42,6 +42,57 @@ class InstanceType(str, enum.Enum):
         raise ValueError(f"unknown instance type: {raw!r}")
 
 
+_TYPE_LABEL_ZH = {
+    InstanceType.LLM: "脚本/对话（LLM）",
+    InstanceType.T2I: "文生图（T2I）",
+    InstanceType.I2I: "图生图（I2I）",
+    InstanceType.I2V: "图生视频（I2V）",
+    InstanceType.T2V: "文生视频（T2V）",
+    InstanceType.R2V: "参考视频（R2V）",
+    InstanceType.TTS: "配音（TTS）",
+}
+
+
+class InstanceNotConfiguredError(RuntimeError):
+    """No usable :class:`ModelInstance` for the requested generation stage.
+
+    Raised whenever the strict resolvers (``require_instance`` /
+    ``required_model_name``) can't find an instance to drive a call. The
+    Vendor → Instance system requires the user to pick what runs; the
+    codebase never substitutes a hardcoded SKU on their behalf.
+
+    Lives here (next to ``InstanceType``) rather than in a higher app
+    layer so that vendor adapters under ``src/models/`` and ``src/audio/``
+    can raise it without an upward import cycle.
+    """
+
+    def __init__(self, instance_type: "InstanceType"):
+        self.instance_type = instance_type
+        label = _TYPE_LABEL_ZH.get(instance_type, instance_type.value.upper())
+        super().__init__(
+            f"未配置可用的{label}模型实例。请先在 设置 → 模型实例 中添加并设为默认。"
+        )
+
+
+def required_model_name(
+    instance_type: "InstanceType", override: Optional[str] = None
+) -> str:
+    """Strict ``model_name`` lookup for vendor adapters.
+
+    Returns ``override`` if non-empty; otherwise pulls from the currently
+    bound :class:`ModelInstance` via :func:`src.runtime.current_instance`.
+    Raises :class:`InstanceNotConfiguredError` when neither is available —
+    no hardcoded SKU fallback.
+    """
+    if override:
+        return override
+    from src.runtime import current_instance
+    inst = current_instance()
+    if inst and inst.model_name:
+        return inst.model_name
+    raise InstanceNotConfiguredError(instance_type)
+
+
 @dataclass
 class ModelInstance:
     """In-memory shape of one configured model.

@@ -213,18 +213,21 @@ class WanxModel(VideoGenModel):
         return f"oss://{object_key}"
 
     def generate(self, prompt: str, output_path: str, img_path: str = None, model_name: str = None, **kwargs) ->Tuple[str, float]:
-        # Determine model - allow explicit override via model_name param or 'model' kwarg
-        # Fix: pipeline.py passes 'model=task.model', we need to accept both
-        if model_name:
-            final_model_name = model_name
-        elif kwargs.get('model'):
-            final_model_name = kwargs.get('model')
+        # Resolution priority: explicit ``model_name`` > ``model`` kwarg
+        # (legacy callers passing ``model=task.model``) > the bound
+        # ModelInstance's ``model_name`` (via ``required_model_name``). No
+        # literal SKU fallback.
+        from .instance import InstanceType as _IT, required_model_name
+        is_i2v = bool(img_path or kwargs.get('img_url'))
+        final_model_name = required_model_name(
+            _IT.I2V if is_i2v else _IT.T2V,
+            override=model_name or kwargs.get('model'),
+        )
+        if kwargs.get('model') and not model_name:
             logger.info(f"Using model from kwargs: {final_model_name}")
-        elif img_path or kwargs.get('img_url'):
-            final_model_name = self.params.get('i2v_model_name', 'wan2.6-i2v')  # Default to I2V model
+        elif is_i2v:
             logger.info(f"Using I2V model: {final_model_name}")
         else:
-            final_model_name = self.params.get('model_name', 'wan2.5-t2v-preview')
             logger.info(f"Using T2V model: {final_model_name}")
 
         size = self.params.get('size', '1280*720')

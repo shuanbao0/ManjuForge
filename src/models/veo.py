@@ -42,7 +42,6 @@ logger = logging.getLogger(__name__)
 
 
 _DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com"
-_DEFAULT_MODEL = "veo-3.1-generate-preview"
 _POLL_INTERVAL_S = 6.0
 _POLL_TIMEOUT_S = 900.0  # 15 min — Veo can take several minutes
 
@@ -72,13 +71,9 @@ def _resolve_api_key() -> str:
     return get_cred("GOOGLE_API_KEY") or get_cred("GEMINI_API_KEY")
 
 
-def _resolve_model(default: str = _DEFAULT_MODEL, override: Optional[str] = None) -> str:
-    name = override
-    if not name:
-        inst = current_instance()
-        if inst and inst.model_name:
-            name = inst.model_name
-    name = name or default
+def _resolve_model(override: Optional[str] = None) -> str:
+    from .instance import InstanceType, required_model_name
+    name = required_model_name(InstanceType.I2V, override=override)
     return _MODEL_ID_MAP.get(name, name)
 
 

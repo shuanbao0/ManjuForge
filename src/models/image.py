@@ -122,15 +122,16 @@ class WanxImageModel(ImageGenModel):
             
         # Remove duplicates
         all_ref_paths = list(set(all_ref_paths))
-        # Model selection priority: explicit model_name > config params > defaults
-        if model_name:
-            final_model_name = model_name
-        elif all_ref_paths:
-            # For I2I, use i2i_model_name if configured, otherwise default to wan2.5-i2i-preview
-            final_model_name = self.params.get('i2i_model_name', 'wan2.5-i2i-preview')
-        else:
-            # For T2I, use model_name if configured, otherwise default to wan2.6-t2i
-            final_model_name = self.params.get('model_name', 'wan2.6-t2i')
+        # Model selection: ``model_name`` is resolved upstream from the
+        # bound ModelInstance (T2I when no refs, I2I when refs are
+        # supplied) and passed in explicitly. No params/literal fallback —
+        # if it's missing the call must fail so the user configures an
+        # instance.
+        from .instance import InstanceType as _IT, required_model_name
+        final_model_name = required_model_name(
+            _IT.I2I if all_ref_paths else _IT.T2I,
+            override=model_name,
+        )
 
         if all_ref_paths:
             logger.info(f"Using I2I model: {final_model_name} with {len(all_ref_paths)} reference images")

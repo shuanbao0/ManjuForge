@@ -5,6 +5,23 @@ from types import SimpleNamespace
 from src.apps.comic_gen.models import VideoTask
 from src.apps.comic_gen.pipeline import ComicGenPipeline
 from src.models.kling import KlingModel
+from src.models.instance import InstanceType, ModelInstance
+from src.runtime import with_instance
+
+
+def _i2v_instance(model_name: str, vendor_id: str = "dashscope") -> ModelInstance:
+    """Build an in-memory I2V ``ModelInstance`` for tests that drive
+    ``process_video_task`` directly. The pipeline's strict resolver requires
+    one to be bound — these tests need to declare what model + vendor they
+    intend to exercise."""
+    return ModelInstance(
+        id=f"test-i2v-{model_name}",
+        user_id=1,
+        instance_type=InstanceType.I2V,
+        vendor_id=vendor_id,
+        model_name=model_name,
+        display_name=f"Test {model_name}",
+    )
 
 
 PNG_1X1_BASE64 = (
@@ -83,7 +100,8 @@ def test_pipeline_routes_kling_vendor_mode_to_vendor_adapter(monkeypatch):
     monkeypatch.setattr("src.models.kling.KlingModel", FakeKlingModel)
 
     pipeline = _build_pipeline(task, FakeWanxModel())
-    pipeline.process_video_task("script-1", "task-kling-vendor")
+    with with_instance(_i2v_instance("kling-v1", vendor_id="kling")):
+        pipeline.process_video_task("script-1", "task-kling-vendor")
 
     assert "vendor_kwargs" in calls
     assert "wanx_kwargs" not in calls
@@ -123,7 +141,8 @@ def test_pipeline_routes_kling_dashscope_mode_to_wanx_without_vendor_credentials
     monkeypatch.setattr("src.models.kling.KlingModel", FakeKlingModel)
 
     pipeline = _build_pipeline(task, FakeWanxModel())
-    pipeline.process_video_task("script-1", "task-kling-dashscope")
+    with with_instance(_i2v_instance("kling-v1")):
+        pipeline.process_video_task("script-1", "task-kling-dashscope")
 
     assert "wanx_kwargs" in calls
     assert "vendor_kwargs" not in calls

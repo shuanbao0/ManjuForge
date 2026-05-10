@@ -26,7 +26,8 @@ class KlingModel(VideoGenModel):
         super().__init__(config)
         self._explicit_access_key = config.get("access_key")
         self._explicit_secret_key = config.get("secret_key")
-        self.model_name = config.get("params", {}).get("model_name", "kling-v3")
+        # No literal default — runtime callers pass ``model=`` explicitly.
+        self.model_name = config.get("params", {}).get("model_name")
         self._cached_token = None
         self._token_exp = 0
 
@@ -97,7 +98,12 @@ class KlingModel(VideoGenModel):
                  img_path: str = None, **kwargs) -> Tuple[str, float]:
         """Generate video using Kling API (T2V or I2V)."""
         headers = self._auth_headers()
-        model_name = kwargs.get("model") or self.model_name
+        from .instance import InstanceType, required_model_name
+        is_i2v_call = bool(img_url or img_path)
+        model_name = required_model_name(
+            InstanceType.I2V if is_i2v_call else InstanceType.T2V,
+            override=kwargs.get("model") or self.model_name,
+        )
         duration = kwargs.get("duration", 5)
         aspect_ratio = kwargs.get("aspect_ratio", "16:9")
         negative_prompt = kwargs.get("negative_prompt", "")

@@ -6,7 +6,20 @@ import pytest
 
 from src.apps.comic_gen.models import VideoTask
 from src.apps.comic_gen.pipeline import ComicGenPipeline
+from src.models.instance import InstanceType, ModelInstance
 from src.models.vidu import ViduModel
+from src.runtime import with_instance
+
+
+def _i2v_instance(model_name: str, vendor_id: str = "dashscope") -> ModelInstance:
+    return ModelInstance(
+        id=f"test-i2v-{model_name}",
+        user_id=1,
+        instance_type=InstanceType.I2V,
+        vendor_id=vendor_id,
+        model_name=model_name,
+        display_name=f"Test {model_name}",
+    )
 
 
 PNG_1X1_BASE64 = (
@@ -81,7 +94,8 @@ def test_pipeline_routes_vidu_vendor_mode_to_vendor_adapter(monkeypatch):
     monkeypatch.setattr("src.models.vidu.ViduModel", FakeViduModel)
 
     pipeline = _build_pipeline(task, FakeWanxModel())
-    pipeline.process_video_task("script-1", "task-vidu-vendor")
+    with with_instance(_i2v_instance("viduq3-pro", vendor_id="vidu")):
+        pipeline.process_video_task("script-1", "task-vidu-vendor")
 
     assert "vendor_kwargs" in calls
     assert "wanx_kwargs" not in calls
@@ -120,7 +134,8 @@ def test_pipeline_routes_vidu_dashscope_mode_to_wanx_without_vendor_credentials(
     monkeypatch.setattr("src.models.vidu.ViduModel", FakeViduModel)
 
     pipeline = _build_pipeline(task, FakeWanxModel())
-    pipeline.process_video_task("script-1", "task-vidu-dashscope")
+    with with_instance(_i2v_instance("viduq3-pro")):
+        pipeline.process_video_task("script-1", "task-vidu-dashscope")
 
     assert "wanx_kwargs" in calls
     assert "vendor_kwargs" not in calls

@@ -37,7 +37,6 @@ logger = logging.getLogger(__name__)
 
 
 _DEFAULT_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
-_DEFAULT_MODEL = "doubao-seedance-1-0-pro-fast-251015"
 _POLL_INTERVAL_S = 4.0
 _POLL_TIMEOUT_S = 900.0  # 15 min
 
@@ -69,12 +68,8 @@ def _resolve_api_key() -> str:
 
 
 def _resolve_model(override: Optional[str] = None) -> str:
-    name = override
-    if not name:
-        inst = current_instance()
-        if inst and inst.model_name:
-            name = inst.model_name
-    name = name or _DEFAULT_MODEL
+    from .instance import InstanceType, required_model_name
+    name = required_model_name(InstanceType.I2V, override=override)
     return _MODEL_ID_MAP.get(name, name)
 
 

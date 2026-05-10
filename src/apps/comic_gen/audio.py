@@ -74,10 +74,14 @@ class AudioGenerator:
             # Each vendor's client lives under src/audio/<vendor>_tts.py and
             # exposes the same ``synthesize_*(text, output_path, *, voice,
             # speech_rate, pitch_rate, volume) -> (path, latency_ms,
-            # request_id)`` shape so the dispatch is one switch.
+            # request_id)`` shape so the dispatch is one switch. No vendor
+            # default — the user must configure a TTS instance.
             from src.runtime import current_instance
+            from src.models.instance import InstanceType, InstanceNotConfiguredError
             inst = current_instance()
-            vendor = inst.vendor_id if inst else None
+            if inst is None:
+                raise InstanceNotConfiguredError(InstanceType.TTS)
+            vendor = inst.vendor_id
 
             if vendor == "minimax":
                 from src.audio.minimax_tts import synthesize_minimax_tts
@@ -103,9 +107,16 @@ class AudioGenerator:
                     text, output_path,
                     voice=voice, speech_rate=speed, pitch_rate=pitch, volume=volume,
                 )
-            else:
-                # Default: DashScope CosyVoice (the legacy path).
+            elif vendor == "dashscope":
+                # DashScope CosyVoice. Constructor defaults are ignored at
+                # call time — ``TTSProcessor`` resolves the model via the
+                # bound instance.
                 self.tts.synthesize(text, output_path, voice=voice, speech_rate=speed, pitch_rate=pitch, volume=volume)
+            else:
+                raise ValueError(
+                    f"未支持的 TTS vendor: {vendor!r}。请在 设置 → 模型实例 中"
+                    "选择 dashscope / minimax / elevenlabs / fish-audio / cartesia 之一。"
+                )
 
             rel_path = os.path.relpath(output_path, self.data_root)
             frame.audio_url = rel_path

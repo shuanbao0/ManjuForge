@@ -16,7 +16,7 @@ from .storyboard import StoryboardGenerator
 from .video import VideoGenerator
 from .audio import AudioGenerator
 from .export import ExportManager
-from .instance_resolver import scoped_instance, model_name_or
+from .instance_resolver import scoped_instance, require_instance
 from ...models.instance import InstanceType
 from ...utils import get_logger
 from ...utils.oss_utils import is_object_key
@@ -288,8 +288,14 @@ class ComicGenPipeline:
             # model_name flow from the user's configured ModelInstance rows.
             with scoped_instance(script.model_settings.t2i_instance_id, InstanceType.T2I) as t2i_inst, \
                  scoped_instance(script.model_settings.i2i_instance_id, InstanceType.I2I) as i2i_inst:
-                t2i_model = model_name_or(model_name or "wan2.6-t2i", t2i_inst)
-                i2i_model = model_name_or("wan2.6-image", i2i_inst)
+                # Caller-provided ``model_name`` (rare per-call override) wins over
+                # the instance's; otherwise the instance must exist.
+                t2i_model = model_name or require_instance(t2i_inst, InstanceType.T2I).model_name
+                # I2I is only used inside character generation here; if the user
+                # hasn't configured an I2I instance we still want the T2I path to
+                # work, so we lazily require I2I only when the asset code asks
+                # for it (passed to ``i2i_model_name=`` below).
+                i2i_model = i2i_inst.model_name if i2i_inst else None
                 # Generate with Art Direction style injected
                 if asset_type == "character":
                     self.asset_generator.generate_character(
@@ -421,7 +427,10 @@ class ComicGenPipeline:
         asset_type = task["asset_type"]
         positive_prompt = params.get("effective_positive_prompt", "")
         negative_prompt = params.get("effective_negative_prompt", "")
-        t2i_model = params.get("t2i_model", "wan2.6-t2i")
+        t2i_model = params.get("t2i_model")
+        if not t2i_model:
+            from .instance_resolver import InstanceNotConfiguredError
+            raise InstanceNotConfiguredError(InstanceType.T2I)
         effective_size = params.get("effective_size", "576*1024")
         batch_size = params.get("batch_size", 1)
         generation_type = params.get("generation_type", "all")
@@ -1316,7 +1325,7 @@ class ComicGenPipeline:
         effective_size = ASPECT_RATIO_TO_SIZE.get(aspect, "1024*576")
 
         with scoped_instance(script.model_settings.i2i_instance_id, InstanceType.I2I) as i2i_inst:
-            i2i_model = model_name_or("wan2.6-image", i2i_inst)
+            i2i_model = require_instance(i2i_inst, InstanceType.I2I).model_name
             self.storyboard_generator.generate_frame(
                 frame,
                 script.characters,
@@ -1583,7 +1592,7 @@ class ComicGenPipeline:
         # vars + ``wan2.6-i2v`` regardless of what the user picked in Settings.
         i2v_instance_id = getattr(getattr(script, "model_settings", None), "i2v_instance_id", None)
         with scoped_instance(i2v_instance_id, InstanceType.I2V) as i2v_inst:
-            resolved_model_name = i2v_inst.model_name if i2v_inst else None
+            resolved_model_name = require_instance(i2v_inst, InstanceType.I2V).model_name
 
             # Generate videos based on the asset type
             for i in range(batch_size):
@@ -1628,7 +1637,7 @@ class ComicGenPipeline:
                                 duration=duration,
                                 created_at=time.time(),
                                 generate_audio=bool(audio_url),
-                                model=resolved_model_name or "wan2.6-i2v",
+                                model=resolved_model_name,
                                 generation_mode="i2v"  # Image to video (motion reference)
                             )
 
@@ -1724,7 +1733,7 @@ class ComicGenPipeline:
             
             # Resolve I2I instance and bind it for this call.
             with scoped_instance(script.model_settings.i2i_instance_id, InstanceType.I2I) as i2i_inst:
-                i2i_model = model_name_or("wan2.6-image", i2i_inst)
+                i2i_model = require_instance(i2i_inst, InstanceType.I2I).model_name
                 logger.info(f"Rendering frame {frame_id} using model {i2i_model} with {len(ref_image_paths)} reference images")
                 if len(ref_image_urls) > 0:
                     logger.debug(f"Original reference URLs from frontend: {ref_image_urls}")
@@ -1777,7 +1786,7 @@ class ComicGenPipeline:
         self._save_data()
         return script
 
-    def create_video_task(self, script_id: str, image_url: str, prompt: str, duration: int = 5, seed: int = None, resolution: str = "720p", generate_audio: bool = False, audio_url: str = None, prompt_extend: bool = True, negative_prompt: str = None, model: str = "wan2.6-i2v", frame_id: str = None, shot_type: str = "single", generation_mode: str = "i2v", reference_video_urls: list = None, mode: str = None, sound: str = None, cfg_scale: float = None, vidu_audio: bool = None, movement_amplitude: str = None, i2v_instance_id: Optional[str] = None) -> Tuple[Script, str]:
+    def create_video_task(self, script_id: str, image_url: str, prompt: str, duration: int = 5, seed: int = None, resolution: str = "720p", generate_audio: bool = False, audio_url: str = None, prompt_extend: bool = True, negative_prompt: str = None, model: Optional[str] = None, frame_id: str = None, shot_type: str = "single", generation_mode: str = "i2v", reference_video_urls: list = None, mode: str = None, sound: str = None, cfg_scale: float = None, vidu_audio: bool = None, movement_amplitude: str = None, i2v_instance_id: Optional[str] = None) -> Tuple[Script, str]:
         """Creates a new video generation task."""
         script = self.get_script(script_id)
         if not script:
@@ -1785,19 +1794,19 @@ class ComicGenPipeline:
         
         task_id = str(uuid.uuid4())
         
-        # If R2V mode is selected, swap the I2V model id for its R2V sibling.
-        # Each Wan family has paired SKUs that share the same instance/key but
-        # use different request shapes (wan2.7 uses media[reference_video],
-        # wan2.6 uses input.ref_video_urls). Without this translation, R2V
-        # mode would always run on wan2.6-r2v regardless of the user's pick.
+        # If R2V mode is selected, swap the I2V model id for its R2V sibling
+        # via the provider registry (e.g. wan2.7-i2v → wan2.7-r2v). Each
+        # family declares the I2V/R2V SKU pair; the swap is data-driven, not
+        # a hardcoded mapping. Without this, R2V mode would still ship the
+        # I2V SKU and the request shape mismatch breaks the call. If the
+        # current model has no R2V sibling registered, leave it as-is and
+        # let the dispatcher reject it loudly rather than silently picking
+        # an unrelated default.
         if generation_mode == "r2v":
-            current = (model or "").lower()
-            if current.startswith("wan2.7-i2v"):
-                model = "wan2.7-r2v"
-            elif current.startswith("wan2.6-i2v"):
-                model = "wan2.6-r2v"
-            else:
-                model = "wan2.6-r2v"
+            from ...utils.provider_registry import swap_provider_modality
+            swapped = swap_provider_modality(model, "r2v")
+            if swapped:
+                model = swapped
         
         # Snapshot the input image to ensure consistency
         snapshot_url = image_url
@@ -2560,7 +2569,7 @@ class ComicGenPipeline:
             prompt=prompt or f"Cinematic shot of {target_asset.name}",
             status="pending",
             duration=duration,
-            model="wan2.6-r2v", # Force R2V model
+            generation_mode="r2v",  # process_video_task resolves the actual SKU from the I2V instance
             created_at=time.time()
         )
         
@@ -2642,11 +2651,26 @@ class ComicGenPipeline:
             script_instance_id = getattr(ms, "i2v_instance_id", None) if ms else None
             i2v_instance_id = task.i2v_instance_id or script_instance_id
             with scoped_instance(i2v_instance_id, InstanceType.I2V) as i2v_inst:
-                # If task didn't specify a model and we have an instance,
-                # use the instance's model_name; otherwise honor task.model.
-                if i2v_inst and not task.model:
-                    task.model = i2v_inst.model_name
-                model_name = task.model or ""
+                # The bound instance is the source of truth for the model
+                # name. R2V mode swaps to the family's R2V sibling via the
+                # provider registry. No legacy hardcoded fallback — if the
+                # user hasn't configured an I2V instance the call must fail
+                # loudly so they know to set one up.
+                # Outside an authenticated request (CLI, tests), DB lookup
+                # returns None even when the caller has pre-bound an instance
+                # via ``with_instance``; honor that pre-binding before erroring.
+                if i2v_inst is None:
+                    from ...runtime import current_instance
+                    i2v_inst = current_instance()
+                inst = require_instance(i2v_inst, InstanceType.I2V)
+                base_model = inst.model_name
+                if (task.generation_mode or "").lower() == "r2v":
+                    from ...utils.provider_registry import swap_provider_modality
+                    swapped = swap_provider_modality(base_model, "r2v")
+                    if swapped:
+                        base_model = swapped
+                task.model = base_model
+                model_name = task.model
                 backend = self._resolve_video_backend(model_name)
                 adapter = self._video_dispatcher.resolve(model_name, backend)
                 # Adapters resolve their own bytes/URL via MediaResolver from
@@ -2774,7 +2798,7 @@ class ComicGenPipeline:
             status="pending",
             duration=duration,
             resolution=resolution,
-            model="wan2.6-i2v", # Asset video uses I2V
+            generation_mode="i2v",  # process_video_task resolves the actual SKU from the I2V instance
             created_at=time.time()
         )
         
@@ -3494,12 +3518,15 @@ class ComicGenPipeline:
             raise ValueError("Series not found")
 
         # Resolve T2I instance now (within request scope) so task params can
-        # carry the resolved model_name + instance_id forward.
+        # carry the resolved model_name + instance_id forward to the worker.
         from .instance_resolver import load_instance as _load_inst
-        t2i_inst = _load_inst(series.model_settings.t2i_instance_id, InstanceType.T2I)
+        t2i_inst = require_instance(
+            _load_inst(series.model_settings.t2i_instance_id, InstanceType.T2I),
+            InstanceType.T2I,
+        )
         i2i_inst = _load_inst(series.model_settings.i2i_instance_id, InstanceType.I2I)
-        t2i_model = model_name or model_name_or("wan2.6-t2i", t2i_inst)
-        t2i_instance_id = t2i_inst.id if t2i_inst else None
+        t2i_model = model_name or t2i_inst.model_name
+        t2i_instance_id = t2i_inst.id
         i2i_instance_id = i2i_inst.id if i2i_inst else None
 
         from .assets import ASPECT_RATIO_TO_SIZE

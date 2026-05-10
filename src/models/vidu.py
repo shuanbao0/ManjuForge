@@ -18,15 +18,16 @@ from ..utils.oss_utils import OSSImageUploader
 from ..utils.provider_media import resolve_media_input
 
 logger = logging.getLogger(__name__)
-DEFAULT_T2V_MODEL = "viduq3-pro"
-DEFAULT_I2V_MODEL = "viduq3-pro"
 
 
 class ViduModel(VideoGenModel):
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
         self._explicit_api_key = config.get("api_key")
-        self.model_name = config.get("params", {}).get("model_name", DEFAULT_I2V_MODEL)
+        # No literal default: ``self.model_name`` only carries a value when
+        # the YAML/CLI config explicitly seeds one. Runtime callers should
+        # pass ``model=`` explicitly (resolved upstream from a ModelInstance).
+        self.model_name = config.get("params", {}).get("model_name")
 
     @property
     def api_key(self) -> str:
@@ -73,9 +74,14 @@ class ViduModel(VideoGenModel):
         if not image_ref:
             raise ValueError("Vidu image input requires img_path or img_url")
 
+        from .instance import InstanceType, required_model_name
+        resolved_model = required_model_name(
+            InstanceType.I2V,
+            override=model_name or self.model_name,
+        )
         resolved = resolve_media_input(
             image_ref,
-            model_name=model_name or self.model_name,
+            model_name=resolved_model,
             modality="image",
             backend="vendor",
             uploader=OSSImageUploader(),
@@ -165,7 +171,8 @@ class ViduModel(VideoGenModel):
                     seed: int = 0, style: str = "general", bgm: bool = True,
                     ) -> Tuple[str, str]:
         """Submit a text-to-video task. Returns (task_id, model_used)."""
-        used_model = model or DEFAULT_T2V_MODEL
+        from .instance import InstanceType, required_model_name
+        used_model = required_model_name(InstanceType.T2V, override=model or self.model_name)
 
         body: Dict[str, Any] = {
             "model": used_model,
@@ -200,7 +207,8 @@ class ViduModel(VideoGenModel):
         if not image_url:
             raise ValueError("image_url is required for i2v mode")
 
-        used_model = model or DEFAULT_I2V_MODEL
+        from .instance import InstanceType, required_model_name
+        used_model = required_model_name(InstanceType.I2V, override=model or self.model_name)
 
         body: Dict[str, Any] = {
             "model": used_model,

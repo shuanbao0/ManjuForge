@@ -34,7 +34,6 @@ logger = logging.getLogger(__name__)
 
 
 _DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com"
-_DEFAULT_MODEL = "gemini-2.5-flash-image-preview"
 _MAX_REF_IMAGES = 14
 
 
@@ -66,12 +65,10 @@ def _resolve_api_key() -> str:
     return get_cred("GOOGLE_API_KEY") or get_cred("GEMINI_API_KEY")
 
 
-def _resolve_model(default: str = _DEFAULT_MODEL) -> str:
-    inst = current_instance()
-    if inst and inst.model_name:
-        name = inst.model_name
-        return _MODEL_ID_MAP.get(name, name)
-    return default
+def _resolve_model() -> str:
+    from .instance import InstanceType, required_model_name
+    name = required_model_name(InstanceType.T2I)
+    return _MODEL_ID_MAP.get(name, name)
 
 
 def _ref_to_inline_part(ref: str) -> Optional[dict]:

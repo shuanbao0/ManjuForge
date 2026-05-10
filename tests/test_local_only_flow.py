@@ -5,7 +5,9 @@ from types import SimpleNamespace
 
 from src.apps.comic_gen.models import Character, Scene, Script, StoryboardFrame
 from src.apps.comic_gen.pipeline import ComicGenPipeline
+from src.models.instance import InstanceType, ModelInstance
 from src.models.wanx import WanxModel
+from src.runtime import with_instance
 
 
 PNG_1X1_BASE64 = (
@@ -136,7 +138,16 @@ def test_local_only_pipeline_flow_without_oss(monkeypatch):
     assert task.image_url.startswith("video_inputs/")
     assert (Path("output") / task.image_url).exists()
 
-    pipeline.process_video_task(script.id, task_id)
+    i2v_inst = ModelInstance(
+        id="test-i2v-wan26",
+        user_id=1,
+        instance_type=InstanceType.I2V,
+        vendor_id="dashscope",
+        model_name="wan2.6-i2v",
+        display_name="Test Wan 2.6 I2V",
+    )
+    with with_instance(i2v_inst):
+        pipeline.process_video_task(script.id, task_id)
 
     assert task.status == "completed"
     assert task.video_url.startswith("video/video_")

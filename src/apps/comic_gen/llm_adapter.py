@@ -42,32 +42,43 @@ class LLMAdapter:
 
     @property
     def provider(self) -> str:
-        inst = current_instance()
-        if inst:
-            return "dashscope" if inst.vendor_id == "dashscope" else "openai"
-        return (get_cred("LLM_PROVIDER") or "dashscope").lower()
+        """Vendor family for the current call. Reads strictly from the bound
+        LLM ModelInstance; raises if no instance is configured."""
+        inst = self._require_inst()
+        return "dashscope" if inst.vendor_id == "dashscope" else "openai"
 
     @property
     def is_configured(self) -> bool:
+        """True iff an LLM instance is bound and carries a usable API key.
+
+        This is a pre-flight probe — never silently consults env vars; if
+        no instance is bound it returns False so the caller surfaces the
+        configuration gap instead of trying anyway."""
         inst = current_instance()
-        if inst:
-            return bool(
-                inst.credentials.get("OPENAI_API_KEY")
-                or inst.credentials.get("MINIMAX_API_KEY")
-                or inst.credentials.get("DASHSCOPE_API_KEY")
-            )
-        if self.provider == "openai":
-            return bool(get_cred("OPENAI_API_KEY"))
-        return bool(get_cred("DASHSCOPE_API_KEY"))
+        if not inst:
+            return False
+        return bool(
+            inst.credentials.get("OPENAI_API_KEY")
+            or inst.credentials.get("MINIMAX_API_KEY")
+            or inst.credentials.get("DASHSCOPE_API_KEY")
+        )
+
+    @staticmethod
+    def _require_inst():
+        """Strict instance fetch — raises ``InstanceNotConfiguredError`` if
+        no LLM ModelInstance is currently scoped. The whole adapter is
+        instance-driven; there is no env-based fallback path anymore."""
+        from ...models.instance import InstanceNotConfiguredError, InstanceType
+        inst = current_instance()
+        if inst is None:
+            raise InstanceNotConfiguredError(InstanceType.LLM)
+        return inst
 
     def _get_client(self):
-        """Build a fresh OpenAI-compatible client for the current request.
-
-        Order:
-        1. Use the currently-scoped :class:`ModelInstance` if any (vendor →
-           base_url mapping, credentials from instance).
-        2. Else fall back to env-driven LLM_PROVIDER + OPENAI_*/DASHSCOPE_*.
-        """
+        """Build a fresh OpenAI-compatible client for the current request,
+        driven entirely by the bound LLM ModelInstance (api key + base url
+        + vendor → SDK route). No env fallback — calls outside an instance
+        scope raise immediately."""
         try:
             from openai import OpenAI
         except ImportError:
@@ -75,38 +86,22 @@ class LLMAdapter:
                 "openai package not installed. Run: pip install openai>=1.0.0"
             )
 
-        inst = current_instance()
-        if inst:
-            api_key = (
-                inst.credentials.get("OPENAI_API_KEY")
-                or inst.credentials.get("MINIMAX_API_KEY")
-                or inst.credentials.get("DASHSCOPE_API_KEY")
-                or ""
-            )
-            base_url = inst.base_url or _VENDOR_BASE_URLS.get(
-                inst.vendor_id, "https://api.openai.com/v1"
-            )
-            if inst.vendor_id == "dashscope" and not inst.base_url:
-                base_url = f"{get_provider_base_url('DASHSCOPE')}/compatible-mode/v1"
-            return OpenAI(api_key=api_key, base_url=base_url)
-
-        if self.provider == "openai":
-            return OpenAI(
-                api_key=get_cred("OPENAI_API_KEY"),
-                base_url=get_cred("OPENAI_BASE_URL") or "https://api.openai.com/v1",
-            )
-        return OpenAI(
-            api_key=get_cred("DASHSCOPE_API_KEY"),
-            base_url=f"{get_provider_base_url('DASHSCOPE')}/compatible-mode/v1",
+        inst = self._require_inst()
+        api_key = (
+            inst.credentials.get("OPENAI_API_KEY")
+            or inst.credentials.get("MINIMAX_API_KEY")
+            or inst.credentials.get("DASHSCOPE_API_KEY")
+            or ""
         )
+        base_url = inst.base_url or _VENDOR_BASE_URLS.get(
+            inst.vendor_id, "https://api.openai.com/v1"
+        )
+        if inst.vendor_id == "dashscope" and not inst.base_url:
+            base_url = f"{get_provider_base_url('DASHSCOPE')}/compatible-mode/v1"
+        return OpenAI(api_key=api_key, base_url=base_url)
 
     def _get_default_model(self) -> str:
-        inst = current_instance()
-        if inst:
-            return inst.model_name
-        if self.provider == "openai":
-            return get_cred("OPENAI_MODEL") or "gpt-4o"
-        return "qwen3.5-plus"
+        return self._require_inst().model_name
 
     def chat(
         self,

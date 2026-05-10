@@ -35,7 +35,6 @@ logger = logging.getLogger(__name__)
 
 
 _DEFAULT_BASE_URL = "https://api.elevenlabs.io/v1"
-_DEFAULT_MODEL = "eleven_turbo_v2_5"
 # Sensible defaults — "Rachel" is a standard ElevenLabs library voice.
 _DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"
 
@@ -56,11 +55,9 @@ def _resolve_api_key() -> str:
     return get_cred("ELEVENLABS_API_KEY")
 
 
-def _resolve_model(default: str = _DEFAULT_MODEL) -> str:
-    inst = current_instance()
-    if inst and inst.model_name:
-        return inst.model_name
-    return default
+def _resolve_model() -> str:
+    from src.models.instance import InstanceType, required_model_name
+    return required_model_name(InstanceType.TTS)
 
 
 def synthesize_elevenlabs_tts(

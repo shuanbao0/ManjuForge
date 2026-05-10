@@ -113,11 +113,18 @@ class TestKlingModelParams:
 
     def test_sound_and_cfg_scale_in_body(self, monkeypatch):
         from src.models.kling import KlingModel
+        from src.models.instance import InstanceType, ModelInstance
+        from src.runtime import with_instance
 
         model = KlingModel({
             "access_key": "test_ak",
             "secret_key": "test_sk",
         })
+
+        i2v_inst = ModelInstance(
+            id="t-kling", user_id=1, instance_type=InstanceType.I2V,
+            vendor_id="kling", model_name="kling-v3", display_name="Kling",
+        )
 
         captured_body = {}
 
@@ -165,11 +172,12 @@ class TestKlingModelParams:
         import tempfile, os
         with tempfile.TemporaryDirectory() as tmpdir:
             out_path = os.path.join(tmpdir, "out.mp4")
-            model.generate(
-                prompt="test", output_path=out_path,
-                img_url="https://example.com/img.png",
-                mode="pro", sound="on", cfg_scale=0.6,
-            )
+            with with_instance(i2v_inst):
+                model.generate(
+                    prompt="test", output_path=out_path,
+                    img_url="https://example.com/img.png",
+                    mode="pro", sound="on", cfg_scale=0.6,
+                )
 
         assert captured_body.get("sound") == "on"
         assert captured_body.get("cfg_scale") == pytest.approx(0.6)
@@ -177,8 +185,14 @@ class TestKlingModelParams:
 
     def test_sound_omitted_when_none(self, monkeypatch):
         from src.models.kling import KlingModel
+        from src.models.instance import InstanceType, ModelInstance
+        from src.runtime import with_instance
 
         model = KlingModel({"access_key": "ak", "secret_key": "sk"})
+        i2v_inst = ModelInstance(
+            id="t-kling-2", user_id=1, instance_type=InstanceType.I2V,
+            vendor_id="kling", model_name="kling-v3", display_name="Kling",
+        )
 
         captured_body = {}
 
@@ -204,11 +218,12 @@ class TestKlingModelParams:
 
         import tempfile, os
         with tempfile.TemporaryDirectory() as tmpdir:
-            model.generate(
-                prompt="test", output_path=os.path.join(tmpdir, "o.mp4"),
-                img_url="https://example.com/img.png",
-                # 不传 sound / cfg_scale
-            )
+            with with_instance(i2v_inst):
+                model.generate(
+                    prompt="test", output_path=os.path.join(tmpdir, "o.mp4"),
+                    img_url="https://example.com/img.png",
+                    # 不传 sound / cfg_scale
+                )
 
         assert "sound" not in captured_body
         assert "cfg_scale" not in captured_body
@@ -221,8 +236,14 @@ class TestViduModelParams:
 
     def test_audio_and_movement_in_body(self, monkeypatch):
         from src.models.vidu import ViduModel
+        from src.models.instance import InstanceType, ModelInstance
+        from src.runtime import with_instance
 
         model = ViduModel({"api_key": "test_key"})
+        i2v_inst = ModelInstance(
+            id="t-vidu", user_id=1, instance_type=InstanceType.I2V,
+            vendor_id="vidu", model_name="viduq3-pro", display_name="Vidu",
+        )
 
         captured_body = {}
 
@@ -257,14 +278,15 @@ class TestViduModelParams:
 
         import tempfile, os
         with tempfile.TemporaryDirectory() as tmpdir:
-            model.generate(
-                prompt="test vidu",
-                output_path=os.path.join(tmpdir, "v.mp4"),
-                img_url="https://example.com/img.png",
-                audio=False,
-                movement_amplitude="large",
-                seed=123,
-            )
+            with with_instance(i2v_inst):
+                model.generate(
+                    prompt="test vidu",
+                    output_path=os.path.join(tmpdir, "v.mp4"),
+                    img_url="https://example.com/img.png",
+                    audio=False,
+                    movement_amplitude="large",
+                    seed=123,
+                )
 
         assert captured_body.get("audio") is False
         assert captured_body.get("movement_amplitude") == "large"

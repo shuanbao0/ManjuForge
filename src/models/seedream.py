@@ -37,7 +37,6 @@ logger = logging.getLogger(__name__)
 
 
 _DEFAULT_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
-_DEFAULT_MODEL = "doubao-seedream-3-0-t2i-250415"
 
 
 def _resolve_base_url() -> str:
@@ -56,11 +55,9 @@ def _resolve_api_key() -> str:
     return get_cred("DOUBAO_API_KEY") or get_cred("ARK_API_KEY")
 
 
-def _resolve_model(default: str = _DEFAULT_MODEL) -> str:
-    inst = current_instance()
-    if inst and inst.model_name:
-        return inst.model_name
-    return default
+def _resolve_model() -> str:
+    from .instance import InstanceType, required_model_name
+    return required_model_name(InstanceType.T2I)
 
 
 def _size_for_seedream(size: str) -> str:
