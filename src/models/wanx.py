@@ -632,16 +632,18 @@ class WanxModel(VideoGenModel):
             logger.info(f"Image to Video mode. Input Image URL: {img_url}")
 
         rsp = VideoSynthesis.async_call(**call_args)
-        
+
         if rsp.status_code != HTTPStatus.OK:
             logger.error(f"Failed to submit task: {rsp.code}, {rsp.message}")
             raise RuntimeError(f"Task submission failed: {rsp.message}")
-        
+
         task_id = rsp.output.task_id
         logger.info(f"Task submitted. Task ID: {task_id}")
-        
-        # Wait for completion
-        rsp = VideoSynthesis.wait(rsp)
+
+        # Wait for completion. Must re-pass api_key: the SDK's polling call
+        # does not inherit auth from async_call and would otherwise read
+        # the (unset) ``dashscope.api_key`` global → "No api key provided".
+        rsp = VideoSynthesis.wait(rsp, api_key=self.api_key)
         
         logger.info(f"SDK response: {rsp}")
 
