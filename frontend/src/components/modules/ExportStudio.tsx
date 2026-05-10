@@ -1,16 +1,21 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Download, Film, CheckCircle, FileVideo, Monitor, Captions } from "lucide-react";
 import clsx from "clsx";
 import { useProjectStore } from "@/store/projectStore";
 import { api } from "@/lib/api";
 import { getAssetUrl } from "@/lib/utils";
 import { useTranslation } from "@/i18n";
+import { useAsyncTask } from "@/hooks/useAsyncTask";
+
+// Stage-name → user-facing label resolver. Backend emits one of:
+// 'pending' | 'preflight' | 'ffmpeg' | 'finalize' | 'cached'.
+const stageKey = (stage?: string | null) =>
+    `modules.export.stage_${stage || "pending"}`;
 
 export default function ExportStudio() {
     const { t } = useTranslation();
     const currentProject = useProjectStore((state) => state.currentProject);
 
-    const [isExporting, setIsExporting] = useState(false);
     const [exportUrl, setExportUrl] = useState<string | null>(null);
     const [exportError, setExportError] = useState<string | null>(null);
 
@@ -22,21 +27,34 @@ export default function ExportStudio() {
     // If project already has a merged video, show it immediately
     const effectiveUrl = exportUrl || currentProject?.merged_video_url || null;
 
-    const handleExport = async () => {
+    const exportTask = useAsyncTask({
+        submit: () =>
+            api.exportProject(currentProject!.id, { resolution, format, subtitles, force: false }),
+        onComplete: (s) => {
+            const url = s.output_url ?? null;
+            if (url) setExportUrl(url);
+            setExportError(null);
+        },
+        onFail: (err) => {
+            setExportError(
+                err?.message ||
+                t("modules.export.exportFailedDetail", undefined, "Export failed. Please check that videos have been generated.")
+            );
+        },
+    });
+
+    const isExporting = exportTask.active;
+    const progress = exportTask.status?.progress ?? 0;
+    const stageLabel = useMemo(() => {
+        const stage = exportTask.status?.current_stage;
+        return t(stageKey(stage), undefined, stage || "pending");
+    }, [exportTask.status?.current_stage, t]);
+
+    const handleExport = () => {
         if (!currentProject) return;
-        setIsExporting(true);
         setExportUrl(null);
         setExportError(null);
-
-        try {
-            const result = await api.exportProject(currentProject.id, { resolution, format, subtitles });
-            setExportUrl(result.url);
-        } catch (error: any) {
-            console.error("Export failed:", error);
-            setExportError(error?.message || t("modules.export.exportFailedDetail", undefined, "Export failed. Please check that videos have been generated."));
-        } finally {
-            setIsExporting(false);
-        }
+        exportTask.start();
     };
 
     return (
@@ -141,7 +159,14 @@ export default function ExportStudio() {
                         <div className="bg-black/30 backdrop-blur-xl border border-white/10 rounded-2xl p-12 shadow-2xl">
                             <div className="w-24 h-24 border-4 border-white/10 border-t-primary rounded-full animate-spin mx-auto mb-8" />
                             <h3 className="text-2xl font-bold mb-2">{t("modules.export.renderingTitle", undefined, "Rendering Your Masterpiece")}</h3>
-                            <p className="text-gray-400">{t("modules.export.renderingSubtitle", undefined, "Stitching video, mixing audio, and burning subtitles...")}</p>
+                            <p className="text-gray-400 mb-6">{stageLabel}</p>
+                            <div className="w-full max-w-md mx-auto bg-white/5 rounded-full h-2 overflow-hidden">
+                                <div
+                                    className="h-full bg-gradient-to-r from-primary to-purple-600 transition-all duration-300"
+                                    style={{ width: `${progress}%` }}
+                                />
+                            </div>
+                            <p className="text-xs text-gray-500 mt-2 font-mono">{progress}%</p>
                         </div>
                     ) : exportError ? (
                         <div className="bg-black/30 backdrop-blur-xl border border-red-500/30 rounded-2xl p-12 shadow-2xl shadow-red-900/20">

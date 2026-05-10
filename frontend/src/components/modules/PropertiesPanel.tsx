@@ -394,8 +394,16 @@ function StoryboardInspector() {
             : (selectedFrame.image_prompt || selectedFrame.action_description);
 
         try {
-            // Use new bilingual refine API
-            const res = await api.refineFramePrompt(currentProject.id, selectedFrame.id, draft, assets, feedback);
+            // Async refine: submit→poll→read result. Avoids upstream gateway
+            // timeouts that the synchronous endpoint can hit on slow LLMs.
+            const submitted = await api.refineFramePromptAsync(
+                currentProject.id, selectedFrame.id, draft, assets, feedback
+            );
+            const res = await api.pollAsyncTaskResult<{
+                prompt_cn?: string;
+                prompt_en?: string;
+                frame_updated?: boolean;
+            }>(submitted);
             if (res.prompt_cn && res.prompt_en) {
                 setPolishedPrompts(prev => ({
                     ...prev,

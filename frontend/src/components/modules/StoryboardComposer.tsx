@@ -40,6 +40,15 @@ export default function StoryboardComposer() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [uploadTargetFrameId, setUploadTargetFrameId] = useState<string | null>(null);
 
+    // Batch render ("render all pending frames") state.
+    // Kept local — batching is short enough that crossing the tab is rare;
+    // upgrade to projectStore if/when we surface progress in another view.
+    const [batchRender, setBatchRender] = useState<{
+        active: boolean;
+        current: number;
+        total: number;
+    }>({ active: false, current: 0, total: 0 });
+
 
 
     // NEW: Analyze script text to generate storyboard frames.
@@ -113,6 +122,102 @@ export default function StoryboardComposer() {
             }
         } finally {
             setIsAnalyzing(false);
+        }
+    };
+
+    // Mirror of pipeline._should_render_frame so the button can show an
+    // accurate pending count and disable itself when there's nothing to do.
+    // Force is intentionally not exposed in the UI yet — locked stays
+    // locked, image-having stays kept.
+    const isFramePendingRender = (frame: any): boolean => {
+        if (!frame) return false;
+        if (frame.locked) return false;
+        return !(frame.rendered_image_url || frame.image_url);
+    };
+
+    const pendingFrameCount = (currentProject?.frames || []).filter(isFramePendingRender).length;
+
+    const handleRenderAllFrames = async () => {
+        if (!currentProject) return;
+        const projectId = currentProject.id;
+
+        if (pendingFrameCount === 0) return;
+
+        const confirmMsg = t(
+            "modules.storyboard.renderAllConfirm",
+            { count: pendingFrameCount },
+            `About to render ${pendingFrameCount} pending frame(s). Continue?`
+        );
+        if (!confirm(confirmMsg)) return;
+
+        setBatchRender({ active: true, current: 0, total: pendingFrameCount });
+
+        let pollHandle: ReturnType<typeof setInterval> | null = null;
+        try {
+            const initial = await api.renderAllStoryboard(projectId, false);
+            const taskId = initial?._task_id;
+            if (!taskId) {
+                // Backwards-compat: ancient backend returning the script directly.
+                const updated = await api.getProject(projectId);
+                updateProject(projectId, updated);
+                return;
+            }
+
+            await new Promise<void>((resolve, reject) => {
+                let pollTick = 0;
+                pollHandle = setInterval(async () => {
+                    pollTick += 1;
+                    try {
+                        const status: any = await api.getTaskStatus(taskId);
+                        const total = status.pending_count ?? pendingFrameCount;
+                        const done = (status.completed_count ?? 0) + (status.failed_count ?? 0);
+                        setBatchRender({ active: true, current: done, total });
+
+                        // Refresh project every ~6s so finished frames show up live.
+                        if (pollTick % 3 === 0) {
+                            try {
+                                const live = await api.getProject(projectId);
+                                updateProject(projectId, live);
+                            } catch { /* polling, ignore one-off failures */ }
+                        }
+
+                        if (status.status === "completed") {
+                            if (pollHandle) clearInterval(pollHandle);
+                            const final = await api.getProject(projectId);
+                            updateProject(projectId, final);
+                            const success = status.completed_count ?? 0;
+                            const failed = status.failed_count ?? 0;
+                            if (failed === 0) {
+                                alert(t(
+                                    "modules.storyboard.renderAllAllSuccess",
+                                    { count: success },
+                                    `All ${success} frames rendered successfully.`
+                                ));
+                            } else {
+                                alert(t(
+                                    "modules.storyboard.renderAllComplete",
+                                    { success, failed },
+                                    `Batch render done: ${success} succeeded, ${failed} failed.`
+                                ));
+                            }
+                            resolve();
+                        } else if (status.status === "failed") {
+                            if (pollHandle) clearInterval(pollHandle);
+                            reject(new Error(status.error || "batch render failed"));
+                        }
+                    } catch (err) {
+                        if (pollHandle) clearInterval(pollHandle);
+                        reject(err);
+                    }
+                }, 2000);
+            });
+        } catch (error: any) {
+            console.error("Batch render failed:", error);
+            const detail = extractErrorDetail(error, "") || error?.message || "";
+            alert(`${t("modules.storyboard.renderAllFailed")}${detail ? `: ${detail}` : ""}`);
+        } finally {
+            if (pollHandle) clearInterval(pollHandle);
+            setBatchRender({ active: false, current: 0, total: 0 });
         }
     };
 
@@ -384,6 +489,30 @@ export default function StoryboardComposer() {
                     >
                         {isAnalyzing ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
                         {isAnalyzing ? t("modules.common.generating") : t("modules.storyboard.generateStoryboard", undefined, "生成分镜")}
+                    </button>
+                    <button
+                        onClick={handleRenderAllFrames}
+                        disabled={batchRender.active || pendingFrameCount === 0}
+                        className="flex items-center gap-1.5 text-xs bg-emerald-600/80 hover:bg-emerald-600 px-3 py-1.5 rounded-lg text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        title={
+                            pendingFrameCount === 0
+                                ? t("modules.storyboard.renderAllNothingToDo", undefined, "已全部生成")
+                                : t("modules.storyboard.renderAllFramesTitle", undefined, "用每帧已调好的提示词和参考图，批量渲染所有未生成的帧")
+                        }
+                    >
+                        {batchRender.active
+                            ? <Loader2 size={14} className="animate-spin" />
+                            : <ImageIcon size={14} />}
+                        {batchRender.active
+                            ? t(
+                                "modules.storyboard.renderAllInProgress",
+                                { current: batchRender.current, total: batchRender.total },
+                                `Rendering ${batchRender.current}/${batchRender.total}`
+                            )
+                            : pendingFrameCount === 0
+                                ? t("modules.storyboard.renderAllNothingToDo", undefined, "已全部生成")
+                                : `${t("modules.storyboard.renderAllFrames", undefined, "渲染未生成")} (${pendingFrameCount})`
+                        }
                     </button>
                     <div className="w-px h-4 bg-white/10" />
                     <span className="text-xs text-gray-500 font-mono">

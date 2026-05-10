@@ -7,6 +7,18 @@ import { useProjectStore } from "@/store/projectStore";
 import { api } from "@/lib/api";
 import { getAssetUrl } from "@/lib/utils";
 import { useTranslation } from "@/i18n";
+import { useAsyncTask } from "@/hooks/useAsyncTask";
+
+// Mirror of pipeline._should_render_audio for accurate pending count.
+function isFramePendingAudio(frame: any): boolean {
+    if (!frame) return false;
+    const hasDialogue = !!frame.dialogue;
+    const hasSfx = !!frame.action_description;
+    if (!hasDialogue && !hasSfx) return false;
+    if (hasDialogue && !frame.audio_url) return true;
+    if (hasSfx && !frame.sfx_url) return true;
+    return false;
+}
 
 export default function VoiceActingStudio() {
     const { t } = useTranslation();
@@ -16,8 +28,29 @@ export default function VoiceActingStudio() {
     const [voices, setVoices] = useState<any[]>([]);
     const [playingAudio, setPlayingAudio] = useState<string | null>(null);
     const audioRef = useRef<HTMLAudioElement | null>(null);
-    const [isGenerating, setIsGenerating] = useState(false);
     const [generatingLineId, setGeneratingLineId] = useState<string | null>(null);
+
+    const pendingAudioCount = (currentProject?.frames || []).filter(isFramePendingAudio).length;
+    const audioBatch = useAsyncTask({
+        submit: () => api.renderAllAudio(currentProject!.id, false),
+        onPeriodicRefresh: async () => {
+            const fresh = await api.getProject(currentProject!.id);
+            updateProject(currentProject!.id, fresh);
+        },
+        onComplete: async (s) => {
+            const fresh = await api.getProject(currentProject!.id);
+            updateProject(currentProject!.id, fresh);
+            const ok = s.completed_count ?? 0;
+            const fail = s.failed_count ?? 0;
+            alert(
+                fail === 0
+                    ? t("modules.audio.batchAllSuccess", { count: ok }, `All ${ok} frames synthesized.`)
+                    : t("modules.audio.batchComplete", { success: ok, failed: fail }, `${ok} succeeded, ${fail} failed.`)
+            );
+        },
+        onFail: (err) => alert(`${t("modules.audio.batchFailed", undefined, "Batch audio failed")}: ${err.message}`),
+    });
+    const isGenerating = audioBatch.active;
 
     // Per-line settings override
     const [activeSettingsId, setActiveSettingsId] = useState<string | null>(null);
@@ -85,17 +118,16 @@ export default function VoiceActingStudio() {
         }
     };
 
-    const handleGenerateAll = async () => {
+    const handleGenerateAll = () => {
         if (!currentProject) return;
-        setIsGenerating(true);
-        try {
-            const updatedProject = await api.generateAudio(currentProject.id);
-            updateProject(currentProject.id, updatedProject);
-        } catch (error) {
-            console.error("Failed to generate audio:", error);
-        } finally {
-            setIsGenerating(false);
-        }
+        if (pendingAudioCount === 0) return;
+        const msg = t(
+            "modules.audio.batchConfirm",
+            { count: pendingAudioCount },
+            `Synthesize audio for ${pendingAudioCount} frames? This may take a few minutes.`
+        );
+        if (!confirm(msg)) return;
+        audioBatch.start();
     };
 
     const handleGenerateLine = async (frameId: string) => {
@@ -210,11 +242,23 @@ export default function VoiceActingStudio() {
                     <h2 className="font-display font-bold text-lg">{t("modules.voice.scriptReader", undefined, "Script Reader")}</h2>
                     <button
                         onClick={handleGenerateAll}
-                        disabled={isGenerating}
-                        className="bg-white/5 hover:bg-white/10 border border-primary/50 hover:border-primary text-primary hover:text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 whitespace-nowrap flex-shrink-0 transition-all disabled:opacity-50"
+                        disabled={isGenerating || pendingAudioCount === 0}
+                        className="bg-white/5 hover:bg-white/10 border border-primary/50 hover:border-primary text-primary hover:text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 whitespace-nowrap flex-shrink-0 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                         {isGenerating ? <Wand2 className="animate-spin" size={16} /> : <Mic size={16} />}
-                        {isGenerating ? t("modules.voice.generating", undefined, "生成中...") : t("modules.voice.generateAll", undefined, "一键生成全部")}
+                        {isGenerating
+                            ? t(
+                                "modules.audio.batchInProgress",
+                                {
+                                    current: (audioBatch.status?.completed_count ?? 0) + (audioBatch.status?.failed_count ?? 0),
+                                    total: audioBatch.status?.pending_count ?? pendingAudioCount,
+                                },
+                                `Synthesizing ${(audioBatch.status?.completed_count ?? 0)}/${pendingAudioCount}`
+                            )
+                            : pendingAudioCount === 0
+                                ? t("modules.audio.batchAllDone", undefined, "已全部生成")
+                                : `${t("modules.voice.generateAll", undefined, "一键生成全部")} (${pendingAudioCount})`
+                        }
                     </button>
                 </div>
 

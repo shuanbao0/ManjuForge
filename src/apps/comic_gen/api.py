@@ -790,7 +790,11 @@ class ConfirmImportRequest(BaseModel):
 
 @app.post("/series/import/confirm")
 async def import_file_confirm(request: ConfirmImportRequest):
-    """Confirm the episode split and create Series + Episodes."""
+    """Confirm the episode split and create Series + Episodes (sync).
+
+    Sync; LLM split + persistence can take 10–60s. Prefer the
+    ``_async`` variant for production.
+    """
     try:
         # Prefer import_id from cache, fallback to request.text
         text = None
@@ -814,6 +818,34 @@ async def import_file_confirm(request: ConfirmImportRequest):
     except Exception as e:
         logger.exception("Import confirm failed")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/series/import/confirm_async")
+async def import_file_confirm_async(
+    request: ConfirmImportRequest, background_tasks: BackgroundTasks
+):
+    """Async variant of :pyfunc:`import_file_confirm`.
+
+    Note ``_import_cache.pop`` runs *eagerly* on the request thread to
+    grab the cached text before the background worker starts —
+    otherwise a slow worker scheduling could let the cache TTL expire.
+    """
+    text = None
+    if request.import_id:
+        text = pipeline._import_cache.pop(request.import_id, None)
+    if not text:
+        text = request.text
+    if not text:
+        raise HTTPException(status_code=400, detail="No text available. Provide import_id or text.")
+
+    return _async_oneshot(
+        task_type="series_import_confirm",
+        script_id=None,
+        work=lambda: pipeline.create_series_from_import(
+            request.title, text, request.episodes, request.description,
+        ),
+        background_tasks=background_tasks,
+    )
 
 
 class EnvConfig(ProviderRoutingConfig):
@@ -1253,6 +1285,9 @@ async def refine_storyboard_prompt(script_id: str, request: RefinePromptRequest)
     """
     Refines a raw prompt into bilingual (CN/EN) prompts using AI (Prompt C).
     Returns the refined prompts and optionally updates the frame.
+
+    Synchronous version kept for back-compat. New clients should prefer
+    the ``_async`` variant which avoids upstream gateway timeouts.
     """
     try:
         result = pipeline.refine_frame_prompt(
@@ -1270,9 +1305,51 @@ async def refine_storyboard_prompt(script_id: str, request: RefinePromptRequest)
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _async_oneshot(
+    *,
+    task_type: str,
+    script_id: Optional[str],
+    work,
+    background_tasks: BackgroundTasks,
+):
+    """Helper: register a one-shot task and dispatch the work in
+    background. Returns ``{"_task_id": ...}`` so the client knows what
+    to poll. Centralizes the create→register→dispatch dance.
+    """
+    task_id = pipeline._register_task(task_type=task_type, script_id=script_id)
+    _ctx_runtime.add_background_task(
+        background_tasks, pipeline._run_one_shot, task_id, work
+    )
+    return {"_task_id": task_id}
+
+
+@app.post("/projects/{script_id}/storyboard/refine_prompt_async")
+async def refine_storyboard_prompt_async(
+    script_id: str, request: RefinePromptRequest, background_tasks: BackgroundTasks
+):
+    """Async variant of :pyfunc:`refine_storyboard_prompt`. Returns
+    ``{ _task_id }``; client polls ``/tasks/{id}`` for the polished
+    bilingual prompt in ``status['result']``.
+    """
+    if not pipeline.get_script(script_id):
+        raise HTTPException(status_code=404, detail="Script not found")
+    return _async_oneshot(
+        task_type="storyboard_refine_prompt",
+        script_id=script_id,
+        work=lambda: pipeline.refine_frame_prompt(
+            script_id, request.frame_id, request.raw_prompt, request.assets, request.feedback,
+        ),
+        background_tasks=background_tasks,
+    )
+
+
 @app.post("/projects/{script_id}/generate_storyboard", response_model=Script)
 async def generate_storyboard(script_id: str):
-    """Triggers storyboard generation."""
+    """Triggers storyboard generation (legacy synchronous batch).
+
+    Prefer ``POST /projects/{id}/storyboard/render_all`` — same effect but
+    async with progress polling, won't trip upstream gateway timeouts.
+    """
     try:
         updated_script = pipeline.generate_storyboard(script_id)
         return signed_response(updated_script)
@@ -1280,10 +1357,54 @@ async def generate_storyboard(script_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class RenderAllRequest(BaseModel):
+    force: bool = False  # True = re-render frames that already have images
+
+
+@app.post("/projects/{script_id}/storyboard/render_all")
+async def render_all_storyboard(
+    script_id: str,
+    request: RenderAllRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Render every eligible storyboard frame asynchronously.
+
+    Eligible = not locked, and (no image yet | ``force=true``). The endpoint
+    returns immediately with ``_task_id``; the client polls
+    ``/tasks/{task_id}`` for granular progress
+    (``completed_count`` / ``failed_count`` / ``current_frame_id`` / ``errors``).
+
+    Each frame is rendered using its own tuned ``image_prompt`` and
+    ``composition_data`` — this is the batch counterpart of
+    ``/storyboard/render`` and shares the same per-frame logic.
+    """
+    try:
+        script, task_id = pipeline.create_storyboard_batch_render_task(
+            script_id, force=request.force
+        )
+        _ctx_runtime.add_background_task(
+            background_tasks,
+            pipeline.process_storyboard_batch_render_task,
+            task_id,
+        )
+        response_data = script.model_dump() if hasattr(script, "model_dump") else script.dict()
+        response_data["_task_id"] = task_id
+        return signed_response(response_data)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error in render_all_storyboard: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 
 @app.post("/projects/{script_id}/generate_video", response_model=Script)
 async def generate_video(script_id: str):
-    """Triggers video generation."""
+    """Triggers video generation (legacy synchronous batch).
+
+    Prefer ``POST /projects/{id}/video/render_all`` — same effect but
+    async with progress polling. Kept for back-compat with old clients.
+    """
     try:
         updated_script = pipeline.generate_video(script_id)
         return signed_response(updated_script)
@@ -1291,14 +1412,84 @@ async def generate_video(script_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class RenderAllVideoRequest(BaseModel):
+    force: bool = False
+
+
+@app.post("/projects/{script_id}/video/render_all")
+async def render_all_videos(
+    script_id: str,
+    request: RenderAllVideoRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Generate i2v videos for every eligible frame asynchronously.
+
+    Eligible = has source image AND (no video yet | ``force=true``).
+    Returns ``_task_id``; client polls ``/tasks/{id}`` for granular
+    progress (each frame produces a normal VideoTask record so the
+    Video panel UI shows live status alongside the batch progress bar).
+    """
+    try:
+        script, task_id = pipeline.create_video_batch_render_task(
+            script_id, force=request.force
+        )
+        _ctx_runtime.add_background_task(
+            background_tasks, pipeline.process_video_batch_render_task, task_id
+        )
+        response_data = script.model_dump() if hasattr(script, "model_dump") else script.dict()
+        response_data["_task_id"] = task_id
+        return signed_response(response_data)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error in render_all_videos: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/projects/{script_id}/generate_audio", response_model=Script)
 async def generate_audio(script_id: str):
-    """Triggers audio generation."""
+    """Triggers audio generation (legacy synchronous batch).
+
+    Prefer ``POST /projects/{id}/audio/render_all`` — same effect but
+    async with progress polling. Kept for back-compat with old clients.
+    """
     try:
         updated_script = pipeline.generate_audio(script_id)
         return signed_response(updated_script)
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class RenderAllAudioRequest(BaseModel):
+    force: bool = False
+
+
+@app.post("/projects/{script_id}/audio/render_all")
+async def render_all_audio(
+    script_id: str,
+    request: RenderAllAudioRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Synthesize dialogue + SFX for every eligible frame asynchronously.
+
+    Eligible = has source material (dialogue or action_description) AND
+    (corresponding output missing | ``force=true``). Returns
+    ``_task_id``; client polls ``/tasks/{id}``.
+    """
+    try:
+        script, task_id = pipeline.create_audio_batch_render_task(
+            script_id, force=request.force
+        )
+        _ctx_runtime.add_background_task(
+            background_tasks, pipeline.process_audio_batch_render_task, task_id
+        )
+        response_data = script.model_dump() if hasattr(script, "model_dump") else script.dict()
+        response_data["_task_id"] = task_id
+        return signed_response(response_data)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error in render_all_audio: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1899,10 +2090,14 @@ class RenderFrameRequest(BaseModel):
 
 @app.post("/projects/{script_id}/storyboard/render", response_model=Script)
 async def render_frame(script_id: str, request: RenderFrameRequest):
-    """Renders a specific frame using composition data (I2I)."""
+    """Renders a specific frame using composition data (I2I).
+
+    Sync; can take 10–60s. Prefer the ``_async`` variant for production
+    deployments behind short-timeout gateways.
+    """
     try:
         logger.info(f"Rendering frame {request.frame_id}")
-        
+
         updated_script = pipeline.generate_storyboard_render(
             script_id,
             request.frame_id,
@@ -1916,6 +2111,26 @@ async def render_frame(script_id: str, request: RenderFrameRequest):
     except Exception as e:
         logger.exception(f"Error rendering frame {request.frame_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/projects/{script_id}/storyboard/render_async")
+async def render_frame_async(
+    script_id: str, request: RenderFrameRequest, background_tasks: BackgroundTasks
+):
+    """Async variant of :pyfunc:`render_frame`. Returns ``_task_id``;
+    client polls ``/tasks/{id}`` until completed (no result payload —
+    on completion, refetch the project to get the new image)."""
+    if not pipeline.get_script(script_id):
+        raise HTTPException(status_code=404, detail="Script not found")
+    return _async_oneshot(
+        task_type="storyboard_render_single",
+        script_id=script_id,
+        work=lambda: pipeline.generate_storyboard_render(
+            script_id, request.frame_id, request.composition_data,
+            request.prompt, request.batch_size,
+        ),
+        background_tasks=background_tasks,
+    )
 
 
 class SelectVideoRequest(BaseModel):
@@ -1975,26 +2190,27 @@ async def upload_frame_image(script_id: str, frame_id: str, file: UploadFile = F
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/projects/{script_id}/merge", response_model=Script)
-async def merge_videos(script_id: str):
-    """Merge all selected frame videos into final output"""
-    import traceback
+@app.post("/projects/{script_id}/merge")
+async def merge_videos(script_id: str, background_tasks: BackgroundTasks):
+    """Merge all selected frame videos into final output (async).
+
+    FFmpeg can take 30 s – several minutes; running it synchronously
+    used to trip upstream gateways with 504. The endpoint now returns
+    ``_task_id`` immediately; client polls ``/tasks/{task_id}`` until
+    ``status == 'completed'`` then reads ``output_url``.
+    """
     try:
-        merged_script = pipeline.merge_videos(script_id)
-        return signed_response(merged_script)
+        script, task_id = pipeline.create_export_task(script_id, params={})
+        _ctx_runtime.add_background_task(
+            background_tasks, pipeline.process_export_task, task_id
+        )
+        response_data = script.model_dump() if hasattr(script, "model_dump") else script.dict()
+        response_data["_task_id"] = task_id
+        return signed_response(response_data)
     except ValueError as e:
-        # Known validation errors (no videos, etc.)
-        logger.error(f"[MERGE ERROR] Validation failed: {e}")
-        logger.exception("An error occurred")
         raise HTTPException(status_code=400, detail=str(e))
-    except RuntimeError as e:
-        # FFmpeg or processing errors
-        logger.error(f"[MERGE ERROR] Runtime error: {e}")
-        logger.exception("An error occurred")
-        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
-        logger.error(f"[MERGE ERROR] Unexpected error: {e}")
-        logger.exception("An error occurred")
+        logger.error(f"[MERGE ERROR] {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Merge failed: {str(e)}")
 
 
@@ -2004,36 +2220,37 @@ class ExportRequest(BaseModel):
     resolution: str = "1080p"
     format: str = "mp4"
     subtitles: str = "none"
+    force: bool = False  # True = re-merge even if cached merged_video_url exists
+
 
 @app.post("/projects/{script_id}/export")
-async def export_project(script_id: str, request: ExportRequest):
-    """Export project video by merging all selected frame videos.
+async def export_project(
+    script_id: str, request: ExportRequest, background_tasks: BackgroundTasks
+):
+    """Export the project video (async).
 
-    Currently delegates to the existing merge_videos pipeline.
-    resolution/format/subtitles parameters are accepted but not yet applied
-    (requires FFmpeg pipeline iteration).
+    Wraps :pyfunc:`merge_videos` with the same task-polling pattern.
+    ``resolution`` / ``format`` / ``subtitles`` are accepted for forward
+    compatibility but not yet applied to the FFmpeg command.
+
+    Returns ``{ ..., _task_id }``. Client polls ``/tasks/{task_id}``;
+    when ``status == 'completed'``, ``output_url`` holds the merged file
+    URL (relative path, sign via OSS if needed on the client).
     """
     try:
-        script = pipeline.get_script(script_id)
-        if not script:
-            raise HTTPException(status_code=404, detail="Project not found")
-
-        # If already merged, return existing URL directly
-        if script.merged_video_url:
-            return signed_response({"url": script.merged_video_url})
-
-        # Otherwise, run merge pipeline
-        merged_script = pipeline.merge_videos(script_id)
-        return signed_response({"url": merged_script.merged_video_url})
-    except HTTPException:
-        raise
+        script, task_id = pipeline.create_export_task(
+            script_id, params={"force": request.force}
+        )
+        _ctx_runtime.add_background_task(
+            background_tasks, pipeline.process_export_task, task_id
+        )
+        response_data = script.model_dump() if hasattr(script, "model_dump") else script.dict()
+        response_data["_task_id"] = task_id
+        return signed_response(response_data)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
-        logger.error(f"[EXPORT ERROR] {e}")
-        logger.exception("An error occurred")
+        logger.error(f"[EXPORT ERROR] {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
 
 
@@ -2070,6 +2287,26 @@ async def analyze_script_for_styles(script_id: str, request: AnalyzeStyleRequest
         import traceback
         logger.exception("An error occurred")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/projects/{script_id}/art_direction/analyze_async")
+async def analyze_script_for_styles_async(
+    script_id: str, request: AnalyzeStyleRequest, background_tasks: BackgroundTasks
+):
+    """Async variant of art-direction analyze. Returns ``_task_id``;
+    poll ``/tasks/{id}`` for ``{recommendations: [...]}`` in ``status['result']``."""
+    if not pipeline.get_script(script_id):
+        raise HTTPException(status_code=404, detail="Script not found")
+    return _async_oneshot(
+        task_type="art_direction_analyze",
+        script_id=script_id,
+        work=lambda: {
+            "recommendations": pipeline.script_processor.analyze_script_for_styles(
+                request.script_text
+            )
+        },
+        background_tasks=background_tasks,
+    )
 
 
 @app.post("/projects/{script_id}/art_direction/save", response_model=Script)
@@ -2163,6 +2400,29 @@ async def polish_video_prompt(request: PolishVideoPromptRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def _polish_video_work(req: "PolishVideoPromptRequest"):
+    custom_prompt = _get_custom_prompt(req.script_id, "video_polish")
+    processor = ScriptProcessor()
+    result = processor.polish_video_prompt(req.draft_prompt, req.feedback, custom_prompt)
+    return {
+        "prompt_cn": result.get("prompt_cn", ""),
+        "prompt_en": result.get("prompt_en", ""),
+    }
+
+
+@app.post("/video/polish_prompt_async")
+async def polish_video_prompt_async(
+    request: PolishVideoPromptRequest, background_tasks: BackgroundTasks
+):
+    """Async variant — poll ``/tasks/{id}`` for ``status['result']``."""
+    return _async_oneshot(
+        task_type="video_polish_prompt",
+        script_id=request.script_id or None,
+        work=lambda: _polish_video_work(request),
+        background_tasks=background_tasks,
+    )
+
+
 class RefSlot(BaseModel):
     description: str  # Character name, e.g., "雷震", "白兔"
 
@@ -2190,6 +2450,30 @@ async def polish_r2v_prompt(request: PolishR2VPromptRequest):
         import traceback
         logger.exception("An error occurred")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _polish_r2v_work(req: "PolishR2VPromptRequest"):
+    custom_prompt = _get_custom_prompt(req.script_id, "r2v_polish")
+    processor = ScriptProcessor()
+    slot_info = [{"description": s.description} for s in req.slots]
+    result = processor.polish_r2v_prompt(req.draft_prompt, slot_info, req.feedback, custom_prompt)
+    return {
+        "prompt_cn": result.get("prompt_cn", ""),
+        "prompt_en": result.get("prompt_en", ""),
+    }
+
+
+@app.post("/video/polish_r2v_prompt_async")
+async def polish_r2v_prompt_async(
+    request: PolishR2VPromptRequest, background_tasks: BackgroundTasks
+):
+    """Async variant — poll ``/tasks/{id}`` for ``status['result']``."""
+    return _async_oneshot(
+        task_type="video_polish_r2v_prompt",
+        script_id=request.script_id or None,
+        work=lambda: _polish_r2v_work(request),
+        background_tasks=background_tasks,
+    )
 
 
 # ===== Environment Configuration Endpoints =====

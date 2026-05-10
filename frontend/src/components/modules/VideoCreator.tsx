@@ -22,6 +22,7 @@ import { getAssetUrl, getAssetUrlWithTimestamp } from "@/lib/utils";
 import PromptBuilder, { PromptSegment, PromptBuilderRef } from "./PromptBuilder";
 import type { VideoParams } from "@/store/projectStore";
 import { useTranslation } from "@/i18n";
+import { useAsyncTask } from "@/hooks/useAsyncTask";
 
 interface VideoCreatorProps {
     onTaskCreated: (project: any) => void;
@@ -31,10 +32,51 @@ interface VideoCreatorProps {
     onParamsChange: (params: Partial<VideoParams>) => void;
 }
 
+// Mirror of pipeline._should_render_video so the batch button can show
+// an accurate pending count and self-disable when nothing's eligible.
+function isFramePendingVideo(frame: any): boolean {
+    if (!frame) return false;
+    if (!(frame.image_url || frame.rendered_image_url)) return false;
+    if (frame.video_url) return false;
+    if (frame.selected_video_id) return false;
+    return true;
+}
+
 export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, params, onParamsChange }: VideoCreatorProps) {
     const { t } = useTranslation();
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
+
+    const pendingVideoCount = (currentProject?.frames || []).filter(isFramePendingVideo).length;
+    const videoBatch = useAsyncTask({
+        submit: () => api.renderAllVideos(currentProject!.id, false),
+        onPeriodicRefresh: async () => {
+            const fresh = await api.getProject(currentProject!.id);
+            updateProject(currentProject!.id, fresh);
+        },
+        onComplete: async (s) => {
+            const fresh = await api.getProject(currentProject!.id);
+            updateProject(currentProject!.id, fresh);
+            const ok = s.completed_count ?? 0;
+            const fail = s.failed_count ?? 0;
+            alert(
+                fail === 0
+                    ? t("modules.video.batchAllSuccess", { count: ok }, `All ${ok} videos generated.`)
+                    : t("modules.video.batchComplete", { success: ok, failed: fail }, `${ok} succeeded, ${fail} failed.`)
+            );
+        },
+        onFail: (err) => alert(`${t("modules.video.batchFailed", undefined, "Batch video gen failed")}: ${err.message}`),
+    });
+    const handleBatchVideo = () => {
+        if (!currentProject || pendingVideoCount === 0 || videoBatch.active) return;
+        const msg = t(
+            "modules.video.batchConfirm",
+            { count: pendingVideoCount },
+            `Generate ${pendingVideoCount} videos? This may take several minutes.`
+        );
+        if (!confirm(msg)) return;
+        videoBatch.start();
+    };
 
     // Helper function to generate motion description text
     const getMotionDescription = () => {
@@ -543,11 +585,36 @@ export default function VideoCreator({ onTaskCreated, remixData, onRemixClear, p
         <div className="h-full flex flex-col relative min-h-0">
             {/* Scrollable Content Area */}
             <div className="flex-1 overflow-y-auto p-8 custom-scrollbar min-h-0">
-                <h2 className="text-2xl font-display font-bold text-white mb-6 flex items-center gap-3">
-                    <div className="w-2 h-8 bg-primary rounded-full" />
-                    {t("modules.video.heroTitle", undefined, "动态演译")}
-                    <span className="text-xs font-mono text-gray-500 bg-white/5 px-2 py-1 rounded">{t("modules.video.heroBadge", undefined, "Motion")}</span>
-                </h2>
+                <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-2xl font-display font-bold text-white flex items-center gap-3">
+                        <div className="w-2 h-8 bg-primary rounded-full" />
+                        {t("modules.video.heroTitle", undefined, "动态演译")}
+                        <span className="text-xs font-mono text-gray-500 bg-white/5 px-2 py-1 rounded">{t("modules.video.heroBadge", undefined, "Motion")}</span>
+                    </h2>
+                    <button
+                        onClick={handleBatchVideo}
+                        disabled={videoBatch.active || pendingVideoCount === 0}
+                        className="flex items-center gap-1.5 text-xs bg-emerald-600/80 hover:bg-emerald-600 px-3 py-2 rounded-lg text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        title={t("modules.video.batchTitle", undefined, "为所有未生成视频的帧批量生成")}
+                    >
+                        {videoBatch.active
+                            ? <Loader2 size={14} className="animate-spin" />
+                            : <Video size={14} />}
+                        {videoBatch.active
+                            ? t(
+                                "modules.video.batchInProgress",
+                                {
+                                    current: (videoBatch.status?.completed_count ?? 0) + (videoBatch.status?.failed_count ?? 0),
+                                    total: videoBatch.status?.pending_count ?? pendingVideoCount,
+                                },
+                                `Generating ${(videoBatch.status?.completed_count ?? 0)}/${pendingVideoCount}`
+                            )
+                            : pendingVideoCount === 0
+                                ? t("modules.video.batchAllDone", undefined, "已全部生成")
+                                : `${t("modules.video.batchButton", undefined, "渲染未生成")} (${pendingVideoCount})`
+                        }
+                    </button>
+                </div>
 
                 <div className="flex flex-col gap-6 max-w-4xl mx-auto w-full pb-8">
                     {/* Generation Mode Switcher */}

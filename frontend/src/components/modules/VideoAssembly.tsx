@@ -7,6 +7,7 @@ import { useProjectStore } from "@/store/projectStore";
 import { api, API_URL } from "@/lib/api";
 import { getAssetUrl, extractErrorDetail } from "@/lib/utils";
 import { useTranslation } from "@/i18n";
+import { useAsyncTask } from "@/hooks/useAsyncTask";
 
 export default function VideoAssembly() {
     const { t } = useTranslation();
@@ -14,7 +15,6 @@ export default function VideoAssembly() {
     const updateProject = useProjectStore((state) => state.updateProject);
 
     const [selectedFrameId, setSelectedFrameId] = useState<string | null>(null);
-    const [isMerging, setIsMerging] = useState(false);
     const [mergeError, setMergeError] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
 
@@ -44,28 +44,30 @@ export default function VideoAssembly() {
         }
     };
 
-    const handleMerge = async () => {
+    const mergeTask = useAsyncTask({
+        submit: () => api.mergeVideos(currentProject!.id),
+        onComplete: async () => {
+            // Pull fresh project so merged_video_url shows in UI.
+            const fresh = await api.getProject(currentProject!.id);
+            updateProject(currentProject!.id, fresh);
+            setMergeError(null);
+        },
+        onFail: (err) => {
+            const detail = extractErrorDetail(err, t(
+                "modules.assembly.unknownMergeError",
+                undefined,
+                "Unknown error occurred during video merge"
+            ));
+            setMergeError(detail);
+            alert(`${t("modules.assembly.assembleFailed")}:\n\n${detail}`);
+        },
+    });
+
+    const isMerging = mergeTask.active;
+    const handleMerge = () => {
         if (!currentProject) return;
-        setIsMerging(true);
-        setMergeError(null);  // Clear previous errors
-
-        try {
-            const updatedProject = await api.mergeVideos(currentProject.id);
-            updateProject(currentProject.id, updatedProject);
-            // Success - error will be null, merged video will show below
-        } catch (error: any) {
-            console.error("Failed to merge videos:", error);
-
-            // Extract detailed error message from backend
-            const errorDetail = extractErrorDetail(error, t("modules.assembly.unknownMergeError", undefined, "Unknown error occurred during video merge"));
-
-            setMergeError(errorDetail);
-
-            // Also show alert for immediate feedback
-            alert(`${t("modules.assembly.assembleFailed")}:\n\n${errorDetail}`);
-        } finally {
-            setIsMerging(false);
-        }
+        setMergeError(null);
+        mergeTask.start();
     };
 
 

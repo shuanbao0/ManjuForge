@@ -1,4 +1,5 @@
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Tuple, Callable, Iterator
+from contextlib import contextmanager
 import json
 import os
 import re
@@ -468,11 +469,11 @@ class ComicGenPipeline:
         if not task:
             # Then check video tasks
             task = self.video_generation_tasks.get(task_id)
-            
+
         if not task:
             return None
-        
-        return {
+
+        result = {
             "task_id": task_id,
             "status": task["status"],
             "progress": task.get("progress", 0),
@@ -480,8 +481,169 @@ class ComicGenPipeline:
             "asset_id": task.get("asset_id"),
             "asset_type": task.get("asset_type"),
             "script_id": task.get("script_id"),
-            "created_at": task.get("created_at")
+            "created_at": task.get("created_at"),
         }
+        # Surface batch-render + one-shot fields when present so the frontend
+        # can render granular progress / pull results without a separate
+        # endpoint. Keys absent from the task dict are simply omitted.
+        for key in (
+            "task_type",
+            "total_count",
+            "pending_count",
+            "completed_count",
+            "failed_count",
+            "current_item_id",
+            "current_frame_id",  # legacy alias kept for storyboard batch
+            "current_stage",     # used by export pipeline
+            "errors",
+            "result",            # one-shot return value (LLM tasks)
+            "output_url",        # export tasks
+        ):
+            if key in task:
+                result[key] = task[key]
+        return result
+
+    # === Async-task primitives =============================================
+    #
+    # Three building blocks every async endpoint composes from. They exist
+    # because we found ourselves rewriting the same status-machine
+    # boilerplate (pending→processing→completed/failed) in every new
+    # ``process_X_task`` method. Centralizing means each new background
+    # job is ~10 lines of business logic instead of 30 lines of plumbing.
+    #
+    # Pattern in use:
+    #   task_id = self._register_task(task_type="...", script_id=sid, ...)
+    #   # later, on the worker thread:
+    #   def process_X_task(self, task_id):
+    #       with self._task_lifecycle(task_id) as task:
+    #           # business logic; raise to mark failed, normal return = ok
+    #           ...
+
+    def _register_task(
+        self,
+        *,
+        task_type: str,
+        script_id: Optional[str] = None,
+        store: str = "asset",
+        **fields: Any,
+    ) -> str:
+        """Create + register a task dict and return its UUID.
+
+        Single source of truth for the task envelope shape. Every batch
+        field (``completed_count`` / ``failed_count`` / ``errors`` /
+        ``current_item_id``) is initialized here so ``/tasks/{id}`` can
+        always read them without ``KeyError``.
+
+        Pass extra task-specific keys via ``**fields`` (e.g. ``params``,
+        ``asset_id``, ``asset_type``).
+        """
+        task_id = str(uuid.uuid4())
+        envelope: Dict[str, Any] = {
+            "task_type": task_type,
+            "status": "pending",
+            "progress": 0,
+            "error": None,
+            "script_id": script_id,
+            "created_at": time.time(),
+            "completed_count": 0,
+            "failed_count": 0,
+            "errors": {},
+            "current_item_id": None,
+        }
+        envelope.update(fields)
+        if store == "video":
+            self.video_generation_tasks[task_id] = envelope
+        else:
+            self.asset_generation_tasks[task_id] = envelope
+        return task_id
+
+    def _get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
+        return (
+            self.asset_generation_tasks.get(task_id)
+            or self.video_generation_tasks.get(task_id)
+        )
+
+    @contextmanager
+    def _task_lifecycle(self, task_id: str) -> Iterator[Dict[str, Any]]:
+        """Status state-machine: pending→processing→completed/failed.
+
+        Catches and records any exception so workers focus on business
+        logic only. A worker that wants to *succeed early* (no work to
+        do) can ``return`` normally; one that wants to *fail* can raise.
+        """
+        task = self._get_task(task_id)
+        if task is None:
+            # Defensive: a vanished task ID is a programmer error, not a
+            # user-facing failure. Yield a transient throwaway dict so the
+            # ``with`` block doesn't explode, and log loudly.
+            logger.error(f"Task {task_id} not found")
+            yield {"status": "failed", "error": "task vanished", "progress": 0}
+            return
+        task["status"] = "processing"
+        try:
+            yield task
+            # Worker may have already set status (e.g. "completed" after
+            # a partial-failure batch). Only finalize if still in flight.
+            if task["status"] == "processing":
+                task["status"] = "completed"
+                task["progress"] = 100
+        except Exception as e:
+            task["status"] = "failed"
+            task["error"] = str(e)
+            logger.exception(f"Task {task_id} failed: {e}")
+
+    def _run_per_item_batch(
+        self,
+        task_id: str,
+        items: List[Any],
+        work: Callable[[Any], None],
+        item_id: Callable[[Any], str] = lambda x: x.id,
+    ) -> None:
+        """Iterate items, isolate per-item failures, persist after each.
+
+        Generic worker shared by storyboard/video/audio batch tasks.
+        ``work`` is the per-item Strategy: it raises on failure, returns
+        on success. Exceptions are recorded into ``task['errors'][iid]``
+        so the batch keeps marching even if one item explodes.
+        """
+        task = self._get_task(task_id)
+        if task is None:
+            return
+        total = len(items)
+        if total == 0:
+            return
+        for idx, item in enumerate(items, start=1):
+            iid = item_id(item)
+            task["current_item_id"] = iid
+            try:
+                work(item)
+                task["completed_count"] += 1
+            except Exception as e:
+                task["failed_count"] += 1
+                task["errors"][iid] = str(e)
+                logger.exception(f"Batch {task_id}: item {iid} failed: {e}")
+            task["progress"] = int(idx / total * 100)
+            try:
+                self._save_data()
+            except Exception:
+                logger.exception("Batch: _save_data failed (continuing)")
+        task["current_item_id"] = None
+
+    def _run_one_shot(
+        self,
+        task_id: str,
+        work: Callable[[], Any],
+    ) -> None:
+        """Run ``work()`` once inside the task lifecycle; stash its return
+        value into ``task['result']`` for the client to fetch via
+        ``/tasks/{id}``.
+
+        Used for LLM polish / analyze calls — short single operations
+        whose **return value** is what the caller needs (vs. batch tasks
+        which mutate persisted project state).
+        """
+        with self._task_lifecycle(task_id) as task:
+            task["result"] = work()
 
     def create_motion_ref_task(self, script_id: str, asset_id: str, asset_type: str, 
                                 prompt: Optional[str] = None, audio_url: Optional[str] = None, 
@@ -1064,14 +1226,147 @@ class ComicGenPipeline:
         }
 
     def generate_storyboard(self, script_id: str) -> Script:
-        """Step 3: Generate storyboard images (Initial/Batch)."""
+        """Step 3: Generate storyboard images (Initial/Batch).
+
+        Synchronous full-batch render kept for back-compat. New code should
+        use ``create_storyboard_batch_render_task`` (async, skips frames the
+        user already has, uses each frame's tuned prompt + selected refs).
+        """
         script = self.scripts.get(script_id)
         if not script:
             raise ValueError("Script not found")
-            
+
         script = self.storyboard_generator.generate_storyboard(script)
         self._save_data()
         return script
+
+    # === Storyboard batch render (async) ==================================
+    #
+    # Design notes
+    # ------------
+    # We deliberately split *eligibility* (``_should_render_frame``) from
+    # *execution* (``_render_single_frame``) so the rule for skipping
+    # already-rendered / locked frames can be unit-tested in isolation
+    # and reused by future endpoints (e.g. "render selected frames"). The
+    # batch worker iterates frames, applies the predicate, and on each
+    # success/failure updates the task dict so the frontend's existing
+    # ``/tasks/{id}`` poll surfaces granular progress without WebSockets.
+
+    @staticmethod
+    def _should_render_frame(frame: StoryboardFrame, force: bool = False) -> bool:
+        """Predicate: should the batch worker render this frame?
+
+        Locked frames are *never* rendered (the lock is the user's "don't
+        touch" signal). When ``force=False`` we additionally skip frames
+        that already have an output image.
+        """
+        if frame.locked:
+            return False
+        if force:
+            return True
+        has_image = bool(getattr(frame, "rendered_image_url", None) or frame.image_url)
+        return not has_image
+
+    def _render_single_frame(self, script: Script, frame: StoryboardFrame) -> None:
+        """Render one frame using the prompts + composition stored on the
+        frame itself.
+
+        This is the batch path's per-frame work. It mirrors what
+        :meth:`generate_storyboard_render` does for the single-frame
+        endpoint, but pulls inputs from frame state instead of HTTP body
+        — so frames the user has already tuned (refined prompts, selected
+        composition refs) get rendered with their tuned values rather
+        than auto-defaults.
+        """
+        # Prompt priority: refined EN > legacy image_prompt > auto-built fallback.
+        # The model expects English; CN is for user display only.
+        prompt = frame.image_prompt_en or frame.image_prompt or ""
+
+        # Reference paths: prefer composition_data (canvas-selected refs)
+        # if the user has touched composition; else pass empty so
+        # ``StoryboardGenerator.generate_frame`` auto-collects from the
+        # frame's character_ids + scene_id.
+        ref_image_paths: List[str] = []
+        composition = frame.composition_data or {}
+        ref_urls: List[str] = list(composition.get("reference_image_urls") or [])
+        single = composition.get("reference_image_url")
+        if single and single not in ref_urls:
+            ref_urls.insert(0, single)
+
+        for url in ref_urls:
+            if not url:
+                continue
+            if is_object_key(url) or url.startswith("http"):
+                ref_image_paths.append(url)
+            else:
+                potential = _safe_resolve_path(self.data_root, url)
+                if os.path.exists(potential):
+                    ref_image_paths.append(potential)
+
+        scene = next((s for s in script.scenes if s.id == frame.scene_id), None)
+
+        from .assets import ASPECT_RATIO_TO_SIZE
+        aspect = script.model_settings.storyboard_aspect_ratio
+        effective_size = ASPECT_RATIO_TO_SIZE.get(aspect, "1024*576")
+
+        with scoped_instance(script.model_settings.i2i_instance_id, InstanceType.I2I) as i2i_inst:
+            i2i_model = model_name_or("wan2.6-image", i2i_inst)
+            self.storyboard_generator.generate_frame(
+                frame,
+                script.characters,
+                scene,
+                ref_image_path=ref_image_paths[0] if ref_image_paths else None,
+                ref_image_paths=ref_image_paths,
+                prompt=prompt or None,
+                batch_size=1,
+                size=effective_size,
+                model_name=i2i_model,
+            )
+
+    def create_storyboard_batch_render_task(
+        self, script_id: str, force: bool = False
+    ) -> Tuple[Script, str]:
+        """Register an async batch-render task and return ``(script, task_id)``.
+
+        The actual rendering runs in :meth:`process_storyboard_batch_render_task`
+        on a BackgroundTask worker. The endpoint returns immediately so no
+        upstream gateway can time the connection out.
+        """
+        script = self.scripts.get(script_id)
+        if not script:
+            raise ValueError("Script not found")
+
+        pending_ids = [
+            f.id for f in script.frames if self._should_render_frame(f, force=force)
+        ]
+        task_id = self._register_task(
+            task_type="storyboard_batch_render",
+            script_id=script_id,
+            params={"force": force},
+            total_count=len(script.frames),
+            pending_count=len(pending_ids),
+        )
+        return script, task_id
+
+    def process_storyboard_batch_render_task(self, task_id: str) -> None:
+        """Worker for ``create_storyboard_batch_render_task``.
+
+        Renders every eligible frame using each frame's own tuned
+        ``image_prompt`` + ``composition_data``. Per-frame failures are
+        isolated; partial progress is persisted after each frame so a
+        crash mid-batch loses at most the in-flight frame.
+        """
+        with self._task_lifecycle(task_id) as task:
+            script = self.scripts.get(task["script_id"])
+            if not script:
+                raise ValueError("Script not found")
+            force = bool(task["params"].get("force", False))
+            pending = [
+                f for f in script.frames if self._should_render_frame(f, force=force)
+            ]
+            self._run_per_item_batch(
+                task_id, pending, lambda f: self._render_single_frame(script, f)
+            )
 
     def update_frame(self, script_id: str, frame_id: str, **kwargs) -> Script:
         """Update frame data (prompt, scene_id, character_ids, etc.)."""
@@ -1881,6 +2176,240 @@ class ComicGenPipeline:
             user_msg = self._extract_ffmpeg_error_message(stderr_msg, abs_video_paths)
             raise RuntimeError(user_msg)
     
+    # === Video batch render (async) =======================================
+
+    @staticmethod
+    def _should_render_video(frame: StoryboardFrame, force: bool = False) -> bool:
+        """Predicate: should the batch worker render a clip for this frame?
+
+        i2v needs a source image. A frame whose image hasn't been
+        generated yet is silently skipped — the user has to render the
+        storyboard image first. Already-rendered videos
+        (``frame.video_url`` set, or ``frame.selected_video_id`` set)
+        are skipped unless ``force=True``.
+        """
+        # Cannot generate video without a source image.
+        if not (frame.image_url or getattr(frame, "rendered_image_url", None)):
+            return False
+        if force:
+            return True
+        if frame.video_url:
+            return False
+        if getattr(frame, "selected_video_id", None):
+            return False
+        return True
+
+    def _render_single_video(self, script: Script, frame: StoryboardFrame) -> None:
+        """Per-frame video render used by the batch worker.
+
+        Enqueues a VideoTask using sensible defaults pulled from the
+        frame (image, prompt, duration), then runs the existing
+        single-task worker (``process_video_task``) inline. Each frame
+        keeps its own VideoTask record so the regular Video panel UI
+        shows live status during the batch.
+        """
+        image_url = frame.image_url or getattr(frame, "rendered_image_url", None)
+        if not image_url:
+            raise ValueError("frame has no source image")
+        prompt = frame.video_prompt or frame.image_prompt_en or frame.image_prompt or frame.action_description or ""
+        # Inherit duration default from CreateVideoTaskRequest (5s) — anything
+        # the user customized lives on a per-task creation flow that doesn't
+        # apply to batch.
+        _, vtask_id = self.create_video_task(
+            script.id,
+            image_url=image_url,
+            prompt=prompt,
+            frame_id=frame.id,
+        )
+        self.process_video_task(script.id, vtask_id)
+
+    def create_video_batch_render_task(
+        self, script_id: str, force: bool = False
+    ) -> Tuple[Script, str]:
+        """Register an async batch i2v task and return ``(script, task_id)``."""
+        script = self.scripts.get(script_id)
+        if not script:
+            raise ValueError("Script not found")
+
+        pending_ids = [
+            f.id for f in script.frames if self._should_render_video(f, force=force)
+        ]
+        task_id = self._register_task(
+            task_type="video_batch_render",
+            script_id=script_id,
+            params={"force": force},
+            total_count=len(script.frames),
+            pending_count=len(pending_ids),
+        )
+        return script, task_id
+
+    def process_video_batch_render_task(self, task_id: str) -> None:
+        with self._task_lifecycle(task_id) as task:
+            script = self.scripts.get(task["script_id"])
+            if not script:
+                raise ValueError("Script not found")
+            force = bool(task["params"].get("force", False))
+            pending = [
+                f for f in script.frames if self._should_render_video(f, force=force)
+            ]
+            self._run_per_item_batch(
+                task_id, pending, lambda f: self._render_single_video(script, f)
+            )
+
+    # === Audio batch render (async) =======================================
+
+    @staticmethod
+    def _should_render_audio(frame: StoryboardFrame, force: bool = False) -> bool:
+        """Predicate: should the batch worker render audio for this frame?
+
+        A frame is "pending audio" if it has source material (dialogue
+        text or action description) but the corresponding output is
+        missing. With ``force=True``, any frame with source material
+        re-renders. Frames with neither dialogue nor action are silently
+        skipped — there's nothing to synthesize.
+        """
+        has_dialogue_source = bool(frame.dialogue)
+        has_sfx_source = bool(frame.action_description)
+        if not (has_dialogue_source or has_sfx_source):
+            return False
+        if force:
+            return True
+        if has_dialogue_source and not frame.audio_url:
+            return True
+        if has_sfx_source and not frame.sfx_url:
+            return True
+        return False
+
+    def _render_single_audio(self, script: Script, frame: StoryboardFrame) -> None:
+        """Per-frame audio synth (dialogue + SFX) used by the batch worker.
+
+        Bound to the script's TTS instance. Mirrors the inline body of
+        the legacy synchronous ``generate_audio`` so behavior matches
+        what users got from the old path.
+        """
+        with scoped_instance(script.model_settings.tts_instance_id, InstanceType.TTS):
+            if frame.dialogue:
+                speaker = None
+                if frame.character_ids:
+                    speaker = next(
+                        (c for c in script.characters if c.id == frame.character_ids[0]),
+                        None,
+                    )
+                if speaker:
+                    self.audio_generator.generate_dialogue(
+                        frame, speaker,
+                        speed=speaker.voice_speed,
+                        pitch=speaker.voice_pitch,
+                        volume=speaker.voice_volume,
+                    )
+            if frame.action_description:
+                self.audio_generator.generate_sfx(frame)
+            if frame.video_url:
+                self.audio_generator.generate_sfx_from_video(frame)
+
+    def create_audio_batch_render_task(
+        self, script_id: str, force: bool = False
+    ) -> Tuple[Script, str]:
+        """Register an async batch audio synth task."""
+        script = self.scripts.get(script_id)
+        if not script:
+            raise ValueError("Script not found")
+
+        pending_ids = [
+            f.id for f in script.frames if self._should_render_audio(f, force=force)
+        ]
+        task_id = self._register_task(
+            task_type="audio_batch_render",
+            script_id=script_id,
+            params={"force": force},
+            total_count=len(script.frames),
+            pending_count=len(pending_ids),
+        )
+        return script, task_id
+
+    def process_audio_batch_render_task(self, task_id: str) -> None:
+        with self._task_lifecycle(task_id) as task:
+            script = self.scripts.get(task["script_id"])
+            if not script:
+                raise ValueError("Script not found")
+            force = bool(task["params"].get("force", False))
+            pending = [
+                f for f in script.frames if self._should_render_audio(f, force=force)
+            ]
+            self._run_per_item_batch(
+                task_id, pending, lambda f: self._render_single_audio(script, f)
+            )
+
+    # === Export pipeline (async wrapper around merge_videos) ==============
+    #
+    # Coarse 3-stage progress (preflight → ffmpeg → finalize) keeps the
+    # contract simple: granular FFmpeg progress requires parsing -progress
+    # pipe output and is fiddly enough to defer until users ask. Each
+    # stage transition just bumps ``progress`` and ``current_stage``.
+
+    def create_export_task(
+        self, script_id: str, params: Optional[Dict[str, Any]] = None
+    ) -> Tuple[Script, str]:
+        """Register an async export task. Returns ``(script, task_id)``.
+
+        If the project already has a ``merged_video_url`` AND the caller
+        didn't ask to re-export (``params['force']`` falsy), the task
+        completes synchronously with the cached URL — saves users from
+        re-running FFmpeg on every re-export click.
+        """
+        _validate_safe_id(script_id, "script_id")
+        script = self.scripts.get(script_id)
+        if not script:
+            raise ValueError("Script not found")
+
+        params = params or {}
+        task_id = self._register_task(
+            task_type="export",
+            script_id=script_id,
+            params=params,
+            current_stage="pending",
+            output_url=None,
+        )
+
+        # Fast-path: cached merge result, no FFmpeg needed.
+        if script.merged_video_url and not params.get("force"):
+            task = self._get_task(task_id)
+            assert task is not None  # we just registered it
+            task["status"] = "completed"
+            task["progress"] = 100
+            task["current_stage"] = "cached"
+            task["output_url"] = script.merged_video_url
+
+        return script, task_id
+
+    def process_export_task(self, task_id: str) -> None:
+        """Worker for ``create_export_task``. Runs the FFmpeg merge in
+        three observable stages so the frontend can render a real
+        progress UI instead of an opaque spinner.
+        """
+        # Cached merge: ``create_export_task`` already finalized it, so
+        # there's nothing to do. Check *before* entering the lifecycle
+        # context — entering would reset status to "processing".
+        existing = self._get_task(task_id)
+        if existing and existing["status"] == "completed":
+            return
+
+        with self._task_lifecycle(task_id) as task:
+            script_id = task["script_id"]
+
+            task["current_stage"] = "preflight"
+            task["progress"] = 5
+            # merge_videos itself validates ffmpeg presence + frame video
+            # availability — let it raise so the lifecycle records error.
+
+            task["current_stage"] = "ffmpeg"
+            task["progress"] = 30
+            merged = self.merge_videos(script_id)
+
+            task["current_stage"] = "finalize"
+            task["progress"] = 95
+            task["output_url"] = merged.merged_video_url
+
     def _extract_ffmpeg_error_message(self, stderr: str, video_paths: List[str]) -> str:
         """
         Extract a user-friendly error message from ffmpeg stderr output.

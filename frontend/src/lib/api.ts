@@ -742,6 +742,11 @@ export const api = {
      * Refines a raw prompt into bilingual (CN/EN) prompts using AI.
      * Returns { prompt_cn, prompt_en, frame_updated }.
      */
+    /**
+     * Sync refine_prompt — kept for back-compat. Prefer
+     * :pyfunc:`refineFramePromptAsync` so long LLM calls don't trip
+     * upstream gateway timeouts.
+     */
     refineFramePrompt: async (scriptId: string, frameId: string, rawPrompt: string, assets: any[] = [], feedback: string = "") => {
         const res = await axios.post(`${API_URL}/projects/${scriptId}/storyboard/refine_prompt`, {
             frame_id: frameId,
@@ -752,8 +757,57 @@ export const api = {
         return res.data;
     },
 
+    /** Async variant — returns ``{ _task_id }``. Poll task and read ``status.result``. */
+    refineFramePromptAsync: async (scriptId: string, frameId: string, rawPrompt: string, assets: any[] = [], feedback: string = "") => {
+        const res = await axios.post(`${API_URL}/projects/${scriptId}/storyboard/refine_prompt_async`, {
+            frame_id: frameId,
+            raw_prompt: rawPrompt,
+            assets: assets,
+            feedback: feedback
+        });
+        return res.data;
+    },
+
+    /**
+     * One-shot helper: submit + poll for a one-shot task's result.
+     *
+     * Use when you need the result inline inside an async handler (i.e.
+     * outside of a React component where ``useAsyncTask`` would be the
+     * better choice). Polls ``/tasks/{id}`` every ``intervalMs`` (default
+     * 1.5s); resolves with the task's ``result`` payload on completion;
+     * rejects with the task's ``error`` on failure.
+     */
+    pollAsyncTaskResult: async <T = any>(submitResponse: { _task_id?: string; [k: string]: any }, intervalMs = 1500): Promise<T> => {
+        const taskId = submitResponse?._task_id;
+        if (!taskId) {
+            // Backwards-compat: server returned the result inline.
+            return submitResponse as unknown as T;
+        }
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+            await new Promise((r) => setTimeout(r, intervalMs));
+            // eslint-disable-next-line @typescript-eslint/no-use-before-define
+            const status: any = await api.getTaskStatus(taskId);
+            if (status.status === "completed") return status.result as T;
+            if (status.status === "failed") throw new Error(status.error || "task failed");
+        }
+    },
+
     generateStoryboard: async (scriptId: string) => {
         const res = await axios.post(`${API_URL}/projects/${scriptId}/generate_storyboard`);
+        return res.data;
+    },
+
+    /**
+     * Async batch render of every eligible storyboard frame.
+     * Returns ``{ ...script, _task_id }`` immediately. Caller polls
+     * ``getTaskStatus(task_id)`` for granular progress
+     * (``completed_count`` / ``failed_count`` / ``current_frame_id`` / ``errors``).
+     * ``force=true`` re-renders frames that already have images;
+     * locked frames are always skipped.
+     */
+    renderAllStoryboard: async (scriptId: string, force: boolean = false) => {
+        const res = await axios.post(`${API_URL}/projects/${scriptId}/storyboard/render_all`, { force });
         return res.data;
     },
 
@@ -801,6 +855,12 @@ export const api = {
         return response.json();
     },
 
+    /**
+     * Async export. Returns ``{ ...script, _task_id }`` immediately.
+     * Caller polls ``getTaskStatus(task_id)`` until ``status === 'completed'``;
+     * the merged video URL is then in ``output_url`` on the status response.
+     * Pass ``options.force = true`` to re-merge even if a cached result exists.
+     */
     exportProject: async (scriptId: string, options: any) => {
         const response = await authedFetch(`${API_URL}/projects/${scriptId}/export`, {
             method: "POST",
@@ -813,6 +873,18 @@ export const api = {
 
     generateVideo: async (scriptId: string) => {
         const res = await axios.post(`${API_URL}/projects/${scriptId}/generate_video`);
+        return res.data;
+    },
+
+    /** Async batch i2v: every eligible frame gets a video. Mirrors renderAllStoryboard. */
+    renderAllVideos: async (scriptId: string, force: boolean = false) => {
+        const res = await axios.post(`${API_URL}/projects/${scriptId}/video/render_all`, { force });
+        return res.data;
+    },
+
+    /** Async batch audio synth: dialogue + SFX for every eligible frame. */
+    renderAllAudio: async (scriptId: string, force: boolean = false) => {
+        const res = await axios.post(`${API_URL}/projects/${scriptId}/audio/render_all`, { force });
         return res.data;
     },
 
