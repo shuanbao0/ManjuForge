@@ -13,23 +13,25 @@ class VideoGenerator:
         self.data_root = self.config.get('data_root', 'output')
         self.output_dir = self.config.get('output_dir', os.path.join(self.data_root, 'video'))
 
-    def generate_i2v(self, image_url: str, prompt: str, duration: int = 5, audio_url: str = None) -> Dict[str, Any]:
+    def generate_i2v(self, image_url: str, prompt: str, duration: int = 5, audio_url: str = None, model_name: str = None) -> Dict[str, Any]:
         """
         Generate Image-to-Video for motion reference.
-        
+
         Args:
             image_url: Source image URL (can be local path or remote URL)
             prompt: Motion description prompt
             duration: Video duration in seconds (default 5)
             audio_url: Optional audio URL to drive lip-sync
-            
+            model_name: Override model id (e.g. resolved from a ModelInstance);
+                falls back to wanx default when None.
+
         Returns:
             Dict with video_url key containing the generated video URL
         """
         import uuid
-        
-        logger.info(f"Generating I2V motion reference: prompt={prompt[:50]}..., duration={duration}")
-        
+
+        logger.info(f"Generating I2V motion reference: prompt={prompt[:50]}..., duration={duration}, model={model_name or '<default>'}")
+
         # Handle local file paths
         img_path = None
         if image_url and not image_url.startswith("http"):
@@ -38,17 +40,18 @@ class VideoGenerator:
                 img_path = os.path.abspath(potential_path)
             elif os.path.exists(image_url):
                 img_path = image_url
-        
+
         try:
             output_filename = f"motion_ref_{uuid.uuid4().hex[:8]}.mp4"
             output_path = os.path.join(self.output_dir, output_filename)
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            
+
             video_path, _ = self.model.generate(
                 prompt=prompt,
                 output_path=output_path,
                 img_path=img_path,
-                img_url=image_url if not img_path else None
+                img_url=image_url if not img_path else None,
+                model_name=model_name,
             )
             
             # Upload to OSS if configured

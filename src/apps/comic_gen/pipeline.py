@@ -1236,7 +1236,12 @@ class ComicGenPipeline:
         if not script:
             raise ValueError("Script not found")
 
-        script = self.storyboard_generator.generate_storyboard(script)
+        # Bind I2I instance so per-frame image-conditioned generation picks up
+        # the user's credentials + model_name (parity with the async batch path
+        # at create_storyboard_batch_render_task).
+        i2i_instance_id = getattr(getattr(script, "model_settings", None), "i2i_instance_id", None)
+        with scoped_instance(i2i_instance_id, InstanceType.I2I):
+            script = self.storyboard_generator.generate_storyboard(script)
         self._save_data()
         return script
 
@@ -1570,58 +1575,68 @@ class ComicGenPipeline:
         if not source_image_url:
             raise ValueError(f"No source image available for {asset_type}. Please generate a static image first.")
 
-        # Generate videos based on the asset type
-        for i in range(batch_size):
-            try:
-                # Call video generator (I2V)
-                video_result = self.video_generator.generate_i2v(
-                    image_url=source_image_url,
-                    prompt=prompt,
-                    duration=duration,
-                    audio_url=audio_url
-                )
+        # Bind the user's I2V ModelInstance for the duration of this call so
+        # ``WanxModel.api_key`` resolves from the instance's encrypted creds and
+        # the model name comes from the instance (not the wanx hardcoded default).
+        # Without this scope, Motion Reference would silently fall back to env
+        # vars + ``wan2.6-i2v`` regardless of what the user picked in Settings.
+        i2v_instance_id = getattr(getattr(script, "model_settings", None), "i2v_instance_id", None)
+        with scoped_instance(i2v_instance_id, InstanceType.I2V) as i2v_inst:
+            resolved_model_name = i2v_inst.model_name if i2v_inst else None
 
-                if video_result and video_result.get("video_url"):
-                    if asset_type in ["full_body", "head_shot"]:
-                        # For characters, create VideoVariant in AssetUnit
-                        video_variant = VideoVariant(
-                            id=f"video_{uuid.uuid4().hex[:8]}",
-                            url=video_result["video_url"],
-                            prompt_used=prompt,
-                            audio_url=audio_url,
-                            source_image_id=None  # Don't set this to avoid complications
-                        )
-                        asset_unit.video_variants.append(video_variant)
+            # Generate videos based on the asset type
+            for i in range(batch_size):
+                try:
+                    # Call video generator (I2V)
+                    video_result = self.video_generator.generate_i2v(
+                        image_url=source_image_url,
+                        prompt=prompt,
+                        duration=duration,
+                        audio_url=audio_url,
+                        model_name=resolved_model_name,
+                    )
 
-                        # Auto-select the first generated video
-                        if not asset_unit.selected_video_id:
-                            asset_unit.selected_video_id = video_variant.id
+                    if video_result and video_result.get("video_url"):
+                        if asset_type in ["full_body", "head_shot"]:
+                            # For characters, create VideoVariant in AssetUnit
+                            video_variant = VideoVariant(
+                                id=f"video_{uuid.uuid4().hex[:8]}",
+                                url=video_result["video_url"],
+                                prompt_used=prompt,
+                                audio_url=audio_url,
+                                source_image_id=None  # Don't set this to avoid complications
+                            )
+                            asset_unit.video_variants.append(video_variant)
 
-                        generated_videos.append(video_variant)
-                        logger.info(f"Generated motion ref video: {video_variant.id}")
-                    else:
-                        # For scenes and props, create VideoTask and add to asset's video_assets
-                        video_task = VideoTask(
-                            id=f"video_{uuid.uuid4().hex[:8]}",
-                            project_id=script_id,
-                            asset_id=asset_id,
-                            image_url=source_image_url,
-                            prompt=prompt,
-                            status="completed",  # Since generation is done in this step
-                            video_url=video_result["video_url"],
-                            duration=duration,
-                            created_at=time.time(),
-                            generate_audio=bool(audio_url),
-                            model="wan2.6-i2v",
-                            generation_mode="i2v"  # Image to video (motion reference)
-                        )
+                            # Auto-select the first generated video
+                            if not asset_unit.selected_video_id:
+                                asset_unit.selected_video_id = video_variant.id
 
-                        # Add to the asset's video_assets
-                        target_asset.video_assets.append(video_task)
-                        generated_videos.append(video_task)
-                        logger.info(f"Generated motion ref video for {asset_type}: {video_task.id}")
-            except Exception as e:
-                logger.error(f"Failed to generate motion ref video for {asset_type}: {e}")
+                            generated_videos.append(video_variant)
+                            logger.info(f"Generated motion ref video: {video_variant.id}")
+                        else:
+                            # For scenes and props, create VideoTask and add to asset's video_assets
+                            video_task = VideoTask(
+                                id=f"video_{uuid.uuid4().hex[:8]}",
+                                project_id=script_id,
+                                asset_id=asset_id,
+                                image_url=source_image_url,
+                                prompt=prompt,
+                                status="completed",  # Since generation is done in this step
+                                video_url=video_result["video_url"],
+                                duration=duration,
+                                created_at=time.time(),
+                                generate_audio=bool(audio_url),
+                                model=resolved_model_name or "wan2.6-i2v",
+                                generation_mode="i2v"  # Image to video (motion reference)
+                            )
+
+                            # Add to the asset's video_assets
+                            target_asset.video_assets.append(video_task)
+                            generated_videos.append(video_task)
+                            logger.info(f"Generated motion ref video for {asset_type}: {video_task.id}")
+                except Exception as e:
+                    logger.error(f"Failed to generate motion ref video for {asset_type}: {e}")
 
         # For character assets, update the AssetUnit
         if asset_type in ["full_body", "head_shot"]:
