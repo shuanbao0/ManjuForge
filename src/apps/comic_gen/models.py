@@ -96,7 +96,12 @@ class VideoTask(BaseModel):
     audio_url: Optional[str] = Field(None, description="URL of generated/uploaded audio")
     prompt_extend: bool = Field(True, description="Whether to use prompt extension")
     negative_prompt: Optional[str] = Field(None, description="Negative prompt")
-    model: str = Field("wan2.6-i2v", description="Model used for generation")
+    # Resolved from the user's I2V ModelInstance at submit (create_video_task)
+    # or processing (process_video_task). No hardcoded SKU default — leaving
+    # one here means a None passed in by callers like _render_single_video
+    # bypasses the default and triggers a Pydantic str-required validation
+    # error instead of falling back to the user's configured instance.
+    model: Optional[str] = Field(None, description="Model used for generation")
     shot_type: str = Field("single", description="Shot type: 'single' or 'multi' (only for wan2.6-i2v)")
     generation_mode: str = Field("i2v", description="Generation mode: 'i2v' (image-to-video) or 'r2v' (reference-to-video)")
     reference_video_urls: List[str] = Field(default_factory=list, description="Reference video URLs for R2V generation (max 3)")

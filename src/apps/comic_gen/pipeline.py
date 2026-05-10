@@ -1793,7 +1793,21 @@ class ComicGenPipeline:
             raise ValueError("Script not found")
         
         task_id = str(uuid.uuid4())
-        
+
+        # Resolve `model` from the user-configured I2V ModelInstance when the
+        # caller didn't supply one. Override chain mirrors process_video_task:
+        # per-task pick → script-level setting → user default. Without this,
+        # the batch path (_render_single_video, which never passes `model`)
+        # would feed `None` into VideoTask and trip a Pydantic str-required
+        # validation error before the task ever reaches process_video_task.
+        if not model:
+            script_instance_id = getattr(
+                getattr(script, "model_settings", None), "i2v_instance_id", None
+            )
+            resolved_instance_id = i2v_instance_id or script_instance_id
+            with scoped_instance(resolved_instance_id, InstanceType.I2V) as i2v_inst:
+                model = require_instance(i2v_inst, InstanceType.I2V).model_name
+
         # If R2V mode is selected, swap the I2V model id for its R2V sibling
         # via the provider registry (e.g. wan2.7-i2v → wan2.7-r2v). Each
         # family declares the I2V/R2V SKU pair; the swap is data-driven, not
