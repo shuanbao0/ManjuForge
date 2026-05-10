@@ -185,7 +185,7 @@ def _download_object_as_data_uri(object_key: str, uploader) -> Optional[str]:
     return f"data:{mime_type};base64,{encoded}"
 
 
-def _fetch_url_as_data_uri(url: str, *, timeout: int = 30) -> Optional[str]:
+def _fetch_url_as_data_uri(url: str, *, timeout: int = 60) -> Optional[str]:
     """GET ``url`` and wrap the response body as a base64 data URI.
 
     Used when ``prefer_inline_for_api`` is True and the ref is already a
@@ -219,9 +219,29 @@ def _resolve_dashscope_temp_url(
     local_path: Optional[str],
     dashscope_temp_url_resolver: Optional[Callable[[str], str]],
 ) -> ResolvedMediaInput:
+    prefer_inline = bool(uploader) and bool(getattr(uploader, "prefers_inline_for_api", False))
+
     if ref_type == MEDIA_REF_REMOTE_URL:
+        # Mirror the image path: when the storage endpoint is internal-only,
+        # an upstream presigned URL would be unreachable from DashScope. Fetch
+        # and inline the bytes here so audio/reference_video inputs also work
+        # in self-hosted-MinIO deployments. DashScope accepts data URIs as
+        # ``url`` values in the unified ``input.media`` array.
+        if prefer_inline:
+            data_uri = _fetch_url_as_data_uri(ref)
+            if data_uri:
+                return _resolved(data_uri, source_ref=ref, media_ref_type=ref_type)
+            logger.warning(
+                "DashScope URL-mode media: failed to inline bytes from %s; passing URL through. "
+                "DashScope may reject if the host is unreachable from the public internet.",
+                ref,
+            )
         return _resolved(ref, source_ref=ref, media_ref_type=ref_type)
     if ref_type == MEDIA_REF_OBJECT_KEY:
+        if prefer_inline:
+            data_uri = _download_object_as_data_uri(ref, uploader)
+            if data_uri:
+                return _resolved(data_uri, source_ref=ref, media_ref_type=ref_type)
         signed_url = _signed_url_from_object_key(ref, uploader)
         if signed_url:
             return _resolved(signed_url, source_ref=ref, media_ref_type=ref_type)
@@ -232,6 +252,12 @@ def _resolve_dashscope_temp_url(
     if ref_type == MEDIA_REF_LOCAL_PATH:
         if not local_path:
             raise ValueError(f"Unable to resolve local media path for '{ref}'")
+        if prefer_inline:
+            return _resolved(
+                _encode_image_as_data_uri(local_path),
+                source_ref=ref,
+                media_ref_type=ref_type,
+            )
         signed_url = _upload_then_sign(local_path, uploader)
         if signed_url:
             return _resolved(signed_url, source_ref=ref, media_ref_type=ref_type)
@@ -252,6 +278,9 @@ def _resolve_dashscope_temp_url(
     if ref_type == MEDIA_REF_BLOB_URL:
         raise ValueError("Blob URLs are ephemeral and unsupported for backend media resolution.")
     if ref_type == MEDIA_REF_DATA_URI:
+        if prefer_inline:
+            # Internal-only storage already inlines the bytes; pass through.
+            return _resolved(ref, source_ref=ref, media_ref_type=ref_type)
         raise ValueError("Data URI is not supported for DashScope URL-based media input.")
     raise ValueError(f"Unsupported media reference for DashScope URL-based media input: '{ref}'")
 
