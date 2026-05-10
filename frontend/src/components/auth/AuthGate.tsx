@@ -4,6 +4,7 @@ import { ReactNode, useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { auth as authApi } from "@/lib/api";
 import { isAuthenticated, getCurrentUser, onAuthChange, clearSession } from "@/lib/auth";
+import { useTranslation } from "@/i18n";
 import LoginPage from "./LoginPage";
 import SetupPage from "./SetupPage";
 
@@ -14,6 +15,7 @@ interface Props {
 }
 
 export default function AuthGate({ children }: Props) {
+  const { t } = useTranslation();
   const [phase, setPhase] = useState<Phase>("loading");
 
   const refresh = useCallback(async () => {
@@ -70,7 +72,7 @@ export default function AuthGate({ children }: Props) {
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-950 via-gray-900 to-black">
         <div className="flex items-center gap-2 text-gray-400">
           <Loader2 size={16} className="animate-spin" />
-          <span className="text-sm">加载中…</span>
+          <span className="text-sm">{t("common.loading")}</span>
         </div>
       </div>
     );

@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { Calendar, Trash2, Play } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Project } from "@/store/projectStore";
+import { useTranslation } from "@/i18n";
 
 interface ProjectCardProps {
     project: Project;
@@ -12,6 +13,7 @@ interface ProjectCardProps {
 
 export default function ProjectCard({ project, onDelete }: ProjectCardProps) {
     const router = useRouter();
+    const { t } = useTranslation();
 
     const handleOpen = () => {
         window.location.hash = `#/project/${project.id}`;
@@ -19,7 +21,7 @@ export default function ProjectCard({ project, onDelete }: ProjectCardProps) {
 
     const handleDelete = (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (confirm(`确定要删除项目"${project.title}"吗？`)) {
+        if (confirm(t("project.confirmDelete", { title: project.title }))) {
             onDelete(project.id);
         }
     };
@@ -60,21 +62,21 @@ export default function ProjectCard({ project, onDelete }: ProjectCardProps) {
             </div>
 
             <div className="flex items-center gap-3 text-xs text-gray-400 mb-4">
-                <span>角色 <span className="text-white font-medium">{project.characters?.length || 0}</span></span>
+                <span>{t("series.charactersHeading")} <span className="text-white font-medium">{project.characters?.length || 0}</span></span>
                 <span className="text-gray-600">·</span>
-                <span>场景 <span className="text-white font-medium">{project.scenes?.length || 0}</span></span>
+                <span>{t("series.scenesHeading")} <span className="text-white font-medium">{project.scenes?.length || 0}</span></span>
                 <span className="text-gray-600">·</span>
-                <span>分镜 <span className="text-white font-medium">{project.frames?.length || 0}</span></span>
+                <span>{t("modules.storyboard.frameLabel")} <span className="text-white font-medium">{project.frames?.length || 0}</span></span>
             </div>
 
             <div className="flex items-center justify-between">
                 <span className={`text-xs px-2 py-1 rounded ${statusColors[project.status as keyof typeof statusColors] || statusColors.pending}`}>
-                    {project.status || '待开始'}
+                    {project.status || t("projectCard.statusPending", undefined, "待开始")}
                 </span>
 
                 <div className="flex items-center gap-1 text-primary text-xs font-medium">
                     <Play size={14} />
-                    <span>打开项目</span>
+                    <span>{t("projectCard.openProject", undefined, "打开项目")}</span>
                 </div>
             </div>
         </motion.div>

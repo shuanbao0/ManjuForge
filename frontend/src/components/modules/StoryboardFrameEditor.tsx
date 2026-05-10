@@ -6,6 +6,7 @@ import { X, RefreshCw, Check, AlertTriangle, Image as ImageIcon, Lock, Unlock, C
 import { api, API_URL } from "@/lib/api";
 import { VariantSelector } from "../common/VariantSelector";
 import { useProjectStore } from "@/store/projectStore";
+import { useTranslation } from "@/i18n";
 
 interface StoryboardFrameEditorProps {
     frame: any;
@@ -13,6 +14,7 @@ interface StoryboardFrameEditorProps {
 }
 
 export default function StoryboardFrameEditor({ frame: initialFrame, onClose }: StoryboardFrameEditorProps) {
+    const { t } = useTranslation();
     const currentProject = useProjectStore(state => state.currentProject);
     const updateProject = useProjectStore(state => state.updateProject);
 
@@ -50,7 +52,7 @@ export default function StoryboardFrameEditor({ frame: initialFrame, onClose }: 
             updateProject(currentProject.id, updatedProject);
         } catch (error) {
             console.error("Failed to generate frame:", error);
-            alert("Failed to generate frame");
+            alert(t("modules.storyboard.generateFrameFailed", undefined, "Failed to generate frame"));
         } finally {
             setIsGenerating(false);
         }
@@ -96,7 +98,7 @@ export default function StoryboardFrameEditor({ frame: initialFrame, onClose }: 
                 {/* Header */}
                 <div className="h-16 border-b border-white/10 flex justify-between items-center px-6 bg-black/20">
                     <div className="flex items-center gap-4">
-                        <h2 className="text-xl font-bold text-white">Frame Editor <span className="text-gray-500 font-normal text-sm ml-2">#{frame.id.substring(0, 8)}</span></h2>
+                        <h2 className="text-xl font-bold text-white">{t("modules.storyboard.frameEditorTitle", undefined, "Frame Editor")} <span className="text-gray-500 font-normal text-sm ml-2">#{frame.id.substring(0, 8)}</span></h2>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors">
                         <X size={24} />
@@ -123,30 +125,30 @@ export default function StoryboardFrameEditor({ frame: initialFrame, onClose }: 
                     <div className="w-1/3 min-w-[350px] border-l border-white/10 bg-[#111] flex flex-col">
                         <div className="p-4 border-b border-white/5">
                             <h3 className="font-bold text-sm uppercase tracking-wider text-gray-400 mb-2">
-                                Scene Context
+                                {t("modules.storyboard.sceneContext", undefined, "Scene Context")}
                             </h3>
                             <p className="text-xs text-gray-300 mb-2">
-                                <span className="font-bold text-gray-500">Action:</span> {frame.action_description}
+                                <span className="font-bold text-gray-500">{t("modules.storyboard.actionLabel", undefined, "Action:")}</span> {frame.action_description}
                             </p>
                             {frame.dialogue && (
                                 <p className="text-xs text-gray-300 italic">
-                                    <span className="font-bold text-gray-500 not-italic">Dialogue:</span> "{frame.dialogue}"
+                                    <span className="font-bold text-gray-500 not-italic">{t("modules.storyboard.dialogueLabel", undefined, "Dialogue:")}</span> "{frame.dialogue}"
                                 </p>
                             )}
                         </div>
 
                         <div className="flex-1 p-4 flex flex-col">
                             <h3 className="font-bold text-sm uppercase tracking-wider text-gray-400 mb-2">
-                                Generation Prompt
+                                {t("modules.storyboard.generationPrompt", undefined, "Generation Prompt")}
                             </h3>
                             <textarea
                                 value={prompt}
                                 onChange={(e) => setPrompt(e.target.value)}
                                 className="flex-1 w-full bg-black/20 border border-white/10 rounded-lg p-4 text-sm text-gray-300 resize-none focus:outline-none focus:border-primary/50 font-mono leading-relaxed"
-                                placeholder="Enter prompt description..."
+                                placeholder={t("modules.storyboard.promptPlaceholder", undefined, "Enter prompt description...")}
                             />
                             <p className="text-xs text-gray-500 mt-2">
-                                Modify the prompt to refine the generated image.
+                                {t("modules.storyboard.promptHint", undefined, "Modify the prompt to refine the generated image.")}
                             </p>
                         </div>
                     </div>

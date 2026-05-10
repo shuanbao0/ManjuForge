@@ -33,6 +33,8 @@ from .pipeline_factory import pipeline_proxy, current_pipeline as _current_pipel
 from ...auth.deps import require_admin
 from ...auth.models import User as _AuthUser
 from ... import runtime as _ctx_runtime  # carries request context across executor / bg tasks
+from ...i18n import get_locale, t as _t
+from ...i18n.middleware import LocaleMiddleware
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv, set_key
 
@@ -74,6 +76,11 @@ _ensure_auth_db()
 # RequestContext containing user + decrypted credentials. Auth/admin/docs
 # paths are passed through; their FastAPI dependencies handle auth themselves.
 app.add_middleware(AuthContextMiddleware)
+
+# Resolve the request's locale from Accept-Language and bind it to the
+# i18n contextvar so downstream service-layer code can call ``t(key)``
+# without threading the locale through every signature.
+app.add_middleware(LocaleMiddleware)
 
 app.include_router(auth_routes.router)
 app.include_router(admin_routes.router)
@@ -742,15 +749,16 @@ async def import_series_assets(series_id: str, request: ImportAssetsRequest):
 async def import_file_preview(
     file: UploadFile = File(...),
     suggested_episodes: int = 3,
+    locale: str = Depends(get_locale),
 ):
     """Upload a txt/md file and get LLM episode split preview."""
     if suggested_episodes < 1 or suggested_episodes > 50:
-        raise HTTPException(status_code=400, detail="建议集数应在 1-50 之间")
+        raise HTTPException(status_code=400, detail=_t("errors.import_episodes_out_of_range", locale))
     try:
         content_bytes = await file.read()
         text = content_bytes.decode("utf-8")
         if not text.strip():
-            raise HTTPException(status_code=400, detail="文件内容为空")
+            raise HTTPException(status_code=400, detail=_t("errors.import_file_empty", locale))
 
         episodes = await _ctx_runtime.run_in_executor(
             None, pipeline.import_file_and_split, text, suggested_episodes,

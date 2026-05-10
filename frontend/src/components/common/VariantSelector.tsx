@@ -3,6 +3,7 @@ import { ImageAsset, ImageVariant } from '@/store/projectStore';
 import { Trash2, Check, ChevronLeft, ChevronRight, Layers, X, Maximize2, Star } from 'lucide-react';
 import { API_URL } from '@/lib/api';
 import { getAssetUrl } from '@/lib/utils';
+import { useTranslation } from '@/i18n';
 
 interface VariantSelectorProps {
     asset: ImageAsset | undefined;
@@ -32,6 +33,7 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
     className = "",
     aspectRatio = "9:16"
 }) => {
+    const { t } = useTranslation();
     const [batchSize, setBatchSize] = useState(1);
     const [localGeneratingBatchSize, setLocalGeneratingBatchSize] = useState(1); // Track the batch size when generation started locally
     const [zoomedImage, setZoomedImage] = useState<string | null>(null);
@@ -86,13 +88,13 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
                         <div className="absolute bottom-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity">
                             <div className="flex items-center gap-1 px-2 py-1 bg-black/60 rounded-md backdrop-blur-sm">
                                 <Maximize2 size={12} className="text-white/70" />
-                                <span className="text-xs text-white/70">Click to zoom</span>
+                                <span className="text-xs text-white/70">{t("modals.variantSelector.clickToZoom", undefined, "Click to zoom")}</span>
                             </div>
                         </div>
                     </>
                 ) : (
                     <div className="w-full h-full flex items-center justify-center text-gray-500">
-                        No image generated
+                        {t("modals.variantSelector.noImage", undefined, "No image generated")}
                     </div>
                 )}
 
@@ -102,7 +104,7 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
                         <button
                             onClick={(e) => { e.stopPropagation(); onDelete(selectedVariant.id); }}
                             className="p-2 bg-red-500/80 hover:bg-red-600 text-white rounded-full backdrop-blur-sm"
-                            title="Delete this variant"
+                            title={t("modals.variantSelector.deleteVariant", undefined, "Delete this variant")}
                         >
                             <Trash2 size={16} />
                         </button>
@@ -113,7 +115,7 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
                     <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-10 backdrop-blur-sm">
                         <div className="flex flex-col items-center gap-3">
                             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-white"></div>
-                            <span className="text-white font-medium">Generating {displayGeneratingBatchSize} variant{displayGeneratingBatchSize > 1 ? 's' : ''}...</span>
+                            <span className="text-white font-medium">{t("modals.variantSelector.generatingVariants", { count: displayGeneratingBatchSize }, `Generating ${displayGeneratingBatchSize} variant${displayGeneratingBatchSize > 1 ? 's' : ''}...`)}</span>
                         </div>
                     </div>
                 )}
@@ -147,7 +149,7 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
                             }`}
                     >
                         <Layers size={16} />
-                        Generate
+                        {t("modals.variantSelector.generate", undefined, "Generate")}
                     </button>
                 </div>
 
@@ -195,7 +197,7 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
                                                     ? 'bg-yellow-500 text-white'
                                                     : 'bg-black/50 text-gray-300 opacity-0 group-hover/variant:opacity-100 hover:bg-yellow-500 hover:text-white'
                                                     }`}
-                                                title={isFavorited ? 'Click to unfavorite' : 'Click to favorite (protected from auto-delete)'}
+                                                title={isFavorited ? t("modals.variantSelector.unfavorite", undefined, "Click to unfavorite") : t("modals.variantSelector.favorite", undefined, "Click to favorite (protected from auto-delete)")}
                                             >
                                                 <Star size={12} fill={isFavorited ? 'currentColor' : 'none'} />
                                             </button>
@@ -206,12 +208,12 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    if (confirm('Delete this variant?')) {
+                                                    if (confirm(t("modals.variantSelector.deleteConfirm", undefined, "Delete this variant?"))) {
                                                         onDelete(variant.id);
                                                     }
                                                 }}
                                                 className="absolute bottom-1 right-1 p-1 bg-red-500/80 hover:bg-red-500 rounded-full text-white opacity-0 group-hover/variant:opacity-100 transition-all"
-                                                title="Delete variant"
+                                                title={t("modals.variantSelector.deleteVariantShort", undefined, "Delete variant")}
                                             >
                                                 <Trash2 size={10} />
                                             </button>
@@ -220,7 +222,7 @@ export const VariantSelector: React.FC<VariantSelectorProps> = ({
                                         {/* Favorited protection indicator */}
                                         {isFavorited && (
                                             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-yellow-900/80 to-transparent py-1 px-1">
-                                                <span className="text-[8px] text-yellow-200 font-medium">Protected</span>
+                                                <span className="text-[8px] text-yellow-200 font-medium">{t("modals.variantSelector.protected", undefined, "Protected")}</span>
                                             </div>
                                         )}
                                     </div>

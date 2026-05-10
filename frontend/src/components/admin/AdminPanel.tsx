@@ -23,10 +23,12 @@ import {
   type AuditLogEntry,
 } from "@/lib/api";
 import { type CurrentUser, getCurrentUser } from "@/lib/auth";
+import { useTranslation } from "@/i18n";
 
 type Tab = "users" | "stats" | "audit" | "settings";
 
 export default function AdminPanel() {
+  const { t } = useTranslation();
   const me = getCurrentUser();
   const [tab, setTab] = useState<Tab>("users");
 
@@ -38,18 +40,18 @@ export default function AdminPanel() {
             <ShieldCheck size={20} className="text-amber-400" />
           </div>
           <div>
-            <h1 className="text-2xl font-display font-bold text-white">管理员控制台</h1>
-            <p className="text-xs text-gray-500">登录身份：{me?.email ?? "—"}</p>
+            <h1 className="text-2xl font-display font-bold text-white">{t("admin.title")}</h1>
+            <p className="text-xs text-gray-500">{t("admin.loginIdentity")}{me?.email ?? "—"}</p>
           </div>
         </div>
       </header>
 
       <nav className="flex gap-2 border-b border-white/10">
         {([
-          { key: "users", label: "用户", icon: Users },
-          { key: "stats", label: "统计", icon: Activity },
-          { key: "audit", label: "审计日志", icon: Lock },
-          { key: "settings", label: "实例设置", icon: SettingsIcon },
+          { key: "users", label: t("admin.tabUsers"), icon: Users },
+          { key: "stats", label: t("admin.tabStats"), icon: Activity },
+          { key: "audit", label: t("admin.tabAudit"), icon: Lock },
+          { key: "settings", label: t("admin.tabInstances"), icon: SettingsIcon },
         ] as const).map(({ key, label, icon: Icon }) => (
           <button
             key={key}
@@ -77,6 +79,7 @@ export default function AdminPanel() {
 // ── Users tab ──────────────────────────────────────────────────────────────
 
 function UsersTab() {
+  const { t } = useTranslation();
   const me = getCurrentUser();
   const [users, setUsers] = useState<CurrentUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -90,11 +93,11 @@ function UsersTab() {
       setUsers(await admin.listUsers());
     } catch (e: unknown) {
       const detail = (e as { response?: { data?: { detail?: { message?: string } } } })?.response?.data?.detail;
-      setError(detail?.message ?? "加载用户失败");
+      setError(detail?.message ?? t("admin.loadUsersFailed", undefined, "加载用户失败"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     reload();
@@ -107,8 +110,8 @@ function UsersTab() {
       <div className="flex items-center justify-between">
         <h2 className="text-base font-bold text-white flex items-center gap-2">
           <Users size={16} />
-          用户列表
-          <span className="text-xs text-gray-500 font-normal">{sorted.length} 名</span>
+          {t("admin.userList", undefined, "用户列表")}
+          <span className="text-xs text-gray-500 font-normal">{t("admin.userCount", { count: sorted.length }, `${sorted.length} 名`)}</span>
         </h2>
         <div className="flex gap-2">
           <button
@@ -117,14 +120,14 @@ function UsersTab() {
             className="px-3 py-1.5 text-xs rounded-lg border border-white/10 hover:border-white/20 text-gray-300 transition-colors flex items-center gap-1.5 disabled:opacity-50"
           >
             <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
-            刷新
+            {t("common.refresh")}
           </button>
           <button
             onClick={() => setShowCreate(true)}
             className="px-3 py-1.5 text-xs rounded-lg bg-amber-600/80 hover:bg-amber-500 text-white transition-colors flex items-center gap-1.5"
           >
             <UserPlus size={12} />
-            新建用户
+            {t("admin.addUser")}
           </button>
         </div>
       </div>
@@ -138,12 +141,12 @@ function UsersTab() {
           <thead className="text-xs text-gray-500 border-b border-white/10">
             <tr>
               <th className="text-left py-2 px-2 font-medium">ID</th>
-              <th className="text-left py-2 px-2 font-medium">邮箱</th>
-              <th className="text-left py-2 px-2 font-medium">显示名</th>
-              <th className="text-left py-2 px-2 font-medium">角色</th>
-              <th className="text-left py-2 px-2 font-medium">状态</th>
-              <th className="text-left py-2 px-2 font-medium">最近登录</th>
-              <th className="text-right py-2 px-2 font-medium">操作</th>
+              <th className="text-left py-2 px-2 font-medium">{t("auth.emailLabel")}</th>
+              <th className="text-left py-2 px-2 font-medium">{t("auth.displayNameLabel")}</th>
+              <th className="text-left py-2 px-2 font-medium">{t("admin.role")}</th>
+              <th className="text-left py-2 px-2 font-medium">{t("admin.status")}</th>
+              <th className="text-left py-2 px-2 font-medium">{t("admin.lastLoginAt")}</th>
+              <th className="text-right py-2 px-2 font-medium">{t("admin.actions", undefined, "操作")}</th>
             </tr>
           </thead>
           <tbody className="text-gray-200">
@@ -157,7 +160,7 @@ function UsersTab() {
             ))}
             {!loading && sorted.length === 0 && (
               <tr>
-                <td colSpan={7} className="text-center py-6 text-gray-500 text-sm">暂无用户</td>
+                <td colSpan={7} className="text-center py-6 text-gray-500 text-sm">{t("admin.noUsers", undefined, "暂无用户")}</td>
               </tr>
             )}
           </tbody>
@@ -178,6 +181,7 @@ function UserRow({
   isMe: boolean;
   onChanged: () => void;
 }) {
+  const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
 
   const flipStatus = async () => {
@@ -188,7 +192,7 @@ function UserRow({
       });
       onChanged();
     } catch (e: unknown) {
-      alert((e as { response?: { data?: { detail?: { message?: string } } } })?.response?.data?.detail?.message ?? "操作失败");
+      alert((e as { response?: { data?: { detail?: { message?: string } } } })?.response?.data?.detail?.message ?? t("admin.actionFailed"));
     } finally {
       setBusy(false);
     }
@@ -202,51 +206,51 @@ function UserRow({
       });
       onChanged();
     } catch (e: unknown) {
-      alert((e as { response?: { data?: { detail?: { message?: string } } } })?.response?.data?.detail?.message ?? "操作失败");
+      alert((e as { response?: { data?: { detail?: { message?: string } } } })?.response?.data?.detail?.message ?? t("admin.actionFailed"));
     } finally {
       setBusy(false);
     }
   };
 
   const resetPwd = async () => {
-    const pw = window.prompt(`为 ${user.email} 设置新密码（≥ 8 位）`);
+    const pw = window.prompt(t("admin.promptNewPassword", { email: user.email }, `为 ${user.email} 设置新密码（≥ 8 位）`));
     if (!pw) return;
     if (pw.length < 8) {
-      alert("密码至少 8 位");
+      alert(t("auth.passwordTooShort"));
       return;
     }
     setBusy(true);
     try {
       await admin.updateUser(user.id, { new_password: pw });
-      alert("密码已重置");
+      alert(t("auth.passwordResetSuccess"));
     } catch (e: unknown) {
-      alert((e as { response?: { data?: { detail?: { message?: string } } } })?.response?.data?.detail?.message ?? "操作失败");
+      alert((e as { response?: { data?: { detail?: { message?: string } } } })?.response?.data?.detail?.message ?? t("admin.actionFailed"));
     } finally {
       setBusy(false);
     }
   };
 
   const forceLogout = async () => {
-    if (!window.confirm(`将 ${user.email} 的所有 token 失效？`)) return;
+    if (!window.confirm(t("admin.confirmForceLogout", { email: user.email }, `将 ${user.email} 的所有 token 失效？`))) return;
     setBusy(true);
     try {
       await admin.forceLogout(user.id);
       onChanged();
     } catch (e: unknown) {
-      alert((e as { response?: { data?: { detail?: { message?: string } } } })?.response?.data?.detail?.message ?? "操作失败");
+      alert((e as { response?: { data?: { detail?: { message?: string } } } })?.response?.data?.detail?.message ?? t("admin.actionFailed"));
     } finally {
       setBusy(false);
     }
   };
 
   const remove = async () => {
-    if (!window.confirm(`删除用户 ${user.email}？此操作不可撤销。`)) return;
+    if (!window.confirm(t("admin.confirmDeleteUserDestructive", { email: user.email }, `删除用户 ${user.email}？此操作不可撤销。`))) return;
     setBusy(true);
     try {
       await admin.deleteUser(user.id);
       onChanged();
     } catch (e: unknown) {
-      alert((e as { response?: { data?: { detail?: { message?: string } } } })?.response?.data?.detail?.message ?? "操作失败");
+      alert((e as { response?: { data?: { detail?: { message?: string } } } })?.response?.data?.detail?.message ?? t("admin.actionFailed"));
     } finally {
       setBusy(false);
     }
@@ -255,7 +259,7 @@ function UserRow({
   return (
     <tr className="border-b border-white/5 hover:bg-white/[0.02]">
       <td className="py-2 px-2 text-gray-500">{user.id}</td>
-      <td className="py-2 px-2">{user.email}{isMe && <span className="text-[10px] text-amber-400 ml-1">（你）</span>}</td>
+      <td className="py-2 px-2">{user.email}{isMe && <span className="text-[10px] text-amber-400 ml-1">{t("admin.youSuffix", undefined, "（你）")}</span>}</td>
       <td className="py-2 px-2 text-gray-400">{user.display_name || "—"}</td>
       <td className="py-2 px-2">
         <span className={`text-xs px-2 py-0.5 rounded ${user.role === "admin" ? "bg-amber-500/15 text-amber-300" : "bg-white/5 text-gray-400"}`}>
@@ -272,21 +276,21 @@ function UserRow({
       <td className="py-2 px-2 text-xs text-gray-500">{user.last_login_at ? new Date(user.last_login_at).toLocaleString() : "—"}</td>
       <td className="py-2 px-2 text-right space-x-1">
         <button onClick={flipStatus} disabled={busy || isMe} className="text-xs px-2 py-1 rounded border border-white/10 hover:border-white/30 disabled:opacity-30 transition-colors">
-          {user.status === "active" ? "禁用" : "启用"}
+          {user.status === "active" ? t("admin.disable") : t("admin.enable")}
         </button>
         <button onClick={flipRole} disabled={busy || isMe} className="text-xs px-2 py-1 rounded border border-white/10 hover:border-white/30 disabled:opacity-30 transition-colors">
-          {user.role === "admin" ? "降为用户" : "升为管理员"}
+          {user.role === "admin" ? t("admin.demote") : t("admin.promote")}
         </button>
         <button onClick={resetPwd} disabled={busy} className="text-xs px-2 py-1 rounded border border-white/10 hover:border-white/30 disabled:opacity-30 transition-colors">
-          改密
+          {t("admin.changePassword", undefined, "改密")}
         </button>
         <button onClick={forceLogout} disabled={busy || isMe} className="text-xs px-2 py-1 rounded border border-white/10 hover:border-white/30 disabled:opacity-30 transition-colors flex items-center gap-1 inline-flex">
           <LogOut size={10} />
-          强制下线
+          {t("admin.forceLogout", undefined, "强制下线")}
         </button>
         <button onClick={remove} disabled={busy || isMe} className="text-xs px-2 py-1 rounded border border-red-500/30 text-red-400 hover:bg-red-500/10 disabled:opacity-30 transition-colors flex items-center gap-1 inline-flex">
           <Trash2 size={10} />
-          删除
+          {t("common.delete")}
         </button>
       </td>
     </tr>
@@ -294,6 +298,7 @@ function UserRow({
 }
 
 function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const { t } = useTranslation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -305,7 +310,7 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
     e.preventDefault();
     setError(null);
     if (password.length < 8) {
-      setError("密码至少 8 位");
+      setError(t("auth.passwordTooShort"));
       return;
     }
     setSubmitting(true);
@@ -315,8 +320,8 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
       onClose();
     } catch (e: unknown) {
       const detail = (e as { response?: { data?: { detail?: { code?: string; message?: string } } } })?.response?.data?.detail;
-      if (detail?.code === "EMAIL_EXISTS") setError("该邮箱已被使用");
-      else setError(detail?.message ?? "创建失败");
+      if (detail?.code === "EMAIL_EXISTS") setError(t("admin.errEmailExists", undefined, "该邮箱已被使用"));
+      else setError(detail?.message ?? t("admin.createFailed", undefined, "创建失败"));
     } finally {
       setSubmitting(false);
     }
@@ -327,21 +332,21 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <form onSubmit={submit} className="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-md shadow-2xl space-y-4">
-        <h3 className="text-lg font-display font-bold text-white flex items-center gap-2"><PlusCircle size={18} className="text-amber-400" />新建用户</h3>
+        <h3 className="text-lg font-display font-bold text-white flex items-center gap-2"><PlusCircle size={18} className="text-amber-400" />{t("admin.addUser")}</h3>
         <div>
-          <label className="block text-xs text-gray-400 mb-1">邮箱</label>
+          <label className="block text-xs text-gray-400 mb-1">{t("auth.emailLabel")}</label>
           <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} autoFocus />
         </div>
         <div>
-          <label className="block text-xs text-gray-400 mb-1">显示名（可选）</label>
+          <label className="block text-xs text-gray-400 mb-1">{t("auth.displayNameOptional", undefined, "显示名（可选）")}</label>
           <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} className={inputClass} />
         </div>
         <div>
-          <label className="block text-xs text-gray-400 mb-1">初始密码（≥ 8 位）</label>
+          <label className="block text-xs text-gray-400 mb-1">{t("admin.initialPasswordLabel", undefined, "初始密码（≥ 8 位）")}</label>
           <input type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} className={inputClass} />
         </div>
         <div>
-          <label className="block text-xs text-gray-400 mb-1">角色</label>
+          <label className="block text-xs text-gray-400 mb-1">{t("admin.role")}</label>
           <div className="flex gap-2">
             {(["user", "admin"] as const).map((r) => (
               <button key={r} type="button" onClick={() => setRole(r)} className={`px-3 py-1.5 text-xs rounded-md border transition-colors ${role === r ? "border-amber-500/60 bg-amber-500/15 text-amber-200" : "border-white/10 bg-white/5 text-gray-400"}`}>
@@ -352,10 +357,10 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
         </div>
         {error && <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2 text-xs text-red-300">{error}</div>}
         <div className="flex justify-end gap-2 pt-2">
-          <button type="button" onClick={onClose} className="px-3 py-1.5 text-xs rounded-lg border border-white/10 hover:border-white/30 text-gray-300">取消</button>
+          <button type="button" onClick={onClose} className="px-3 py-1.5 text-xs rounded-lg border border-white/10 hover:border-white/30 text-gray-300">{t("common.cancel")}</button>
           <button type="submit" disabled={submitting} className="px-3 py-1.5 text-xs rounded-lg bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-50 flex items-center gap-1.5">
             {submitting ? <Loader2 size={12} className="animate-spin" /> : null}
-            创建
+            {t("common.create")}
           </button>
         </div>
       </form>
@@ -366,6 +371,7 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
 // ── Stats ──────────────────────────────────────────────────────────────────
 
 function StatsTab() {
+  const { t } = useTranslation();
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -373,8 +379,8 @@ function StatsTab() {
     admin.stats().then((s) => setStats(s)).catch(() => undefined).finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div className="glass-panel rounded-xl p-5 text-sm text-gray-400">加载中…</div>;
-  if (!stats) return <div className="glass-panel rounded-xl p-5 text-sm text-red-300">加载失败</div>;
+  if (loading) return <div className="glass-panel rounded-xl p-5 text-sm text-gray-400">{t("common.loading")}</div>;
+  if (!stats) return <div className="glass-panel rounded-xl p-5 text-sm text-red-300">{t("admin.loadFailed", undefined, "加载失败")}</div>;
 
   const Card = ({ label, value }: { label: string; value: string | number | null }) => (
     <div className="glass-panel rounded-xl p-5">
@@ -385,12 +391,12 @@ function StatsTab() {
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      <Card label="总用户数" value={stats.user_count} />
-      <Card label="活跃用户" value={stats.active_user_count} />
-      <Card label="管理员" value={stats.admin_count} />
-      <Card label="禁用用户" value={stats.disabled_user_count} />
+      <Card label={t("admin.statTotalUsers")} value={stats.user_count} />
+      <Card label={t("admin.statActiveUsers", undefined, "活跃用户")} value={stats.active_user_count} />
+      <Card label={t("admin.statAdmins", undefined, "管理员")} value={stats.admin_count} />
+      <Card label={t("admin.statDisabledUsers", undefined, "禁用用户")} value={stats.disabled_user_count} />
       <div className="col-span-2 lg:col-span-4">
-        <Card label="最近登录" value={stats.last_login_at ? new Date(stats.last_login_at).toLocaleString() : "—"} />
+        <Card label={t("admin.lastLoginAt")} value={stats.last_login_at ? new Date(stats.last_login_at).toLocaleString() : "—"} />
       </div>
     </div>
   );
@@ -399,6 +405,7 @@ function StatsTab() {
 // ── Audit ──────────────────────────────────────────────────────────────────
 
 function AuditTab() {
+  const { t } = useTranslation();
   const [entries, setEntries] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -414,21 +421,21 @@ function AuditTab() {
   return (
     <section className="glass-panel rounded-xl p-5 space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-base font-bold text-white">最近活动</h2>
+        <h2 className="text-base font-bold text-white">{t("admin.recentActivity", undefined, "最近活动")}</h2>
         <button onClick={reload} disabled={loading} className="px-3 py-1.5 text-xs rounded-lg border border-white/10 hover:border-white/20 text-gray-300 flex items-center gap-1.5 disabled:opacity-50">
           <RefreshCw size={12} className={loading ? "animate-spin" : ""} />
-          刷新
+          {t("common.refresh")}
         </button>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="text-xs text-gray-500 border-b border-white/10">
             <tr>
-              <th className="text-left py-2 px-2 font-medium">时间</th>
-              <th className="text-left py-2 px-2 font-medium">操作</th>
-              <th className="text-left py-2 px-2 font-medium">操作者</th>
-              <th className="text-left py-2 px-2 font-medium">目标</th>
-              <th className="text-left py-2 px-2 font-medium">详情</th>
+              <th className="text-left py-2 px-2 font-medium">{t("admin.auditTime")}</th>
+              <th className="text-left py-2 px-2 font-medium">{t("admin.auditAction")}</th>
+              <th className="text-left py-2 px-2 font-medium">{t("admin.auditActor")}</th>
+              <th className="text-left py-2 px-2 font-medium">{t("admin.auditTarget")}</th>
+              <th className="text-left py-2 px-2 font-medium">{t("admin.auditDetail", undefined, "详情")}</th>
               <th className="text-left py-2 px-2 font-medium">IP</th>
             </tr>
           </thead>
@@ -445,7 +452,7 @@ function AuditTab() {
             ))}
             {!loading && entries.length === 0 && (
               <tr>
-                <td colSpan={6} className="text-center py-6 text-gray-500 text-sm">暂无记录</td>
+                <td colSpan={6} className="text-center py-6 text-gray-500 text-sm">{t("admin.auditEmpty")}</td>
               </tr>
             )}
           </tbody>
@@ -458,6 +465,7 @@ function AuditTab() {
 // ── Settings ───────────────────────────────────────────────────────────────
 
 function SettingsTab() {
+  const { t } = useTranslation();
   const [settings, setSettings] = useState<AdminSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -472,13 +480,13 @@ function SettingsTab() {
       const updated = await admin.updateSettings(patch);
       setSettings(updated);
     } catch (e: unknown) {
-      alert((e as { response?: { data?: { detail?: { message?: string } } } })?.response?.data?.detail?.message ?? "保存失败");
+      alert((e as { response?: { data?: { detail?: { message?: string } } } })?.response?.data?.detail?.message ?? t("envConfig.saveFailed"));
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading || !settings) return <div className="glass-panel rounded-xl p-5 text-sm text-gray-400">加载中…</div>;
+  if (loading || !settings) return <div className="glass-panel rounded-xl p-5 text-sm text-gray-400">{t("common.loading")}</div>;
 
   const Toggle = ({ label, hint, value, onChange }: { label: string; hint: string; value: boolean; onChange: (v: boolean) => void }) => (
     <div className="flex items-start justify-between p-4 rounded-lg bg-white/5 border border-white/10">
@@ -499,16 +507,16 @@ function SettingsTab() {
 
   return (
     <section className="glass-panel rounded-xl p-5 space-y-3">
-      <h2 className="text-base font-bold text-white mb-2">实例设置</h2>
+      <h2 className="text-base font-bold text-white mb-2">{t("admin.tabInstances")}</h2>
       <Toggle
-        label="开放公开注册"
-        hint="（目前 P1 阶段不会启用注册路由，开关仅作为后续阶段的预留）"
+        label={t("admin.toggleRegistrationLabel", undefined, "开放公开注册")}
+        hint={t("admin.toggleRegistrationHint", undefined, "（目前 P1 阶段不会启用注册路由，开关仅作为后续阶段的预留）")}
         value={settings.registration_enabled}
         onChange={(v) => update({ registration_enabled: v })}
       />
       <Toggle
-        label="注册需要邀请码"
-        hint="后续阶段会启用，注册时必须提供有效邀请码"
+        label={t("admin.toggleInvitationLabel", undefined, "注册需要邀请码")}
+        hint={t("admin.toggleInvitationHint", undefined, "后续阶段会启用，注册时必须提供有效邀请码")}
         value={settings.invitation_required}
         onChange={(v) => update({ invitation_required: v })}
       />

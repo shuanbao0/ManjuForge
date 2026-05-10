@@ -3,12 +3,14 @@
 import { useState } from "react";
 import { Loader2, LogIn } from "lucide-react";
 import { auth } from "@/lib/api";
+import { useTranslation } from "@/i18n";
 
 interface Props {
   onLoggedIn: () => void;
 }
 
 export default function LoginPage({ onLoggedIn }: Props) {
+  const { t } = useTranslation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -24,9 +26,9 @@ export default function LoginPage({ onLoggedIn }: Props) {
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: { code?: string; message?: string } } } })?.response?.data?.detail;
       const code = detail?.code;
-      if (code === "INVALID_CREDENTIALS") setError("邮箱或密码不正确");
-      else if (code === "USER_NOT_ACTIVE") setError("该账户已被禁用");
-      else setError(detail?.message ?? "登录失败");
+      if (code === "INVALID_CREDENTIALS") setError(t("auth.errInvalidCredentials", undefined, "邮箱或密码不正确"));
+      else if (code === "USER_NOT_ACTIVE") setError(t("auth.errUserNotActive", undefined, "该账户已被禁用"));
+      else setError(detail?.message ?? t("auth.loginFailed"));
     } finally {
       setSubmitting(false);
     }
@@ -43,18 +45,18 @@ export default function LoginPage({ onLoggedIn }: Props) {
             <LogIn size={22} className="text-amber-400" />
           </div>
           <div>
-            <h1 className="text-xl font-display font-bold text-white">登录</h1>
-            <p className="text-xs text-gray-500 mt-0.5">使用管理员或用户账户登录 ManjuForge</p>
+            <h1 className="text-xl font-display font-bold text-white">{t("auth.login")}</h1>
+            <p className="text-xs text-gray-500 mt-0.5">{t("auth.loginSubtitle")}</p>
           </div>
         </div>
 
         <form onSubmit={submit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">邮箱</label>
-            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className={inputClass} autoFocus />
+            <label className="block text-sm font-medium text-gray-300 mb-2">{t("auth.emailLabel")}</label>
+            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t("auth.emailPlaceholder")} className={inputClass} autoFocus />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">密码</label>
+            <label className="block text-sm font-medium text-gray-300 mb-2">{t("auth.passwordLabel")}</label>
             <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className={inputClass} />
           </div>
 
@@ -68,7 +70,7 @@ export default function LoginPage({ onLoggedIn }: Props) {
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white text-sm font-medium rounded-lg transition-all disabled:opacity-50"
           >
             {submitting ? <Loader2 size={16} className="animate-spin" /> : null}
-            {submitting ? "登录中..." : "登录"}
+            {submitting ? t("auth.loggingIn") : t("auth.login")}
           </button>
         </form>
       </div>

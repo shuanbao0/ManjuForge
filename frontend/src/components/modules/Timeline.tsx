@@ -2,8 +2,10 @@
 
 import { Play, Pause, SkipBack, SkipForward, Scissors, Layers } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "@/i18n";
 
 export default function Timeline() {
+    const { t } = useTranslation();
     const [isPlaying, setIsPlaying] = useState(false);
 
     return (
@@ -50,20 +52,20 @@ export default function Timeline() {
 
                 {/* Video Track */}
                 <div className="h-16 bg-white/5 rounded-lg relative overflow-hidden group">
-                    <div className="absolute inset-0 flex items-center px-2 text-xs font-medium text-gray-500 pointer-events-none">Video 1</div>
+                    <div className="absolute inset-0 flex items-center px-2 text-xs font-medium text-gray-500 pointer-events-none">{t("modules.assembly.timelineVideoTrack", undefined, "Video 1")}</div>
                     <div className="absolute left-10 top-1 bottom-1 w-32 bg-blue-500/20 border border-blue-500/50 rounded flex items-center justify-center text-xs text-blue-200">
-                        Scene 1
+                        {t("modules.assembly.timelineScene1", undefined, "Scene 1")}
                     </div>
                     <div className="absolute left-44 top-1 bottom-1 w-48 bg-blue-500/20 border border-blue-500/50 rounded flex items-center justify-center text-xs text-blue-200">
-                        Scene 2
+                        {t("modules.assembly.timelineScene2", undefined, "Scene 2")}
                     </div>
                 </div>
 
                 {/* Audio Track */}
                 <div className="h-12 bg-white/5 rounded-lg relative overflow-hidden">
-                    <div className="absolute inset-0 flex items-center px-2 text-xs font-medium text-gray-500 pointer-events-none">Audio 1</div>
+                    <div className="absolute inset-0 flex items-center px-2 text-xs font-medium text-gray-500 pointer-events-none">{t("modules.assembly.timelineAudioTrack", undefined, "Audio 1")}</div>
                     <div className="absolute left-10 top-1 bottom-1 w-80 bg-green-500/20 border border-green-500/50 rounded flex items-center justify-center text-xs text-green-200">
-                        Background Music
+                        {t("modules.assembly.timelineBgm", undefined, "Background Music")}
                     </div>
                 </div>
 

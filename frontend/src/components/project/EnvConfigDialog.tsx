@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Save, ChevronDown, ChevronRight, Loader2, Key } from "lucide-react";
 import { api, type EnvConfigPayload, type ProviderMode } from "@/lib/api";
+import { useTranslation } from "@/i18n";
 
 interface EnvConfigDialogProps {
   isOpen: boolean;
@@ -82,6 +83,7 @@ const getValidationErrors = (env: EnvConfig): string[] => {
 };
 
 export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }: EnvConfigDialogProps) {
+  const { t } = useTranslation();
   const [config, setConfig] = useState<EnvConfig>(DEFAULT_CONFIG);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -102,7 +104,7 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
       setConfig((prev) => normalizeEnvConfig(prev, data));
     } catch (error) {
       console.error("Failed to load env config:", error);
-      setLoadError("Failed to load configuration. Is the backend running?");
+      setLoadError(t("envConfig.loadError", undefined, "Failed to load configuration. Is the backend running?"));
     } finally {
       setLoading(false);
     }
@@ -114,21 +116,21 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
   const handleSave = async () => {
     const errors = getValidationErrors(config);
     if (errors.length > 0) {
-      alert(`Please fill in required fields:\n- ${errors.join("\n- ")}`);
+      alert(`${t("envConfig.fillRequired", undefined, "Please fill in required fields:")}\n- ${errors.join("\n- ")}`);
       return;
     }
 
     setSaving(true);
     try {
       await api.saveEnvConfig(config);
-      alert("Configuration saved successfully!");
+      alert(t("envConfig.saveSuccess", undefined, "Configuration saved successfully!"));
       onClose();
       if (isRequired) {
         window.location.reload();
       }
     } catch (error) {
       console.error("Failed to save env config:", error);
-      alert("Failed to save configuration. Please try again.");
+      alert(t("envConfig.saveErrorAlert", undefined, "Failed to save configuration. Please try again."));
     } finally {
       setSaving(false);
     }
@@ -179,8 +181,8 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
                 <Key size={20} className="text-amber-400" />
               </div>
               <div>
-                <h2 className="text-lg font-bold text-white">Environment Configuration</h2>
-                <p className="text-xs text-gray-500">DashScope-first setup, with optional OSS mirror and vendor-direct routing</p>
+                <h2 className="text-lg font-bold text-white">{t("envConfig.title")}</h2>
+                <p className="text-xs text-gray-500">{t("envConfig.subtitle", undefined, "DashScope-first setup, with optional OSS mirror and vendor-direct routing")}</p>
               </div>
             </div>
             <button
@@ -195,19 +197,19 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
             {isRequired && (
               <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 text-xs text-yellow-300">
-                DashScope API Key is required before using the app. OSS and vendor keys are optional unless you select vendor-direct mode.
+                {t("envConfig.requiredHint", undefined, "DashScope API Key is required before using the app. OSS and vendor keys are optional unless you select vendor-direct mode.")}
               </div>
             )}
             {isRequired && !canClose && (
               <div className="bg-white/5 border border-white/10 rounded-lg p-3 text-xs text-gray-400">
-                This dialog cannot be closed until required fields are valid.
+                {t("envConfig.cannotCloseHint", undefined, "This dialog cannot be closed until required fields are valid.")}
               </div>
             )}
 
             {loading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 size={24} className="animate-spin text-amber-400" />
-                <span className="ml-2 text-gray-400">Loading configuration...</span>
+                <span className="ml-2 text-gray-400">{t("envConfig.loading", undefined, "Loading configuration...")}</span>
               </div>
             ) : loadError ? (
               <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 text-sm text-red-300">
@@ -217,44 +219,44 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
               <>
                 <div>
                   <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
-                    <span>DashScope API Key <span className="text-red-500">*</span></span>
-                    <span className="text-gray-600 font-normal text-xs">e.g. sk-xxx</span>
+                    <span>{t("envConfig.dashscopeApiKey", undefined, "DashScope API Key")} <span className="text-red-500">*</span></span>
+                    <span className="text-gray-600 font-normal text-xs">{t("envConfig.dashscopeApiKeyExample", undefined, "e.g. sk-xxx")}</span>
                   </label>
                   <input
                     type="password"
                     value={config.DASHSCOPE_API_KEY}
                     onChange={(e) => handleChange("DASHSCOPE_API_KEY", e.target.value)}
-                    placeholder="Required for DashScope-first model routing"
+                    placeholder={t("envConfig.dashscopeApiKeyPlaceholder", undefined, "Required for DashScope-first model routing")}
                     className={inputClass}
                   />
                 </div>
 
                 <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-4">
                   <div className="text-xs text-gray-400">
-                    Storage is local-first by default. OSS credentials are optional and only used as a cloud mirror.
+                    {t("envConfig.localFirstNote", undefined, "Storage is local-first by default. OSS credentials are optional and only used as a cloud mirror.")}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Alibaba Cloud Access Key ID
+                      {t("envConfig.aliyunAccessKeyId", undefined, "Alibaba Cloud Access Key ID")}
                     </label>
                     <input
                       type="password"
                       value={config.ALIBABA_CLOUD_ACCESS_KEY_ID}
                       onChange={(e) => handleChange("ALIBABA_CLOUD_ACCESS_KEY_ID", e.target.value)}
-                      placeholder="Optional, used when OSS mirror is enabled"
+                      placeholder={t("envConfig.ossOptionalPlaceholder", undefined, "Optional, used when OSS mirror is enabled")}
                       className={inputClass}
                     />
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Alibaba Cloud Access Key Secret
+                      {t("envConfig.aliyunAccessKeySecret", undefined, "Alibaba Cloud Access Key Secret")}
                     </label>
                     <input
                       type="password"
                       value={config.ALIBABA_CLOUD_ACCESS_KEY_SECRET}
                       onChange={(e) => handleChange("ALIBABA_CLOUD_ACCESS_KEY_SECRET", e.target.value)}
-                      placeholder="Optional, used when OSS mirror is enabled"
+                      placeholder={t("envConfig.ossOptionalPlaceholder", undefined, "Optional, used when OSS mirror is enabled")}
                       className={inputClass}
                     />
                   </div>
@@ -263,8 +265,8 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
                 <div className="pt-4 border-t border-white/10">
                   <div className="flex items-center justify-between mb-4">
                     <div>
-                      <h3 className="text-sm font-bold text-white">OSS Mirror (Optional)</h3>
-                      <p className="text-[10px] text-gray-500 mt-1">When configured, generated media is stored locally and mirrored to OSS.</p>
+                      <h3 className="text-sm font-bold text-white">{t("envConfig.ossMirrorTitle", undefined, "OSS Mirror (Optional)")}</h3>
+                      <p className="text-[10px] text-gray-500 mt-1">{t("envConfig.ossMirrorDesc", undefined, "When configured, generated media is stored locally and mirrored to OSS.")}</p>
                     </div>
                     <a
                       href="https://oss.console.aliyun.com/overview"
@@ -272,43 +274,43 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
                       rel="noopener noreferrer"
                       className="text-xs text-primary hover:text-primary/80 transition-colors"
                     >
-                      Open OSS Console &rarr;
+                      {t("envConfig.openOssConsole", undefined, "Open OSS Console")} &rarr;
                     </a>
                   </div>
 
                   <div className="space-y-4">
                     <div>
                       <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
-                        <span>OSS Bucket Name</span>
-                        <span className="text-gray-600 font-normal text-xs">e.g. my-comic-bucket</span>
+                        <span>{t("envConfig.ossBucketName", undefined, "OSS Bucket Name")}</span>
+                        <span className="text-gray-600 font-normal text-xs">{t("envConfig.ossBucketExample", undefined, "e.g. my-comic-bucket")}</span>
                       </label>
                       <input
                         type="text"
                         value={config.OSS_BUCKET_NAME}
                         onChange={(e) => handleChange("OSS_BUCKET_NAME", e.target.value)}
-                        placeholder="your_bucket_name (optional)"
+                        placeholder={t("envConfig.ossBucketPlaceholder", undefined, "your_bucket_name (optional)")}
                         className={inputClass}
                       />
                     </div>
 
                     <div>
                       <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
-                        <span>OSS Endpoint</span>
-                        <span className="text-gray-600 font-normal text-xs">e.g. oss-cn-hangzhou.aliyuncs.com</span>
+                        <span>{t("envConfig.ossEndpoint", undefined, "OSS Endpoint")}</span>
+                        <span className="text-gray-600 font-normal text-xs">{t("envConfig.ossEndpointExample", undefined, "e.g. oss-cn-hangzhou.aliyuncs.com")}</span>
                       </label>
                       <input
                         type="text"
                         value={config.OSS_ENDPOINT}
                         onChange={(e) => handleChange("OSS_ENDPOINT", e.target.value)}
-                        placeholder="oss-cn-beijing.aliyuncs.com (optional)"
+                        placeholder={t("envConfig.ossEndpointPlaceholder", undefined, "oss-cn-beijing.aliyuncs.com (optional)")}
                         className={inputClass}
                       />
                     </div>
 
                     <div>
                       <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
-                        <span>OSS Base Path</span>
-                        <span className="text-gray-600 font-normal text-xs">e.g. manju-forge</span>
+                        <span>{t("envConfig.ossBasePath", undefined, "OSS Base Path")}</span>
+                        <span className="text-gray-600 font-normal text-xs">{t("envConfig.ossBasePathExample", undefined, "e.g. manju-forge")}</span>
                       </label>
                       <input
                         type="text"
@@ -323,8 +325,8 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
 
                 <div className="pt-4 border-t border-white/10">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-bold text-white">Kling Provider</h3>
-                    <span className="text-[10px] text-gray-500">Choose DashScope proxy or vendor-direct</span>
+                    <h3 className="text-sm font-bold text-white">{t("envConfig.klingProvider", undefined, "Kling Provider")}</h3>
+                    <span className="text-[10px] text-gray-500">{t("envConfig.providerModeHint", undefined, "Choose DashScope proxy or vendor-direct")}</span>
                   </div>
                   <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-4">
                     <div className="flex flex-wrap gap-2">
@@ -333,44 +335,44 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
                         onClick={() => handleChange("KLING_PROVIDER_MODE", "dashscope")}
                         className={modeButtonClass(config.KLING_PROVIDER_MODE === "dashscope")}
                       >
-                        DashScope
+                        {t("envConfig.modeDashscope", undefined, "DashScope")}
                       </button>
                       <button
                         type="button"
                         onClick={() => handleChange("KLING_PROVIDER_MODE", "vendor")}
                         className={modeButtonClass(config.KLING_PROVIDER_MODE === "vendor")}
                       >
-                        Vendor Direct
+                        {t("envConfig.modeVendorDirect", undefined, "Vendor Direct")}
                       </button>
                     </div>
                     <p className="text-xs text-gray-500">
-                      DashScope mode uses your DashScope API key. Vendor-direct mode requires Kling Access Key and Secret Key.
+                      {t("envConfig.klingModeDesc", undefined, "DashScope mode uses your DashScope API key. Vendor-direct mode requires Kling Access Key and Secret Key.")}
                     </p>
 
                     {config.KLING_PROVIDER_MODE === "vendor" && (
                       <>
                         <div>
                           <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Kling Access Key <span className="text-red-500">*</span>
+                            {t("envConfig.klingAccessKey", undefined, "Kling Access Key")} <span className="text-red-500">*</span>
                           </label>
                           <input
                             type="password"
                             value={config.KLING_ACCESS_KEY}
                             onChange={(e) => handleChange("KLING_ACCESS_KEY", e.target.value)}
-                            placeholder="Kling API Access Key"
+                            placeholder={t("envConfig.klingAccessKeyPlaceholder", undefined, "Kling API Access Key")}
                             className={inputClass}
                           />
                         </div>
 
                         <div>
                           <label className="block text-sm font-medium text-gray-300 mb-2">
-                            Kling Secret Key <span className="text-red-500">*</span>
+                            {t("envConfig.klingSecretKey", undefined, "Kling Secret Key")} <span className="text-red-500">*</span>
                           </label>
                           <input
                             type="password"
                             value={config.KLING_SECRET_KEY}
                             onChange={(e) => handleChange("KLING_SECRET_KEY", e.target.value)}
-                            placeholder="Kling API Secret Key"
+                            placeholder={t("envConfig.klingSecretKeyPlaceholder", undefined, "Kling API Secret Key")}
                             className={inputClass}
                           />
                         </div>
@@ -381,8 +383,8 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
 
                 <div className="pt-4 border-t border-white/10">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-bold text-white">Vidu Provider</h3>
-                    <span className="text-[10px] text-gray-500">Choose DashScope proxy or vendor-direct</span>
+                    <h3 className="text-sm font-bold text-white">{t("envConfig.viduProvider", undefined, "Vidu Provider")}</h3>
+                    <span className="text-[10px] text-gray-500">{t("envConfig.providerModeHint", undefined, "Choose DashScope proxy or vendor-direct")}</span>
                   </div>
                   <div className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-4">
                     <div className="flex flex-wrap gap-2">
@@ -391,30 +393,30 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
                         onClick={() => handleChange("VIDU_PROVIDER_MODE", "dashscope")}
                         className={modeButtonClass(config.VIDU_PROVIDER_MODE === "dashscope")}
                       >
-                        DashScope
+                        {t("envConfig.modeDashscope", undefined, "DashScope")}
                       </button>
                       <button
                         type="button"
                         onClick={() => handleChange("VIDU_PROVIDER_MODE", "vendor")}
                         className={modeButtonClass(config.VIDU_PROVIDER_MODE === "vendor")}
                       >
-                        Vendor Direct
+                        {t("envConfig.modeVendorDirect", undefined, "Vendor Direct")}
                       </button>
                     </div>
                     <p className="text-xs text-gray-500">
-                      DashScope mode uses your DashScope API key. Vendor-direct mode requires a Vidu API key.
+                      {t("envConfig.viduModeDesc", undefined, "DashScope mode uses your DashScope API key. Vendor-direct mode requires a Vidu API key.")}
                     </p>
 
                     {config.VIDU_PROVIDER_MODE === "vendor" && (
                       <div>
                         <label className="block text-sm font-medium text-gray-300 mb-2">
-                          Vidu API Key <span className="text-red-500">*</span>
+                          {t("envConfig.viduApiKey", undefined, "Vidu API Key")} <span className="text-red-500">*</span>
                         </label>
                         <input
                           type="password"
                           value={config.VIDU_API_KEY}
                           onChange={(e) => handleChange("VIDU_API_KEY", e.target.value)}
-                          placeholder="Vidu API Key"
+                          placeholder={t("envConfig.viduApiKeyPlaceholder", undefined, "Vidu API Key")}
                           className={inputClass}
                         />
                       </div>
@@ -430,18 +432,18 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
                     className="flex items-center gap-2 text-sm font-medium text-gray-400 hover:text-gray-200 transition-colors"
                   >
                     {endpointsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                    Advanced: API Endpoints
+                    {t("envConfig.advancedEndpoints", undefined, "Advanced: API Endpoints")}
                   </button>
 
                   {endpointsOpen && (
                     <div className="mt-4 space-y-4">
                       <p className="text-xs text-gray-500">
-                        Custom API endpoint URLs. Leave empty to use defaults. Endpoint overrides are preserved regardless of provider mode.
+                        {t("envConfig.endpointHint", undefined, "Custom API endpoint URLs. Leave empty to use defaults. Endpoint overrides are preserved regardless of provider mode.")}
                       </p>
                       {ENDPOINT_PROVIDERS.map(({ key, label, placeholder }) => (
                         <div key={key}>
                           <label className="flex items-center justify-between text-sm font-medium text-gray-300 mb-2">
-                            <span>{label} Base URL</span>
+                            <span>{label} {t("envConfig.baseUrlSuffix", undefined, "Base URL")}</span>
                             <span className="text-gray-600 font-normal text-xs">{placeholder}</span>
                           </label>
                           <input
@@ -466,7 +468,7 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
               disabled={!canClose}
               className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              Cancel
+              {t("common.cancel")}
             </button>
             <button
               onClick={handleSave}
@@ -476,12 +478,12 @@ export default function EnvConfigDialog({ isOpen, onClose, isRequired = false }:
               {saving ? (
                 <>
                   <Loader2 size={16} className="animate-spin" />
-                  Saving...
+                  {t("envConfig.saving")}
                 </>
               ) : (
                 <>
                   <Save size={16} />
-                  Save Configuration
+                  {t("envConfig.save")}
                 </>
               )}
             </button>

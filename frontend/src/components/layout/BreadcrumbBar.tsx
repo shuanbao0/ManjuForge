@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronLeft } from "lucide-react";
+import { useTranslation } from "@/i18n";
 
 export interface BreadcrumbSegment {
   label: string;
@@ -13,6 +14,7 @@ interface BreadcrumbBarProps {
 }
 
 export default function BreadcrumbBar({ segments, actions }: BreadcrumbBarProps) {
+  const { t } = useTranslation();
   const handleBack = () => {
     if (segments.length >= 2 && segments[segments.length - 2].hash) {
       window.location.hash = segments[segments.length - 2].hash!;
@@ -29,7 +31,7 @@ export default function BreadcrumbBar({ segments, actions }: BreadcrumbBarProps)
       <button
         onClick={handleBack}
         className="flex items-center text-gray-400 hover:text-white transition-colors"
-        title="返回"
+        title={t("breadcrumb.back")}
       >
         <ChevronLeft size={18} />
       </button>

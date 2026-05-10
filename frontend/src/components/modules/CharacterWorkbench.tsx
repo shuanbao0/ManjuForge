@@ -10,6 +10,7 @@ import { VideoVariantSelector } from "../common/VideoVariantSelector";
 import { useProjectStore } from "@/store/projectStore";
 import { Image as PhotoIcon } from "lucide-react";
 import { getAssetUrl } from "@/lib/utils";
+import { useTranslation } from "@/i18n";
 
 
 interface CharacterWorkbenchProps {
@@ -26,6 +27,7 @@ interface CharacterWorkbenchProps {
 }
 
 export default function CharacterWorkbench({ asset, onClose, onUpdateDescription, onGenerate, generatingTypes = [], stylePrompt = "", styleNegativePrompt = "", onGenerateVideo, onDeleteVideo, isGeneratingVideo }: CharacterWorkbenchProps) {
+    const { t } = useTranslation();
     const [activePanel, setActivePanel] = useState<"full_body" | "three_view" | "headshot" | "video">("full_body");
     const updateProject = useProjectStore(state => state.updateProject);
     const currentProject = useProjectStore(state => state.currentProject);
@@ -112,7 +114,10 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
             : (asset.headshot_image_url || asset.headshot_asset?.variants?.length > 0);
 
         if (!hasSourceImage) {
-            alert(`请先生成一张${assetType === 'full_body' ? '全身图' : '头像'}作为参考图，然后再生成动态参考视频。`);
+            const refLabel = assetType === 'full_body'
+                ? t("modules.assets.fullBodyImage", undefined, "全身图")
+                : t("modules.assets.headshotImage", undefined, "头像");
+            alert(t("modules.assets.generateReferenceFirst", { ref: refLabel }, `请先生成一张${refLabel}作为参考图，然后再生成动态参考视频。`));
             return;
         }
 
@@ -127,13 +132,13 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
 
         // Validate file type
         if (!file.type.startsWith('audio/')) {
-            alert('请上传有效的音频文件（MP3, WAV, etc.）');
+            alert(t("modules.assets.audioInvalidType", undefined, "请上传有效的音频文件（MP3, WAV, etc.）"));
             return;
         }
 
         // Validate file size (max 10MB)
         if (file.size > 10 * 1024 * 1024) {
-            alert('音频文件不能超过 10MB');
+            alert(t("modules.assets.audioTooLarge", undefined, "音频文件不能超过 10MB"));
             return;
         }
 
@@ -164,7 +169,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
             }
         } catch (error: any) {
             console.error('Failed to upload audio:', error);
-            alert(`音频上传失败：${error.message}`);
+            alert(`${t("modules.assets.audioUploadFailed", undefined, "音频上传失败")}: ${error.message}`);
         } finally {
             setIsUploadingAudio(false);
         }
@@ -298,9 +303,9 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
             >
                 <div className="h-16 border-b border-white/10 flex justify-between items-center px-6 bg-black/20">
                     <div className="flex items-center gap-4">
-                        <h2 className="text-xl font-bold text-white">{asset.name} <span className="text-gray-500 font-normal text-sm ml-2">Character Workbench</span></h2>
+                        <h2 className="text-xl font-bold text-white">{asset.name} <span className="text-gray-500 font-normal text-sm ml-2">{t("modules.assets.characterWorkbench", undefined, "Character Workbench")}</span></h2>
                         <div className="flex items-center gap-2 px-3 py-1 bg-blue-500/10 border border-blue-500/20 rounded-full">
-                            <span className="text-xs text-blue-400 font-medium">💡 Tip: Keep the three images consistent for best results</span>
+                            <span className="text-xs text-blue-400 font-medium">{t("modules.assets.workbenchTip", undefined, "💡 Tip: Keep the three images consistent for best results")}</span>
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors">
@@ -313,7 +318,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
 
                     {/* Panel 1: Full Body (Master) */}
                     <WorkbenchPanel
-                        title="1. Master Asset (Full Body)"
+                        title={t("modules.assets.panelMasterAsset", undefined, "1. Master Asset (Full Body)")}
                         isActive={activePanel === "full_body"}
                         onClick={() => setActivePanel("full_body")}
 
@@ -328,7 +333,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                         onGenerate={(batchSize: number) => handleGenerateClick("full_body", batchSize)}
                         isGenerating={getGeneratingInfo("full_body").isGenerating}
                         generatingBatchSize={getGeneratingInfo("full_body").batchSize}
-                        description="The primary reference for character consistency."
+                        description={t("modules.assets.panelMasterDesc", undefined, "The primary reference for character consistency.")}
                         aspectRatio="9:16"
 
                         // Reverse generation: Show hint if upload detected but no full body
@@ -360,7 +365,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
 
                     {/* Panel 2: Three View (Derived) */}
                     <WorkbenchPanel
-                        title="2. Three-Views"
+                        title={t("modules.assets.panelThreeViews", undefined, "2. Three-Views")}
                         isActive={activePanel === "three_view"}
                         onClick={() => setActivePanel("three_view")}
 
@@ -376,7 +381,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                         isGenerating={getGeneratingInfo("three_view").isGenerating}
                         generatingBatchSize={getGeneratingInfo("three_view").batchSize}
                         isLocked={!asset.full_body_image_url && !hasAnyUpload}
-                        description="Front, side, and back views for 3D-like consistency."
+                        description={t("modules.assets.panelThreeViewsDesc", undefined, "Front, side, and back views for 3D-like consistency.")}
                         aspectRatio="16:9"
                     />
 
@@ -387,7 +392,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
 
                     {/* Panel 3: Headshot (Derived) */}
                     <WorkbenchPanel
-                        title="3. Avatar (Headshot)"
+                        title={t("modules.assets.panelAvatar", undefined, "3. Avatar (Headshot)")}
                         isActive={activePanel === "headshot"}
                         onClick={() => setActivePanel("headshot")}
 
@@ -403,7 +408,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                         isGenerating={getGeneratingInfo("headshot").isGenerating}
                         generatingBatchSize={getGeneratingInfo("headshot").batchSize}
                         isLocked={!asset.full_body_image_url && !hasAnyUpload}
-                        description="Close-up facial details and expressions."
+                        description={t("modules.assets.panelAvatarDesc", undefined, "Close-up facial details and expressions.")}
                         aspectRatio="1:1"
 
                         supportsMotion={true}
@@ -432,12 +437,12 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                     <div className="px-6 py-3 flex items-start gap-4">
                         {/* User's Negative Prompt (Editable) */}
                         <div className="flex-1">
-                            <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">Your Negative Prompt</label>
+                            <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">{t("modules.assets.yourNegativePrompt", undefined, "Your Negative Prompt")}</label>
                             <textarea
                                 value={negativePrompt}
                                 onChange={(e) => setNegativePrompt(e.target.value)}
                                 className="w-full h-16 bg-black/40 border border-white/10 rounded-lg p-3 text-xs text-gray-300 resize-none focus:outline-none focus:border-primary/50 font-mono"
-                                placeholder="Enter your negative prompt (avoid unwanted elements)..."
+                                placeholder={t("modules.assets.yourNegativePromptPlaceholder", undefined, "Enter your negative prompt (avoid unwanted elements)...")}
                             />
                         </div>
 
@@ -452,7 +457,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                                     className="rounded border-gray-600 bg-gray-700 text-primary focus:ring-primary w-4 h-4"
                                 />
                                 <label htmlFor="applyStyleFooter" className="text-xs font-bold text-gray-300 cursor-pointer select-none whitespace-nowrap">
-                                    Apply Art Direction Style
+                                    {t("modules.assets.applyArtStyle")}
                                 </label>
                             </div>
                         </div>
@@ -467,7 +472,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                             >
                                 <div className="flex items-center gap-2">
                                     <div className="w-2 h-2 rounded-full bg-gradient-to-r from-purple-500 to-blue-500" />
-                                    <span className="text-xs font-bold text-gray-400 uppercase">Art Direction Style (Will Be Appended)</span>
+                                    <span className="text-xs font-bold text-gray-400 uppercase">{t("modules.assets.artStyleAppended")}</span>
                                 </div>
                                 <ChevronRight size={14} className={`text-gray-500 transform transition-transform ${showStyleExpanded ? 'rotate-90' : ''}`} />
                             </button>
@@ -484,7 +489,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
                                             <div className="bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-white/10 rounded-lg p-4">
                                                 {stylePrompt && (
                                                     <div className="mb-3">
-                                                        <span className="text-xs font-bold text-green-400 block mb-1">+ Style Prompt:</span>
+                                                        <span className="text-xs font-bold text-green-400 block mb-1">{t("modules.assets.plusStylePrompt", undefined, "+ Style Prompt:")}</span>
                                                         <p className="text-xs text-gray-400 font-mono bg-black/20 p-2 rounded border border-white/5 leading-relaxed">
                                                             {stylePrompt}
                                                         </p>
@@ -493,7 +498,7 @@ export default function CharacterWorkbench({ asset, onClose, onUpdateDescription
 
                                                 {styleNegativePrompt && (
                                                     <div>
-                                                        <span className="text-xs font-bold text-red-400 block mb-1">+ Negative Prompt:</span>
+                                                        <span className="text-xs font-bold text-red-400 block mb-1">{t("modules.assets.plusNegativePrompt", undefined, "+ Negative Prompt:")}</span>
                                                         <p className="text-xs text-gray-400 font-mono bg-black/20 p-2 rounded border border-white/5 leading-relaxed">
                                                             {styleNegativePrompt}
                                                         </p>
@@ -559,6 +564,7 @@ function WorkbenchPanel({
     reverseGenerationMode = false,
     reverseReferenceUrl = null
 }: any) {
+    const { t } = useTranslation();
 
     return (
         <div
@@ -583,13 +589,13 @@ function WorkbenchPanel({
                                     }`}
                             >
                                 <PhotoIcon size={12} />
-                                Static
+                                {t("modules.assets.modeStatic", undefined, "Static")}
                             </button>
                             <button
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     if (!hasStaticImage) {
-                                        alert('Please generate a static image first.');
+                                        alert(t("modules.assets.generateStaticFirst", undefined, "Please generate a static image first."));
                                         return;
                                     }
                                     onModeChange?.('motion');
@@ -600,7 +606,7 @@ function WorkbenchPanel({
                                     }`}
                             >
                                 <Video size={12} />
-                                Motion
+                                {t("modules.assets.modeMotion", undefined, "Motion")}
                             </button>
                         </div>
                     )}
@@ -616,7 +622,7 @@ function WorkbenchPanel({
                     <div className="absolute inset-0 bg-black/80 z-20 flex items-center justify-center text-center p-6">
                         <div className="text-gray-500 flex flex-col items-center gap-2">
                             <Lock size={32} />
-                            <span className="text-sm">Generate Master Asset first</span>
+                            <span className="text-sm">{t("modules.assets.generateMasterFirst", undefined, "Generate Master Asset first")}</span>
                         </div>
                     </div>
                 )}
@@ -627,15 +633,15 @@ function WorkbenchPanel({
                         <div className="flex flex-col items-center gap-3 bg-black/60 backdrop-blur-md rounded-xl p-6 border border-primary/30 pointer-events-auto">
                             <div className="flex items-center gap-2 text-primary">
                                 <RefreshCw size={20} />
-                                <span className="text-sm font-bold">Upload Detected</span>
+                                <span className="text-sm font-bold">{t("modules.assets.uploadDetected", undefined, "Upload Detected")}</span>
                             </div>
                             <p className="text-xs text-gray-300 max-w-[200px]">
-                                Generate Full Body from your uploaded reference image
+                                {t("modules.assets.generateFullBodyFromUpload", undefined, "Generate Full Body from your uploaded reference image")}
                             </p>
                             {reverseReferenceUrl && (
                                 <img
                                     src={getAssetUrl(reverseReferenceUrl)}
-                                    alt="Reference"
+                                    alt={t("modules.assets.referenceAlt", undefined, "Reference")}
                                     className="w-16 h-16 rounded-lg object-cover border border-white/20"
                                 />
                             )}
@@ -651,7 +657,7 @@ function WorkbenchPanel({
                             {/* Header with gradient accent */}
                             <div className="flex items-center gap-2 pb-2 border-b border-purple-500/20">
                                 <div className="w-1 h-4 bg-gradient-to-b from-purple-400 to-pink-500 rounded-full"></div>
-                                <span className="text-xs font-bold text-purple-300 uppercase tracking-wider">Motion Reference</span>
+                                <span className="text-xs font-bold text-purple-300 uppercase tracking-wider">{t("modules.assets.motionReference", undefined, "Motion Reference")}</span>
                             </div>
 
                             {/* Video Player with glassmorphism */}
@@ -663,14 +669,14 @@ function WorkbenchPanel({
                                             <div className="absolute inset-0 blur-xl bg-purple-500/30 animate-pulse"></div>
                                         </div>
                                         <div className="flex flex-col items-center">
-                                            <span className="text-sm font-bold text-white uppercase tracking-widest animate-pulse">Generating Video</span>
-                                            <span className="text-[10px] text-purple-300/60 mt-1">AI is processing motion...</span>
+                                            <span className="text-sm font-bold text-white uppercase tracking-widest animate-pulse">{t("modules.assets.generatingVideo", undefined, "Generating Video")}</span>
+                                            <span className="text-[10px] text-purple-300/60 mt-1">{t("modules.assets.aiProcessingMotion", undefined, "AI is processing motion...")}</span>
                                         </div>
                                     </div>
                                 ) : isVideoLoading && motionRefVideos?.length > 0 ? (
                                     <div className="absolute inset-0 z-10 bg-black/40 backdrop-blur-sm flex flex-col items-center justify-center gap-3">
                                         <RefreshCw size={32} className="text-gray-400 animate-spin" />
-                                        <span className="text-xs text-gray-400 font-medium">Loading Video File...</span>
+                                        <span className="text-xs text-gray-400 font-medium">{t("modules.assets.loadingVideoFile", undefined, "Loading Video File...")}</span>
                                     </div>
                                 ) : null}
 
@@ -689,15 +695,15 @@ function WorkbenchPanel({
                                 ) : !isGeneratingMotion && (
                                     <div className="w-full h-full flex flex-col items-center justify-center text-gray-500 gap-2">
                                         <Video size={40} className="opacity-50" />
-                                        <span className="text-sm">No motion reference yet</span>
-                                        <span className="text-xs opacity-70">Generate one below</span>
+                                        <span className="text-sm">{t("modules.assets.noMotionRefYet", undefined, "No motion reference yet")}</span>
+                                        <span className="text-xs opacity-70">{t("modules.assets.generateOneBelow", undefined, "Generate one below")}</span>
                                     </div>
                                 )}
                             </div>
 
                             <div className="bg-black/20 rounded-lg border border-white/10 p-3">
-                                <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">Audio Input (Optional)</label>
-                                <p className="text-xs text-gray-600 mb-3">Upload audio to drive lip-sync or body rhythm</p>
+                                <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">{t("modules.assets.audioInputOptional", undefined, "Audio Input (Optional)")}</label>
+                                <p className="text-xs text-gray-600 mb-3">{t("modules.assets.audioInputHint", undefined, "Upload audio to drive lip-sync or body rhythm")}</p>
 
                                 <label className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-dashed cursor-pointer transition-all ${audioUrl
                                     ? 'border-green-500/50 bg-green-500/10 text-green-400'
@@ -716,17 +722,17 @@ function WorkbenchPanel({
                                     {isUploadingAudio ? (
                                         <>
                                             <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary/30 border-t-primary"></div>
-                                            <span className="text-xs">Uploading...</span>
+                                            <span className="text-xs">{t("modules.assets.uploadingShort", undefined, "Uploading...")}</span>
                                         </>
                                     ) : audioUrl ? (
                                         <>
                                             <Check size={14} />
-                                            <span className="text-xs font-medium">Audio Uploaded</span>
+                                            <span className="text-xs font-medium">{t("modules.assets.audioUploaded", undefined, "Audio Uploaded")}</span>
                                         </>
                                     ) : (
                                         <>
                                             <ImageIcon size={14} />
-                                            <span className="text-xs">Upload Audio File</span>
+                                            <span className="text-xs">{t("modules.assets.uploadAudioFile", undefined, "Upload Audio File")}</span>
                                         </>
                                     )}
                                 </label>
@@ -735,24 +741,24 @@ function WorkbenchPanel({
                             {/* Motion Prompt */}
                             <div className="flex flex-col gap-2">
                                 <div className="flex items-center justify-between">
-                                    <label className="text-xs font-bold text-gray-500 uppercase">Motion Prompt</label>
+                                    <label className="text-xs font-bold text-gray-500 uppercase">{t("modules.assets.motionPrompt", undefined, "Motion Prompt")}</label>
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             onResetPrompt?.();
                                         }}
                                         className="text-[10px] text-primary hover:text-primary/80 transition-colors flex items-center gap-1"
-                                        title="Reset to recommended prompt"
+                                        title={t("modules.assets.resetToRecommended", undefined, "Reset to recommended prompt")}
                                     >
                                         <RefreshCw size={10} />
-                                        Reset
+                                        {t("modules.common.reset")}
                                     </button>
                                 </div>
                                 <textarea
                                     value={motionPrompt}
                                     onChange={(e) => setMotionPrompt?.(e.target.value)}
                                     className="w-full h-24 bg-black/40 border border-white/10 rounded-lg p-3 text-xs text-gray-300 resize-none focus:outline-none focus:border-primary/50 font-mono leading-relaxed"
-                                    placeholder="Describe the motion you want..."
+                                    placeholder={t("modules.assets.describeMotionYouWant", undefined, "Describe the motion you want...")}
                                 />
                             </div>
 
@@ -766,7 +772,7 @@ function WorkbenchPanel({
                                     }`}
                             >
                                 <Video size={16} />
-                                Generate Motion Reference
+                                {t("modules.assets.generateMotionReference", undefined, "Generate Motion Reference")}
                             </button>
                         </div>
                     ) : isVideo ? (
@@ -799,7 +805,7 @@ function WorkbenchPanel({
                     <div className="absolute top-4 right-4 z-10">
                         <div className="bg-yellow-500/20 border border-yellow-500/50 px-3 py-1 rounded-lg flex items-center gap-2 backdrop-blur-sm">
                             <RefreshCw size={12} className="text-yellow-500" />
-                            <span className="text-xs font-bold text-yellow-500">Update Recommended</span>
+                            <span className="text-xs font-bold text-yellow-500">{t("modules.assets.updateRecommended", undefined, "Update Recommended")}</span>
                         </div>
                     </div>
                 )}
@@ -808,14 +814,14 @@ function WorkbenchPanel({
             {/* Prompt Editor (Bottom) */}
             <div className="h-1/3 border-t border-white/10 flex flex-col bg-[#111]">
                 <div className="p-2 border-b border-white/5 flex justify-between items-center bg-black/20">
-                    <span className="text-xs font-bold text-gray-500 uppercase px-2">Prompt</span>
+                    <span className="text-xs font-bold text-gray-500 uppercase px-2">{t("modules.assets.promptLabelShort", undefined, "Prompt")}</span>
                 </div>
                 <textarea
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
                     disabled={isLocked}
                     className="flex-1 w-full bg-transparent p-4 text-xs text-gray-300 resize-none focus:outline-none focus:bg-white/5 font-mono leading-relaxed"
-                    placeholder="Enter prompt description..."
+                    placeholder={t("modules.assets.enterPromptDescription", undefined, "Enter prompt description...")}
                 />
             </div>
         </div>

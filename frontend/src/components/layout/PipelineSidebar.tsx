@@ -8,6 +8,7 @@ import {
 import clsx from "clsx";
 import ManjuForgeBranding from "./ManjuForgeBranding";
 import type { BreadcrumbSegment } from "./BreadcrumbBar";
+import { useTranslation } from "@/i18n";
 
 interface Step {
     id: string;
@@ -25,6 +26,7 @@ interface PipelineSidebarProps {
 }
 
 export default function PipelineSidebar({ activeStep, onStepChange, steps, breadcrumbSegments, headerActions }: PipelineSidebarProps) {
+    const { t } = useTranslation();
     const handleBack = () => {
         if (!breadcrumbSegments) return;
         if (breadcrumbSegments.length >= 2 && breadcrumbSegments[breadcrumbSegments.length - 2].hash) {
@@ -51,7 +53,7 @@ export default function PipelineSidebar({ activeStep, onStepChange, steps, bread
                             <button
                                 onClick={handleBack}
                                 className="flex-shrink-0 text-gray-400 hover:text-white transition-colors"
-                                title="返回"
+                                title={t("breadcrumb.back")}
                             >
                                 <ChevronLeft size={16} />
                             </button>
@@ -129,11 +131,11 @@ export default function PipelineSidebar({ activeStep, onStepChange, steps, bread
                                     <span className={clsx("font-medium", step.comingSoon && "opacity-70")}>{step.label}</span>
                                     {step.comingSoon && (
                                         <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-medium">
-                                            Beta
+                                            {t("pipeline.beta")}
                                         </span>
                                     )}
                                 </div>
-                                <span className="text-[10px] opacity-50 font-mono">STEP 0{index + 1}</span>
+                                <span className="text-[10px] opacity-50 font-mono">{t("pipeline.stepBadge", { n: `0${index + 1}` })}</span>
                             </div>
 
                             {isActive && (

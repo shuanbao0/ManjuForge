@@ -2,8 +2,10 @@ import { useState, useEffect } from "react";
 import { Play, Pause, Volume2, Music, Mic, Video, Sliders } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
 import { getAssetUrl } from "@/lib/utils";
+import { useTranslation } from "@/i18n";
 
 export default function FinalMixStudio() {
+    const { t } = useTranslation();
     const currentProject = useProjectStore((state) => state.currentProject);
 
     const [isPlaying, setIsPlaying] = useState(false);
@@ -64,7 +66,7 @@ export default function FinalMixStudio() {
 
                         {/* Overlay Current Frame Info */}
                         <div className="absolute bottom-4 left-4 bg-black/50 px-3 py-1 rounded text-xs backdrop-blur-sm">
-                            Frame {Math.floor(currentTime / 5) + 1}
+                            {t("modules.mix.frameLabel", { n: Math.floor(currentTime / 5) + 1 }, `Frame ${Math.floor(currentTime / 5) + 1}`)}
                         </div>
                     </div>
                 </div>
@@ -73,17 +75,17 @@ export default function FinalMixStudio() {
                 <div className="w-80 bg-black/20 border-l border-white/10 flex flex-col">
                     <div className="p-4 border-b border-white/10">
                         <h3 className="font-display font-bold text-sm flex items-center gap-2">
-                            <Sliders size={16} className="text-primary" /> Audio Mixer
-                            <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-medium ml-2">Beta</span>
+                            <Sliders size={16} className="text-primary" /> {t("modules.mix.audioMixer", undefined, "Audio Mixer")}
+                            <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-medium ml-2">{t("pipeline.beta", undefined, "Beta")}</span>
                         </h3>
                     </div>
                     <div className="p-6 space-y-8">
                         {/* Track Controls */}
                         {[
-                            { id: 'video', label: 'Video Audio', icon: <Video size={16} /> },
-                            { id: 'voice', label: 'Dialogue', icon: <Mic size={16} /> },
-                            { id: 'sfx', label: 'SFX', icon: <Volume2 size={16} /> },
-                            { id: 'bgm', label: 'Music', icon: <Music size={16} /> },
+                            { id: 'video', label: t("modules.mix.trackVideo", undefined, "Video Audio"), icon: <Video size={16} /> },
+                            { id: 'voice', label: t("modules.mix.trackVoice", undefined, "Dialogue"), icon: <Mic size={16} /> },
+                            { id: 'sfx', label: t("modules.mix.trackSfx", undefined, "SFX"), icon: <Volume2 size={16} /> },
+                            { id: 'bgm', label: t("modules.mix.trackBgm", undefined, "Music"), icon: <Music size={16} /> },
                         ].map(track => (
                             <div key={track.id} className="space-y-2">
                                 <div className="flex justify-between text-xs text-gray-400">
@@ -110,7 +112,7 @@ export default function FinalMixStudio() {
 
                     <div className="mt-auto p-4 border-t border-white/10">
                         <p className="text-[11px] text-gray-500 text-center leading-relaxed">
-                            Audio mixing will be available in a future update.
+                            {t("modules.mix.comingSoon", undefined, "Audio mixing will be available in a future update.")}
                         </p>
                     </div>
                 </div>
@@ -133,7 +135,7 @@ export default function FinalMixStudio() {
                     </div>
                     <div className="flex items-center gap-2">
                         <button onClick={() => setZoom(Math.max(0.5, zoom - 0.1))} className="text-gray-500 hover:text-white">-</button>
-                        <span className="text-xs text-gray-500">Zoom</span>
+                        <span className="text-xs text-gray-500">{t("modules.mix.zoom", undefined, "Zoom")}</span>
                         <button onClick={() => setZoom(Math.min(2, zoom + 0.1))} className="text-gray-500 hover:text-white">+</button>
                     </div>
                 </div>
@@ -159,13 +161,13 @@ export default function FinalMixStudio() {
                         {/* Video Track */}
                         <div className="h-16 border-b border-white/5 bg-white/[0.03] relative flex items-center px-2 group">
                             <div className="absolute left-0 top-0 bottom-0 w-24 bg-white/5 z-10 flex items-center justify-center border-r border-white/5 text-xs font-bold text-gray-500">
-                                Video
+                                {t("modules.mix.lanelVideo", undefined, "Video")}
                             </div>
                             <div className="ml-24 flex-1 flex gap-1 h-12">
                                 {frames.map((frame, i) => (
                                     <div key={frame.id} className="flex-1 bg-blue-900/30 border border-blue-500/30 rounded overflow-hidden relative group-hover:brightness-110 transition-all">
                                         {frame.image_url && <img src={getAssetUrl(frame.image_url)} className="w-full h-full object-cover opacity-50" />}
-                                        <div className="absolute bottom-1 left-1 text-[10px] text-blue-200">Shot {i + 1}</div>
+                                        <div className="absolute bottom-1 left-1 text-[10px] text-blue-200">{t("modules.mix.shotLabel", { n: i + 1 }, `Shot ${i + 1}`)}</div>
                                     </div>
                                 ))}
                             </div>
@@ -174,7 +176,7 @@ export default function FinalMixStudio() {
                         {/* Dialogue Track */}
                         <div className="h-12 border-b border-white/5 bg-white/[0.03] relative flex items-center px-2">
                             <div className="absolute left-0 top-0 bottom-0 w-24 bg-white/5 z-10 flex items-center justify-center border-r border-white/5 text-xs font-bold text-gray-500">
-                                Dialogue
+                                {t("modules.mix.laneDialogue", undefined, "Dialogue")}
                             </div>
                             <div className="ml-24 flex-1 flex gap-1 h-8">
                                 {frames.map((frame) => (
@@ -196,14 +198,14 @@ export default function FinalMixStudio() {
                         {/* SFX Track */}
                         <div className="h-12 border-b border-white/5 bg-white/[0.03] relative flex items-center px-2">
                             <div className="absolute left-0 top-0 bottom-0 w-24 bg-white/5 z-10 flex items-center justify-center border-r border-white/5 text-xs font-bold text-gray-500">
-                                SFX
+                                {t("modules.mix.laneSfx", undefined, "SFX")}
                             </div>
                             <div className="ml-24 flex-1 flex gap-1 h-8">
                                 {frames.map((frame) => (
                                     <div key={frame.id} className="flex-1 relative">
                                         {frame.sfx_url && (
                                             <div className="absolute left-4 right-8 top-1 bottom-1 bg-yellow-900/40 border border-yellow-500/40 rounded flex items-center justify-center">
-                                                <span className="text-[9px] text-yellow-500 truncate px-1">SFX: {frame.action_description?.slice(0, 10)}...</span>
+                                                <span className="text-[9px] text-yellow-500 truncate px-1">{t("modules.mix.sfxPrefix", undefined, "SFX:")} {frame.action_description?.slice(0, 10)}...</span>
                                             </div>
                                         )}
                                     </div>
@@ -214,13 +216,13 @@ export default function FinalMixStudio() {
                         {/* BGM Track */}
                         <div className="h-12 border-b border-white/5 bg-white/[0.03] relative flex items-center px-2">
                             <div className="absolute left-0 top-0 bottom-0 w-24 bg-white/5 z-10 flex items-center justify-center border-r border-white/5 text-xs font-bold text-gray-500">
-                                BGM
+                                {t("modules.mix.laneBgm", undefined, "BGM")}
                             </div>
                             <div className="ml-24 flex-1 h-8 relative">
                                 {frames.length > 0 && (
                                     <div className="absolute left-0 right-0 top-1 bottom-1 bg-purple-900/40 border border-purple-500/40 rounded mx-1 flex items-center px-4">
                                         <Music size={12} className="text-purple-400 mr-2" />
-                                        <span className="text-[10px] text-purple-300">Cinematic Tension BGM</span>
+                                        <span className="text-[10px] text-purple-300">{t("modules.mix.bgmPlaceholder", undefined, "Cinematic Tension BGM")}</span>
                                     </div>
                                 )}
                             </div>

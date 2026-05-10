@@ -6,6 +6,7 @@ import { Settings, X, Layout, Check, Loader2, User, Building, Box } from "lucide
 import { ASPECT_RATIOS } from "@/store/projectStore";
 import { api } from "@/lib/api";
 import { InstanceSelector } from "@/components/settings/InstanceSelector";
+import { useTranslation } from "@/i18n";
 
 interface Props {
     isOpen: boolean;
@@ -16,6 +17,7 @@ interface Props {
 
 
 export default function SeriesModelSettingsModal({ isOpen, onClose, seriesId, onSaved }: Props) {
+    const { t } = useTranslation();
     const [llmId, setLlmId] = useState<string | null>(null);
     const [t2iId, setT2iId] = useState<string | null>(null);
     const [i2iId, setI2iId] = useState<string | null>(null);
@@ -48,10 +50,10 @@ export default function SeriesModelSettingsModal({ isOpen, onClose, seriesId, on
             })
             .catch((err) => {
                 console.error("Failed to load series model settings:", err);
-                setLoadError("Failed to load settings. Is the backend running?");
+                setLoadError(t("seriesModelSettings.loadFailed"));
             })
             .finally(() => setIsLoading(false));
-    }, [isOpen, seriesId]);
+    }, [isOpen, seriesId, t]);
 
     const handleSave = async () => {
         setIsSaving(true);
@@ -71,7 +73,7 @@ export default function SeriesModelSettingsModal({ isOpen, onClose, seriesId, on
             onClose();
         } catch (e) {
             console.error("Failed to save series model settings:", e);
-            alert("保存失败");
+            alert(t("seriesModelSettings.saveFailed"));
         } finally {
             setIsSaving(false);
         }
@@ -101,8 +103,8 @@ export default function SeriesModelSettingsModal({ isOpen, onClose, seriesId, on
                                 <Settings size={20} className="text-blue-400" />
                             </div>
                             <div>
-                                <h2 className="text-lg font-bold text-white">系列生成设置</h2>
-                                <p className="text-xs text-gray-500">为该 Series 下所有 Episode 选择默认模型实例和画幅</p>
+                                <h2 className="text-lg font-bold text-white">{t("seriesModelSettings.title")}</h2>
+                                <p className="text-xs text-gray-500">{t("seriesModelSettings.subtitle")}</p>
                             </div>
                         </div>
                         <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
@@ -114,7 +116,7 @@ export default function SeriesModelSettingsModal({ isOpen, onClose, seriesId, on
                         {isLoading ? (
                             <div className="flex items-center justify-center py-12">
                                 <Loader2 size={24} className="animate-spin text-blue-400" />
-                                <span className="ml-2 text-gray-400">Loading...</span>
+                                <span className="ml-2 text-gray-400">{t("seriesModelSettings.loading")}</span>
                             </div>
                         ) : loadError ? (
                             <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 text-sm text-red-300">
@@ -135,14 +137,14 @@ export default function SeriesModelSettingsModal({ isOpen, onClose, seriesId, on
                                 <div className="space-y-2">
                                     <div className="flex items-center gap-2 text-sm font-bold text-white">
                                         <Layout size={16} className="text-blue-400" />
-                                        画幅
+                                        {t("seriesModelSettings.aspectRatioHeader")}
                                     </div>
 
                                     <div className="grid grid-cols-3 gap-4">
                                         {([
-                                            { key: "character", label: "Character", icon: User, value: characterAspectRatio, setter: setCharacterAspectRatio },
-                                            { key: "scene", label: "Scene", icon: Building, value: sceneAspectRatio, setter: setSceneAspectRatio },
-                                            { key: "prop", label: "Prop", icon: Box, value: propAspectRatio, setter: setPropAspectRatio },
+                                            { key: "character", label: t("modals.modelSettings.characterAspect"), icon: User, value: characterAspectRatio, setter: setCharacterAspectRatio },
+                                            { key: "scene", label: t("modals.modelSettings.sceneAspect"), icon: Building, value: sceneAspectRatio, setter: setSceneAspectRatio },
+                                            { key: "prop", label: t("modals.modelSettings.propAspect"), icon: Box, value: propAspectRatio, setter: setPropAspectRatio },
                                         ] as const).map(({ key, label, icon: Icon, value, setter }) => (
                                             <div key={key} className="space-y-2">
                                                 <div className="flex items-center gap-1 text-xs text-gray-400">
@@ -165,7 +167,7 @@ export default function SeriesModelSettingsModal({ isOpen, onClose, seriesId, on
                                     </div>
 
                                     <div className="space-y-2 pt-2">
-                                        <label className="text-xs text-gray-400">Storyboard 画幅</label>
+                                        <label className="text-xs text-gray-400">{t("seriesModelSettings.storyboardAspectLabel")}</label>
                                         <div className="grid grid-cols-3 gap-2">
                                             {ASPECT_RATIOS.map((ratio) => (
                                                 <button
@@ -174,7 +176,7 @@ export default function SeriesModelSettingsModal({ isOpen, onClose, seriesId, on
                                                     className={`flex flex-col items-center p-3 rounded-lg border transition-all ${storyboardAspectRatio === ratio.id ? "border-blue-500/50 bg-blue-500/10" : "border-white/10 hover:border-white/20 bg-white/5"}`}
                                                 >
                                                     <span className="text-sm font-medium text-white">{ratio.name}</span>
-                                                    <span className="text-[10px] text-gray-500">{ratio.description}</span>
+                                                    <span className="text-[10px] text-gray-500">{t(ratio.description)}</span>
                                                 </button>
                                             ))}
                                         </div>
@@ -186,14 +188,14 @@ export default function SeriesModelSettingsModal({ isOpen, onClose, seriesId, on
 
                     <div className="flex justify-end gap-3 p-5 border-t border-white/10 bg-black/20">
                         <button onClick={onClose} className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors">
-                            取消
+                            {t("common.cancel")}
                         </button>
                         <button
                             onClick={handleSave}
                             disabled={isSaving || isLoading || !!loadError}
                             className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white text-sm font-medium rounded-lg transition-all disabled:opacity-50"
                         >
-                            {isSaving ? <><Loader2 size={16} className="animate-spin" />保存中...</> : <><Check size={16} />保存</>}
+                            {isSaving ? <><Loader2 size={16} className="animate-spin" />{t("seriesModelSettings.saving")}</> : <><Check size={16} />{t("seriesModelSettings.save")}</>}
                         </button>
                     </div>
                 </motion.div>

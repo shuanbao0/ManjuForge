@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 import {
   Save, Settings, MessageSquareCode, ShieldCheck, Cpu,
-  Layout, User as UserIcon, Building, Box,
+  Layout, User as UserIcon, Building, Box, Globe,
 } from "lucide-react";
 import { ASPECT_RATIOS } from "@/store/projectStore";
 import { InstanceList } from "./InstanceList";
+import LanguageSwitcher from "../common/LanguageSwitcher";
+import { useTranslation } from "@/i18n";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Settings page — fully driven by ModelInstance now. Vendor + key
@@ -44,6 +46,7 @@ function loadFromLS<T>(key: string, fallback: T): T {
 
 
 export default function SettingsPage() {
+  const { t } = useTranslation();
   const [aspectDefaults, setAspectDefaults] = useState<DefaultAspectRatios>(() =>
     loadFromLS(LS_KEY_RATIO, {
       character_aspect_ratio: "9:16",
@@ -79,12 +82,12 @@ export default function SettingsPage() {
 
   const handleSaveAspectRatios = () => {
     localStorage.setItem(LS_KEY_RATIO, JSON.stringify(aspectDefaults));
-    alert("默认画幅已保存");
+    alert(t("settings.aspectSaved"));
   };
 
   const handleSavePromptDefaults = () => {
     localStorage.setItem(LS_KEY_PROMPT, JSON.stringify(promptConfig));
-    alert("默认 prompt 已保存");
+    alert(t("settings.promptSaved"));
   };
 
   return (
@@ -95,10 +98,24 @@ export default function SettingsPage() {
           <ShieldCheck size={20} className="text-amber-400" />
         </div>
         <div>
-          <h1 className="text-2xl font-display font-bold text-white">设置</h1>
-          <p className="text-xs text-gray-500">配置你的模型实例,然后在每个项目里挑选要用哪一个</p>
+          <h1 className="text-2xl font-display font-bold text-white">{t("settings.title")}</h1>
+          <p className="text-xs text-gray-500">{t("settings.subtitle")}</p>
         </div>
       </div>
+
+      {/* ── Language ── */}
+      <section className="glass-panel rounded-xl p-6 space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-gradient-to-br from-emerald-500/20 to-teal-500/20 rounded-lg">
+            <Globe size={20} className="text-emerald-400" />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-white">{t("settings.languageTitle")}</h2>
+            <p className="text-xs text-gray-500">{t("settings.languageDesc")}</p>
+          </div>
+        </div>
+        <LanguageSwitcher variant="inline" />
+      </section>
 
       {/* ── Model instances (primary surface) ── */}
       <section className="glass-panel rounded-xl p-6 space-y-6">
@@ -107,10 +124,9 @@ export default function SettingsPage() {
             <Cpu size={20} className="text-amber-400" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-white">我的模型实例</h2>
+            <h2 className="text-lg font-bold text-white">{t("settings.instancesTitle")}</h2>
             <p className="text-xs text-gray-500">
-              每个生成阶段(LLM / 图像 / 视频 / 配音)都是独立实例 —
-              同类型可配多个,项目里按需切换。凭证加密存于服务器侧。
+              {t("settings.instancesDesc")}
             </p>
           </div>
         </div>
@@ -125,22 +141,22 @@ export default function SettingsPage() {
             <Settings size={20} className="text-blue-400" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-white">默认画幅</h2>
-            <p className="text-xs text-gray-500">为新项目预填的画幅(仅当前浏览器)</p>
+            <h2 className="text-lg font-bold text-white">{t("settings.aspectTitle")}</h2>
+            <p className="text-xs text-gray-500">{t("settings.aspectDesc")}</p>
           </div>
         </div>
 
         <div className="grid grid-cols-3 gap-4">
           {([
-            { key: "character_aspect_ratio" as const, label: "Character", icon: UserIcon },
-            { key: "scene_aspect_ratio" as const, label: "Scene", icon: Building },
-            { key: "prop_aspect_ratio" as const, label: "Prop", icon: Box },
-            { key: "storyboard_aspect_ratio" as const, label: "Storyboard", icon: Layout },
-          ] as const).map(({ key, label, icon: Icon }) => (
+            { key: "character_aspect_ratio" as const, labelKey: "settings.aspectChar" as const, icon: UserIcon },
+            { key: "scene_aspect_ratio" as const, labelKey: "settings.aspectScene" as const, icon: Building },
+            { key: "prop_aspect_ratio" as const, labelKey: "settings.aspectProp" as const, icon: Box },
+            { key: "storyboard_aspect_ratio" as const, labelKey: "settings.aspectStoryboard" as const, icon: Layout },
+          ] as const).map(({ key, labelKey, icon: Icon }) => (
             <div key={key} className="space-y-2">
               <div className="flex items-center gap-1 text-xs text-gray-400">
                 <Icon size={12} />
-                <label>{label}</label>
+                <label>{t(labelKey)}</label>
               </div>
               <div className="space-y-1">
                 {ASPECT_RATIOS.map((ratio) => (
@@ -163,7 +179,7 @@ export default function SettingsPage() {
             className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white text-sm font-medium rounded-lg transition-all"
           >
             <Save size={16} />
-            保存默认画幅
+            {t("settings.saveAspect")}
           </button>
         </div>
       </section>
@@ -175,25 +191,25 @@ export default function SettingsPage() {
             <MessageSquareCode size={20} className="text-purple-400" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-white">默认提示词配置</h2>
-            <p className="text-xs text-gray-500">为新项目预填的系统 prompt(留空使用内置默认)</p>
+            <h2 className="text-lg font-bold text-white">{t("settings.promptTitle")}</h2>
+            <p className="text-xs text-gray-500">{t("settings.promptDesc")}</p>
           </div>
         </div>
 
         {(
           [
-            { key: "storyboard_polish" as const, label: "Storyboard 润色", desc: "分镜/图片 prompt 润色 system prompt" },
-            { key: "video_polish" as const, label: "I2V 润色", desc: "Image-to-Video prompt 润色 system prompt" },
-            { key: "r2v_polish" as const, label: "R2V 润色", desc: "Reference-to-Video prompt 润色 system prompt" },
+            { key: "storyboard_polish" as const, labelKey: "settings.promptStoryboard" as const, descKey: "settings.promptStoryboardDesc" as const },
+            { key: "video_polish" as const, labelKey: "settings.promptVideo" as const, descKey: "settings.promptVideoDesc" as const },
+            { key: "r2v_polish" as const, labelKey: "settings.promptR2V" as const, descKey: "settings.promptR2VDesc" as const },
           ] as const
         ).map((section) => (
           <div key={section.key} className="space-y-2">
-            <h3 className="text-sm font-bold text-white">{section.label}</h3>
-            <p className="text-[10px] text-gray-500">{section.desc}</p>
+            <h3 className="text-sm font-bold text-white">{t(section.labelKey)}</h3>
+            <p className="text-[10px] text-gray-500">{t(section.descKey)}</p>
             <textarea
               value={promptConfig[section.key]}
               onChange={(e) => setPromptConfig((prev) => ({ ...prev, [section.key]: e.target.value }))}
-              placeholder="留空使用内置默认值..."
+              placeholder={t("settings.promptPlaceholder")}
               className="w-full h-32 bg-black/30 border border-white/10 rounded-lg p-3 text-xs text-gray-300 resize-y focus:outline-none focus:border-purple-500/50 font-mono placeholder-gray-600"
             />
           </div>
@@ -205,7 +221,7 @@ export default function SettingsPage() {
             className="px-6 py-2 text-sm font-medium bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-colors flex items-center gap-2"
           >
             <Save size={16} />
-            保存默认值
+            {t("settings.saveDefaults")}
           </button>
         </div>
       </section>

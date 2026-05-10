@@ -8,6 +8,7 @@ import {
     type ModelInstanceCreate,
     type ModelInstanceUpdate,
 } from "@/lib/api";
+import { useTranslation } from "@/i18n";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Vendor catalog (frontend mirror; the backend is canonical via
@@ -270,14 +271,16 @@ const VENDORS: VendorMeta[] = [
     },
 ];
 
-const TYPE_LABELS: Record<InstanceTypeId, string> = {
-    llm: "LLM (剧本/润色)",
-    t2i: "Text-to-Image",
-    i2i: "Image-to-Image (storyboard)",
-    i2v: "Image-to-Video",
-    t2v: "Text-to-Video",
-    r2v: "Reference-to-Video",
-    tts: "Text-to-Speech",
+// Translation keys for the seven instance type labels surfaced in the wizard.
+// Resolved via `t(...)` at render time so they follow the active locale.
+const TYPE_LABEL_KEYS: Record<InstanceTypeId, { key: string; fallback: string }> = {
+    llm: { key: "instances.typeLLMLong", fallback: "LLM (剧本/润色)" },
+    t2i: { key: "instances.typeT2ILong", fallback: "Text-to-Image" },
+    i2i: { key: "instances.typeI2ILong", fallback: "Image-to-Image (storyboard)" },
+    i2v: { key: "instances.typeI2VLong", fallback: "Image-to-Video" },
+    t2v: { key: "instances.typeT2VLong", fallback: "Text-to-Video" },
+    r2v: { key: "instances.typeR2VLong", fallback: "Reference-to-Video" },
+    tts: { key: "instances.typeTTSLong", fallback: "Text-to-Speech" },
 };
 
 
@@ -294,6 +297,11 @@ export interface InstanceWizardProps {
 
 
 export function InstanceWizard({ initialType, editing, onClose, onSave }: InstanceWizardProps) {
+    const { t } = useTranslation();
+    const typeLabel = (id: InstanceTypeId) => {
+        const meta = TYPE_LABEL_KEYS[id];
+        return t(meta.key, undefined, meta.fallback);
+    };
     const isEdit = !!editing;
     // When the user opened the wizard from a specific type section (e.g.
     // "添加 LLM 实例"), skip step 1 — type is already known.
@@ -383,17 +391,17 @@ export function InstanceWizard({ initialType, editing, onClose, onSave }: Instan
                 <div className="p-6">
                     <h2 className="text-lg font-bold text-white">
                         {isEdit
-                            ? `编辑实例 · ${editing?.display_name}`
+                            ? t("instances.wizardEditTitle", { name: editing?.display_name ?? "" }, `编辑实例 · ${editing?.display_name}`)
                             : initialType
-                                ? `添加 ${TYPE_LABELS[initialType]} 实例`
-                                : "添加模型实例"}
+                                ? t("instances.wizardAddTypedTitle", { label: typeLabel(initialType) }, `添加 ${typeLabel(initialType)} 实例`)
+                                : t("instances.wizardAddTitle", undefined, "添加模型实例")}
                     </h2>
                     <p className="text-xs text-gray-500 mt-1">
                         {isEdit
-                            ? "改完保存即可。留空凭证字段会保留原值。"
+                            ? t("instances.wizardEditHint", undefined, "改完保存即可。留空凭证字段会保留原值。")
                             : initialType
-                                ? "两步完成:选厂商 → 填凭证"
-                                : "三步完成:选类型 → 选厂商 → 填凭证"}
+                                ? t("instances.wizardAddTypedHint", undefined, "两步完成:选厂商 → 填凭证")
+                                : t("instances.wizardAddHint", undefined, "三步完成:选类型 → 选厂商 → 填凭证")}
                     </p>
 
                     {/* Stepper — only the visible steps. When initialType
@@ -413,17 +421,17 @@ export function InstanceWizard({ initialType, editing, onClose, onSave }: Instan
                     {/* Step 1: Type */}
                     {step === 1 && !isEdit && (
                         <div className="space-y-3">
-                            <div className="text-xs uppercase tracking-wider text-gray-500">第 1 步 · 选类型</div>
+                            <div className="text-xs uppercase tracking-wider text-gray-500">{t("instances.wizardStep1Heading", undefined, "第 1 步 · 选类型")}</div>
                             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                                {(Object.keys(TYPE_LABELS) as InstanceTypeId[]).map((t) => (
+                                {(Object.keys(TYPE_LABEL_KEYS) as InstanceTypeId[]).map((id) => (
                                     <button
-                                        key={t}
+                                        key={id}
                                         type="button"
-                                        onClick={() => setType(t)}
-                                        className={`p-3 rounded-lg border text-left transition-colors ${type === t ? "border-amber-500/60 bg-amber-500/10 text-amber-200" : "border-white/10 bg-white/5 text-gray-300 hover:border-white/20"}`}
+                                        onClick={() => setType(id)}
+                                        className={`p-3 rounded-lg border text-left transition-colors ${type === id ? "border-amber-500/60 bg-amber-500/10 text-amber-200" : "border-white/10 bg-white/5 text-gray-300 hover:border-white/20"}`}
                                     >
-                                        <div className="text-xs font-mono uppercase">{t}</div>
-                                        <div className="text-[10px] text-gray-500 mt-0.5">{TYPE_LABELS[t]}</div>
+                                        <div className="text-xs font-mono uppercase">{id}</div>
+                                        <div className="text-[10px] text-gray-500 mt-0.5">{typeLabel(id)}</div>
                                     </button>
                                 ))}
                             </div>
@@ -433,7 +441,7 @@ export function InstanceWizard({ initialType, editing, onClose, onSave }: Instan
                     {/* Step 2: Vendor */}
                     {step === 2 && !isEdit && (
                         <div className="space-y-3">
-                            <div className="text-xs uppercase tracking-wider text-gray-500">第 2 步 · 选厂商</div>
+                            <div className="text-xs uppercase tracking-wider text-gray-500">{t("instances.wizardStep2Heading", undefined, "第 2 步 · 选厂商")}</div>
                             <div className="grid grid-cols-2 gap-2">
                                 {eligibleVendors.map((v) => (
                                     <button
@@ -448,7 +456,7 @@ export function InstanceWizard({ initialType, editing, onClose, onSave }: Instan
                                 ))}
                             </div>
                             {eligibleVendors.length === 0 && (
-                                <p className="text-xs text-gray-500">该类型暂无可用厂商。</p>
+                                <p className="text-xs text-gray-500">{t("instances.noVendorsForType", undefined, "该类型暂无可用厂商。")}</p>
                             )}
                         </div>
                     )}
@@ -456,26 +464,26 @@ export function InstanceWizard({ initialType, editing, onClose, onSave }: Instan
                     {/* Step 3: Details */}
                     {step === 3 && (
                         <div className="space-y-4">
-                            <div className="text-xs uppercase tracking-wider text-gray-500">第 3 步 · 填详情</div>
+                            <div className="text-xs uppercase tracking-wider text-gray-500">{t("instances.wizardStep3Heading", undefined, "第 3 步 · 填详情")}</div>
 
                             <div>
-                                <label className="block text-xs font-medium text-gray-300 mb-1.5">别名 <span className="text-rose-500">*</span></label>
+                                <label className="block text-xs font-medium text-gray-300 mb-1.5">{t("instances.aliasLabel", undefined, "别名")} <span className="text-rose-500">*</span></label>
                                 <input
                                     type="text"
                                     value={displayName}
                                     onChange={(e) => setDisplayName(e.target.value)}
-                                    placeholder="例如:工作室主力 LLM"
+                                    placeholder={t("instances.aliasPlaceholder", undefined, "例如:工作室主力 LLM")}
                                     className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-white/30"
                                 />
                             </div>
 
                             <div>
-                                <label className="block text-xs font-medium text-gray-300 mb-1.5">模型 <span className="text-rose-500">*</span></label>
+                                <label className="block text-xs font-medium text-gray-300 mb-1.5">{t("instances.modelLabel", undefined, "模型")} <span className="text-rose-500">*</span></label>
                                 <input
                                     type="text"
                                     value={modelName}
                                     onChange={(e) => setModelName(e.target.value)}
-                                    placeholder="模型 ID"
+                                    placeholder={t("instances.modelIdPlaceholder", undefined, "模型 ID")}
                                     className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-white/30 font-mono"
                                 />
                                 {typeSuggestions.length > 0 && (
@@ -496,8 +504,8 @@ export function InstanceWizard({ initialType, editing, onClose, onSave }: Instan
 
                             <div>
                                 <label className="flex items-center justify-between text-xs font-medium text-gray-300 mb-1.5">
-                                    <span>Base URL</span>
-                                    <span className="text-[10px] text-gray-600">留空使用厂商默认</span>
+                                    <span>{t("instances.baseUrlLabel")}</span>
+                                    <span className="text-[10px] text-gray-600">{t("instances.baseUrlHint", undefined, "留空使用厂商默认")}</span>
                                 </label>
                                 <input
                                     type="text"
@@ -512,7 +520,7 @@ export function InstanceWizard({ initialType, editing, onClose, onSave }: Instan
                                 <div key={ck.key}>
                                     <label className="block text-xs font-medium text-gray-300 mb-1.5">
                                         {ck.label} {!isEdit && <span className="text-rose-500">*</span>}
-                                        {isEdit && <span className="text-[10px] text-gray-600 ml-1">留空保留原值</span>}
+                                        {isEdit && <span className="text-[10px] text-gray-600 ml-1">{t("instances.credentialKeepHint", undefined, "留空保留原值")}</span>}
                                     </label>
                                     <div className="relative">
                                         <input
@@ -541,7 +549,7 @@ export function InstanceWizard({ initialType, editing, onClose, onSave }: Instan
                                         onChange={(e) => setSetAsDefault(e.target.checked)}
                                         className="rounded border-white/20"
                                     />
-                                    设为该类型的默认实例
+                                    {t("instances.setAsTypeDefault", undefined, "设为该类型的默认实例")}
                                 </label>
                             )}
 
@@ -552,7 +560,7 @@ export function InstanceWizard({ initialType, editing, onClose, onSave }: Instan
                                     rel="noopener noreferrer"
                                     className="inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-300"
                                 >
-                                    查看 {vendorMeta.label} 文档
+                                    {t("instances.viewVendorDocs", { vendor: vendorMeta.label }, `查看 ${vendorMeta.label} 文档`)}
                                 </a>
                             )}
 
@@ -576,7 +584,7 @@ export function InstanceWizard({ initialType, editing, onClose, onSave }: Instan
                                 className="flex items-center gap-1 px-3 py-2 text-xs text-gray-400 hover:text-white transition-colors"
                             >
                                 <ChevronLeft size={14} />
-                                上一步
+                                {t("instances.wizardPrev")}
                             </button>
                         ) : (
                             <div />
@@ -589,7 +597,7 @@ export function InstanceWizard({ initialType, editing, onClose, onSave }: Instan
                                 disabled={(step === 1 && !type) || (step === 2 && !vendorId)}
                                 className="flex items-center gap-1 px-4 py-2 text-xs font-medium bg-amber-600 hover:bg-amber-500 text-white rounded-lg transition-colors disabled:opacity-50"
                             >
-                                下一步
+                                {t("instances.wizardNext")}
                                 <ChevronRight size={14} />
                             </button>
                         ) : (
@@ -600,7 +608,7 @@ export function InstanceWizard({ initialType, editing, onClose, onSave }: Instan
                                 className="flex items-center gap-1 px-4 py-2 text-xs font-medium bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white rounded-lg transition-colors disabled:opacity-50"
                             >
                                 {saving && <Loader2 size={14} className="animate-spin" />}
-                                {isEdit ? "保存" : "创建实例"}
+                                {isEdit ? t("instances.save") : t("instances.createInstance", undefined, "创建实例")}
                             </button>
                         )}
                     </div>

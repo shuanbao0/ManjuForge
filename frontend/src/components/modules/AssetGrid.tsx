@@ -7,6 +7,7 @@ import { RefreshCw, Download, Plus } from "lucide-react";
 import { api, API_URL } from "@/lib/api";
 import { useProjectStore } from "@/store/projectStore";
 import { getAssetUrl } from "@/lib/utils";
+import { useTranslation } from "@/i18n";
 
 interface Asset {
     id: string;
@@ -20,6 +21,7 @@ interface AssetGridProps {
 }
 
 export default function AssetGrid({ projectId }: AssetGridProps) {
+    const { t } = useTranslation();
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
 
@@ -68,7 +70,7 @@ export default function AssetGrid({ projectId }: AssetGridProps) {
     const handleGenerate = async () => {
         if (!projectId) {
             // Try to find the latest project or alert user
-            alert("请先创建脚本！");
+            alert(t("modules.assets.createScriptFirst", undefined, "请先创建脚本！"));
             return;
         }
         setIsGenerating(true);
@@ -108,10 +110,10 @@ export default function AssetGrid({ projectId }: AssetGridProps) {
     return (
         <div className="h-full p-6 overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-display font-bold text-white">生成的资源</h2>
+                <h2 className="text-xl font-display font-bold text-white">{t("modules.assets.generatedAssets", undefined, "生成的资源")}</h2>
                 <div className="flex gap-2">
                     <button className="glass-button text-xs flex items-center gap-2">
-                        <Plus size={14} /> 上传
+                        <Plus size={14} /> {t("common.upload")}
                     </button>
                     <button
                         onClick={handleGenerate}
@@ -119,7 +121,7 @@ export default function AssetGrid({ projectId }: AssetGridProps) {
                         className="glass-button text-xs flex items-center gap-2 text-primary border-primary/30"
                     >
                         <RefreshCw size={14} className={isGenerating ? "animate-spin" : ""} />
-                        {isGenerating ? "生成中..." : "生成全部"}
+                        {isGenerating ? t("modules.common.generating") : t("modules.assets.generateAllShort", undefined, "生成全部")}
                     </button>
                 </div>
             </div>
@@ -141,7 +143,7 @@ export default function AssetGrid({ projectId }: AssetGridProps) {
                             />
                         ) : (
                             <div className="w-full h-48 bg-white/5 flex items-center justify-center text-xs text-gray-500">
-                                生成中...
+                                {t("modules.common.generating")}
                             </div>
                         )}
 

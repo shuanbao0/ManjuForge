@@ -4,6 +4,7 @@ import { useEffect, useMemo } from "react";
 import { Check, Loader2, Sparkles } from "lucide-react";
 import { useInstances } from "@/hooks/useInstances";
 import { type InstanceTypeId } from "@/lib/api";
+import { useTranslation } from "@/i18n";
 
 
 export interface InstanceSelectorProps {
@@ -24,6 +25,7 @@ export interface InstanceSelectorProps {
  * project to that exact instance, surviving default changes elsewhere.
  */
 export function InstanceSelector({ type, value, onChange, label }: InstanceSelectorProps) {
+    const { t } = useTranslation();
     const { instances, loading, error } = useInstances(type);
 
     const sorted = useMemo(
@@ -42,19 +44,19 @@ export function InstanceSelector({ type, value, onChange, label }: InstanceSelec
         return (
             <div className="flex items-center gap-2 text-xs text-gray-500 py-2">
                 <Loader2 size={12} className="animate-spin" />
-                加载实例...
+                {t("instances.loadingInstances", undefined, "加载实例...")}
             </div>
         );
     }
 
     if (error) {
-        return <div className="text-xs text-rose-300">加载失败:{error}</div>;
+        return <div className="text-xs text-rose-300">{t("instances.loadFailed", undefined, "加载失败")}:{error}</div>;
     }
 
     if (instances.length === 0) {
         return (
             <div className="text-xs text-gray-500 px-3 py-2 border border-dashed border-white/10 rounded">
-                还没有 {type.toUpperCase()} 实例。请先在设置里添加一个。
+                {t("instances.noInstancesForType", { type: type.toUpperCase() }, `还没有 ${type.toUpperCase()} 实例。请先在设置里添加一个。`)}
             </div>
         );
     }
@@ -72,8 +74,8 @@ export function InstanceSelector({ type, value, onChange, label }: InstanceSelec
                     className={`flex items-center justify-between p-2.5 rounded-lg border text-left transition-colors ${isUsingDefault ? "border-amber-500/60 bg-amber-500/10" : "border-white/10 bg-white/5 hover:border-white/20"}`}
                 >
                     <div>
-                        <span className="text-sm text-white">使用我的默认</span>
-                        <span className="text-[10px] text-gray-500 ml-2">运行时按 type 解析</span>
+                        <span className="text-sm text-white">{t("instances.useMyDefault", undefined, "使用我的默认")}</span>
+                        <span className="text-[10px] text-gray-500 ml-2">{t("instances.useMyDefaultHint", undefined, "运行时按 type 解析")}</span>
                     </div>
                     {isUsingDefault && <Check size={14} className="text-amber-400" />}
                 </button>

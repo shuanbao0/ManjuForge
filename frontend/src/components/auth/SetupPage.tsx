@@ -3,12 +3,14 @@
 import { useState } from "react";
 import { Loader2, ShieldCheck } from "lucide-react";
 import { auth } from "@/lib/api";
+import { useTranslation } from "@/i18n";
 
 interface Props {
   onComplete: () => void;
 }
 
 export default function SetupPage({ onComplete }: Props) {
+  const { t } = useTranslation();
   const [email, setEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
@@ -20,11 +22,11 @@ export default function SetupPage({ onComplete }: Props) {
     e.preventDefault();
     setError(null);
     if (password.length < 8) {
-      setError("密码至少 8 位");
+      setError(t("auth.passwordTooShort"));
       return;
     }
     if (password !== confirm) {
-      setError("两次输入的密码不一致");
+      setError(t("auth.passwordMismatch"));
       return;
     }
     setSubmitting(true);
@@ -33,7 +35,7 @@ export default function SetupPage({ onComplete }: Props) {
       onComplete();
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: { message?: string } } } })?.response?.data?.detail;
-      setError(detail?.message ?? "初始化失败，请稍后重试");
+      setError(detail?.message ?? t("auth.setupRetry", undefined, "初始化失败，请稍后重试"));
     } finally {
       setSubmitting(false);
     }
@@ -50,26 +52,26 @@ export default function SetupPage({ onComplete }: Props) {
             <ShieldCheck size={22} className="text-amber-400" />
           </div>
           <div>
-            <h1 className="text-xl font-display font-bold text-white">初始化管理员</h1>
-            <p className="text-xs text-gray-500 mt-0.5">这是首次启动 ManjuForge — 创建第一位管理员账户</p>
+            <h1 className="text-xl font-display font-bold text-white">{t("auth.setupTitle", undefined, "初始化管理员")}</h1>
+            <p className="text-xs text-gray-500 mt-0.5">{t("auth.setupSubtitle")}</p>
           </div>
         </div>
 
         <form onSubmit={submit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">邮箱 <span className="text-red-500">*</span></label>
-            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="admin@example.com" className={inputClass} autoFocus />
+            <label className="block text-sm font-medium text-gray-300 mb-2">{t("auth.emailLabel")} <span className="text-red-500">*</span></label>
+            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t("auth.adminEmailPlaceholder", undefined, "admin@example.com")} className={inputClass} autoFocus />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">显示名（可选）</label>
-            <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="管理员" className={inputClass} />
+            <label className="block text-sm font-medium text-gray-300 mb-2">{t("auth.displayNameOptional", undefined, "显示名（可选）")}</label>
+            <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder={t("auth.adminDisplayPlaceholder", undefined, "管理员")} className={inputClass} />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">密码 <span className="text-red-500">*</span></label>
-            <input type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="至少 8 位" className={inputClass} />
+            <label className="block text-sm font-medium text-gray-300 mb-2">{t("auth.passwordLabel")} <span className="text-red-500">*</span></label>
+            <input type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t("auth.passwordMinPlaceholder", undefined, "至少 8 位")} className={inputClass} />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">确认密码 <span className="text-red-500">*</span></label>
+            <label className="block text-sm font-medium text-gray-300 mb-2">{t("auth.confirmPasswordLabel", undefined, "确认密码")} <span className="text-red-500">*</span></label>
             <input type="password" required value={confirm} onChange={(e) => setConfirm(e.target.value)} className={inputClass} />
           </div>
 
@@ -83,7 +85,7 @@ export default function SetupPage({ onComplete }: Props) {
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white text-sm font-medium rounded-lg transition-all disabled:opacity-50"
           >
             {submitting ? <Loader2 size={16} className="animate-spin" /> : null}
-            {submitting ? "创建中..." : "创建管理员"}
+            {submitting ? t("auth.setupSubmitting") : t("auth.setupSubmit")}
           </button>
         </form>
       </div>

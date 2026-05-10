@@ -6,12 +6,14 @@ import { Paintbrush, User, MapPin, Box, Lock, Unlock, RefreshCw, Upload, Image a
 import { useProjectStore } from "@/store/projectStore";
 import { api, API_URL, crudApi } from "@/lib/api";
 import { getAssetUrl } from "@/lib/utils";
+import { useTranslation } from "@/i18n";
 import CharacterWorkbench from "./CharacterWorkbench";
 import { VariantSelector } from "../common/VariantSelector";
 import { VideoVariantSelector } from "../common/VideoVariantSelector";
 import UploadAssetModal from "../modals/UploadAssetModal";
 
 export default function ConsistencyVault() {
+    const { t } = useTranslation();
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
 
@@ -119,7 +121,7 @@ export default function ConsistencyVault() {
                         } else if (status.status === "failed") {
                             clearInterval(pollInterval);
                             console.error("Asset generation failed:", status.error);
-                            alert(status.error || '生成失败，请稍后重试');
+                            alert(status.error || t("modules.assets.generateFailedRetry", undefined, "生成失败，请稍后重试"));
 
                             // Also refresh project to show updated status
                             try {
@@ -137,7 +139,7 @@ export default function ConsistencyVault() {
                     } catch (pollError: any) {
                         console.error("Polling error:", pollError);
                         clearInterval(pollInterval);
-                        alert(`轮询任务状态失败: ${pollError.message || '网络错误'}`);
+                        alert(`${t("modules.assets.pollFailed", undefined, "轮询任务状态失败")}: ${pollError.message || t("modules.common.networkError", undefined, "网络错误")}`);
                         if (removeGeneratingTask) {
                             removeGeneratingTask(assetId, generationType);
                         }
@@ -154,7 +156,7 @@ export default function ConsistencyVault() {
             }
         } catch (error: any) {
             console.error("Failed to generate asset:", error);
-            alert(`启动生成任务失败: ${error.response?.data?.detail || error.message}`);
+            alert(`${t("modules.assets.startGenerationFailed", undefined, "启动生成任务失败")}: ${error.response?.data?.detail || error.message}`);
             if (removeGeneratingTask) {
                 removeGeneratingTask(assetId, generationType);
             }
@@ -164,7 +166,7 @@ export default function ConsistencyVault() {
     // Delete asset handler
     const handleDeleteAsset = async (assetId: string, type: string) => {
         if (!currentProject) return;
-        if (!confirm(`Are you sure you want to delete this ${type}?`)) return;
+        if (!confirm(t("modules.assets.deleteAssetTypedConfirm", { type }, `Are you sure you want to delete this ${type}?`))) return;
 
         try {
             if (type === "character") {
@@ -179,7 +181,7 @@ export default function ConsistencyVault() {
             updateProject(currentProject.id, updatedProject);
         } catch (error) {
             console.error("Failed to delete asset:", error);
-            alert("Failed to delete asset");
+            alert(t("modules.assets.deleteAssetFailed", undefined, "Failed to delete asset"));
         }
     };
 
@@ -201,7 +203,7 @@ export default function ConsistencyVault() {
             setIsCreateDialogOpen(false);
         } catch (error) {
             console.error("Failed to create asset:", error);
-            alert("Failed to create asset");
+            alert(t("modules.assets.createAssetFailed", undefined, "Failed to create asset"));
         }
     };
 
@@ -265,7 +267,7 @@ export default function ConsistencyVault() {
                             console.log(`[Video Polling] ${generationType} generated successfully`);
                         } else if (status.status === "failed") {
                             clearInterval(pollInterval);
-                            alert(`视频生成失败: ${status.error || '生成失败，请稍后重试'}`);
+                            alert(`${t("modules.assets.videoGenerateFailed", undefined, "视频生成失败")}: ${status.error || t("modules.assets.generateFailedRetry", undefined, "生成失败，请稍后重试")}`);
                             if (removeGeneratingTask) {
                                 removeGeneratingTask(assetId, generationType);
                             }
@@ -276,7 +278,7 @@ export default function ConsistencyVault() {
                     } catch (pollError: any) {
                         console.error("Video polling error:", pollError);
                         clearInterval(pollInterval);
-                        alert(`视频轮询失败: ${pollError.message || '网络错误'}`);
+                        alert(`${t("modules.assets.videoPollFailed", undefined, "视频轮询失败")}: ${pollError.message || t("modules.common.networkError", undefined, "网络错误")}`);
                         if (removeGeneratingTask) {
                             removeGeneratingTask(assetId, generationType);
                         }
@@ -291,7 +293,7 @@ export default function ConsistencyVault() {
             }
         } catch (error: any) {
             console.error("Failed to generate video:", error);
-            alert(`启动视频生成失败: ${error.response?.data?.detail || error.message}`);
+            alert(`${t("modules.assets.startVideoGenerationFailed", undefined, "启动视频生成失败")}: ${error.response?.data?.detail || error.message}`);
             if (removeGeneratingTask) {
                 removeGeneratingTask(assetId, generationType);
             }
@@ -300,7 +302,7 @@ export default function ConsistencyVault() {
 
     const handleDeleteVideo = async (assetId: string, type: string, videoId: string) => {
         if (!currentProject) return;
-        if (!confirm("Are you sure you want to delete this video? This action cannot be undone.")) return;
+        if (!confirm(t("modules.assets.deleteVideoConfirm", undefined, "Are you sure you want to delete this video? This action cannot be undone."))) return;
 
         try {
             await api.deleteAssetVideo(currentProject.id, type, assetId, videoId);
@@ -308,7 +310,7 @@ export default function ConsistencyVault() {
             updateProject(currentProject.id, updatedProject);
         } catch (error: any) {
             console.error("Failed to delete video:", error);
-            alert(`Failed to delete video: ${error.message}`);
+            alert(`${t("modules.assets.deleteVideoFailed", undefined, "Failed to delete video")}: ${error.message}`);
         }
     };
 
@@ -317,10 +319,11 @@ export default function ConsistencyVault() {
         if (!currentProject) return;
 
         const confirmed = confirm(
-            "同步描述说明：\n\n" +
-            "此操作会将 Script 页面中的最新描述同步到所有素材。\n" +
-            "已生成的图片不会被删除，但后续重新生成时将使用新描述。\n\n" +
-            "是否继续？"
+            t(
+                "modules.assets.syncDescriptionsConfirm",
+                undefined,
+                "同步描述说明：\n\n此操作会将 Script 页面中的最新描述同步到所有素材。\n已生成的图片不会被删除，但后续重新生成时将使用新描述。\n\n是否继续？"
+            )
         );
 
         if (!confirmed) return;
@@ -328,10 +331,10 @@ export default function ConsistencyVault() {
         try {
             const updatedProject = await api.syncDescriptions(currentProject.id);
             updateProject(currentProject.id, updatedProject);
-            alert("描述同步成功！");
+            alert(t("modules.assets.syncDescriptionsSuccess", undefined, "描述同步成功！"));
         } catch (error: any) {
             console.error("Failed to sync descriptions:", error);
-            alert(`同步失败: ${error.message}`);
+            alert(`${t("modules.assets.syncFailed", undefined, "同步失败")}: ${error.message}`);
         }
     };
 
@@ -367,21 +370,21 @@ export default function ConsistencyVault() {
                         active={activeTab === "character"}
                         onClick={() => setActiveTab("character")}
                         icon={<User size={18} />}
-                        label="Characters"
+                        label={t("modules.assets.tabCharacters")}
                         count={currentProject?.characters?.length || 0}
                     />
                     <TabButton
                         active={activeTab === "scene"}
                         onClick={() => setActiveTab("scene")}
                         icon={<MapPin size={18} />}
-                        label="Scenes"
+                        label={t("modules.assets.tabScenes")}
                         count={currentProject?.scenes?.length || 0}
                     />
                     <TabButton
                         active={activeTab === "prop"}
                         onClick={() => setActiveTab("prop")}
                         icon={<Box size={18} />}
-                        label="Props"
+                        label={t("modules.assets.tabProps")}
                         count={currentProject?.props?.length || 0}
                     />
                 </div>
@@ -390,10 +393,10 @@ export default function ConsistencyVault() {
                     <button
                         onClick={handleSyncDescriptions}
                         className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors"
-                        title="同步 Script 页面中的描述到所有素材"
+                        title={t("modules.assets.syncDescriptionsTitle", undefined, "同步 Script 页面中的描述到所有素材")}
                     >
                         <RefreshCw size={16} className="text-blue-400" />
-                        <span className="text-sm font-bold">同步描述</span>
+                        <span className="text-sm font-bold">{t("modules.assets.syncDescriptions", undefined, "同步描述")}</span>
                     </button>
 
                 </div>
@@ -403,14 +406,14 @@ export default function ConsistencyVault() {
             <div className="flex-1 overflow-y-auto p-6">
                 {!currentProject ? (
                     <div className="flex items-center justify-center h-full text-gray-500">
-                        Loading project...
+                        {t("modules.assets.loadingProject", undefined, "Loading project...")}
                     </div>
                 ) : assets?.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full text-gray-500 gap-4">
                         <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center">
                             {activeTab === "character" ? <User size={32} /> : activeTab === "scene" ? <MapPin size={32} /> : <Box size={32} />}
                         </div>
-                        <p>No {activeTab}s found</p>
+                        <p>{t("modules.assets.noOfTypeFound", { type: activeTab }, `No ${activeTab}s found`)}</p>
                     </div>
                 ) : (
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
@@ -440,7 +443,7 @@ export default function ConsistencyVault() {
                         >
                             <div className="flex flex-col items-center gap-3 text-gray-400 group-hover:text-primary transition-colors">
                                 <Plus size={40} />
-                                <span className="text-sm font-medium">Add {activeTab}</span>
+                                <span className="text-sm font-medium">{t("modules.assets.addOfType", { type: activeTab }, `Add ${activeTab}`)}</span>
                             </div>
                         </motion.div>
                     </div>
@@ -520,6 +523,7 @@ export default function ConsistencyVault() {
 }
 
 function CharacterDetailModal({ asset, type, onClose, onUpdateDescription, onGenerate, isGenerating, stylePrompt = "", styleNegativePrompt = "", onGenerateVideo, onDeleteVideo, isGeneratingVideo }: any) {
+    const { t } = useTranslation();
     const [description, setDescription] = useState(asset.description);
     const [isEditing, setIsEditing] = useState(false);
     const currentProject = useProjectStore((state) => state.currentProject);
@@ -595,13 +599,13 @@ function CharacterDetailModal({ asset, type, onClose, onUpdateDescription, onGen
                             onClick={() => setActiveTab("image")}
                             className={`flex-1 p-3 text-sm font-bold transition-colors ${activeTab === "image" ? "text-white border-b-2 border-primary bg-white/5" : "text-gray-500 hover:text-gray-300"}`}
                         >
-                            Image Reference
+                            {t("modules.assets.imageReference", undefined, "Image Reference")}
                         </button>
                         <button
                             onClick={() => setActiveTab("video")}
                             className={`flex-1 p-3 text-sm font-bold transition-colors ${activeTab === "video" ? "text-white border-b-2 border-primary bg-white/5" : "text-gray-500 hover:text-gray-300"}`}
                         >
-                            Video Reference
+                            {t("modules.assets.videoReference", undefined, "Video Reference")}
                         </button>
                     </div>
 
@@ -645,10 +649,10 @@ function CharacterDetailModal({ asset, type, onClose, onUpdateDescription, onGen
                         {/* Description */}
                         <div className="space-y-2">
                             <div className="flex justify-between items-center">
-                                <label className="text-sm font-bold text-gray-400 uppercase">Description</label>
+                                <label className="text-sm font-bold text-gray-400 uppercase">{t("modules.assets.descriptionLabel", undefined, "Description")}</label>
                                 {!isEditing && (
                                     <button onClick={() => setIsEditing(true)} className="text-xs text-primary hover:underline">
-                                        Edit
+                                        {t("common.edit")}
                                     </button>
                                 )}
                             </div>
@@ -660,8 +664,8 @@ function CharacterDetailModal({ asset, type, onClose, onUpdateDescription, onGen
                                         className="w-full h-32 bg-black/20 border border-white/10 rounded-lg p-3 text-sm text-gray-300 resize-none focus:border-primary focus:outline-none"
                                     />
                                     <div className="flex justify-end gap-2">
-                                        <button onClick={() => { setIsEditing(false); setDescription(asset.description); }} className="px-3 py-1.5 text-xs text-gray-400 hover:text-white">Cancel</button>
-                                        <button onClick={handleSave} className="px-3 py-1.5 bg-primary text-white text-xs rounded hover:bg-primary/90">Save Description</button>
+                                        <button onClick={() => { setIsEditing(false); setDescription(asset.description); }} className="px-3 py-1.5 text-xs text-gray-400 hover:text-white">{t("common.cancel")}</button>
+                                        <button onClick={handleSave} className="px-3 py-1.5 bg-primary text-white text-xs rounded hover:bg-primary/90">{t("modules.assets.saveDescription", undefined, "Save Description")}</button>
                                     </div>
                                 </div>
                             ) : (
@@ -674,12 +678,12 @@ function CharacterDetailModal({ asset, type, onClose, onUpdateDescription, onGen
                         {/* Video Prompt (Only visible in Video Tab) */}
                         {activeTab === "video" && (
                             <div className="space-y-2">
-                                <label className="text-sm font-bold text-gray-400 uppercase">Video Prompt</label>
+                                <label className="text-sm font-bold text-gray-400 uppercase">{t("modules.assets.videoPromptLabel", undefined, "Video Prompt")}</label>
                                 <textarea
                                     value={videoPrompt}
                                     onChange={(e) => setVideoPrompt(e.target.value)}
                                     className="w-full h-24 bg-black/20 border border-white/10 rounded-lg p-3 text-sm text-gray-300 resize-none focus:border-primary focus:outline-none"
-                                    placeholder="Describe the motion..."
+                                    placeholder={t("modules.assets.describeMotion", undefined, "Describe the motion...")}
                                 />
                             </div>
                         )}
@@ -687,7 +691,7 @@ function CharacterDetailModal({ asset, type, onClose, onUpdateDescription, onGen
                         {/* Style Control (Only visible in Image Tab) */}
                         {activeTab === "image" && (
                             <div className="space-y-2">
-                                <label className="text-sm font-bold text-gray-400 uppercase">Style Settings</label>
+                                <label className="text-sm font-bold text-gray-400 uppercase">{t("modules.assets.styleSettings", undefined, "Style Settings")}</label>
                                 <div className="bg-white/5 rounded-lg p-3 border border-white/5">
                                     <div className="flex items-center gap-2 mb-2">
                                         <input
@@ -698,13 +702,13 @@ function CharacterDetailModal({ asset, type, onClose, onUpdateDescription, onGen
                                             className="rounded border-gray-600 bg-gray-700 text-primary focus:ring-primary"
                                         />
                                         <label htmlFor="applyStyleModal" className="text-sm font-bold text-gray-300 cursor-pointer select-none">
-                                            Apply Art Direction Style
+                                            {t("modules.assets.applyArtStyle")}
                                         </label>
                                     </div>
 
                                     {stylePrompt && (
                                         <div className="text-xs text-gray-500 font-mono bg-black/20 p-2 rounded border border-white/5">
-                                            <span className="text-primary font-bold">Style:</span> {stylePrompt}
+                                            <span className="text-primary font-bold">{t("modules.assets.styleColon", undefined, "Style:")}</span> {stylePrompt}
                                         </div>
                                     )}
                                 </div>
@@ -718,7 +722,7 @@ function CharacterDetailModal({ asset, type, onClose, onUpdateDescription, onGen
                                     onClick={() => setShowAdvanced(!showAdvanced)}
                                     className="flex items-center gap-2 text-xs font-bold text-gray-500 hover:text-white transition-colors uppercase"
                                 >
-                                    <span>Advanced Settings (Negative Prompt)</span>
+                                    <span>{t("modules.assets.advancedNegativePrompt", undefined, "Advanced Settings (Negative Prompt)")}</span>
                                     <ChevronRight size={12} className={`transform transition-transform ${showAdvanced ? 'rotate-90' : ''}`} />
                                 </button>
 
@@ -734,7 +738,7 @@ function CharacterDetailModal({ asset, type, onClose, onUpdateDescription, onGen
                                                 value={negativePrompt}
                                                 onChange={(e) => setNegativePrompt(e.target.value)}
                                                 className="w-full h-24 bg-black/20 border border-white/10 rounded-lg p-3 text-xs text-gray-400 resize-none focus:outline-none focus:border-primary/50 font-mono"
-                                                placeholder="Enter negative prompt..."
+                                                placeholder={t("modules.assets.enterNegativePrompt", undefined, "Enter negative prompt...")}
                                             />
                                         </motion.div>
                                     )}
@@ -750,7 +754,7 @@ function CharacterDetailModal({ asset, type, onClose, onUpdateDescription, onGen
                             className="flex-1 py-3 bg-green-600 hover:bg-green-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-green-900/20"
                         >
                             <Check size={18} />
-                            Done
+                            {t("modules.assets.done", undefined, "Done")}
                         </button>
                     </div>
                 </div>
@@ -778,6 +782,7 @@ function TabButton({ active, onClick, icon, label, count }: any) {
 }
 
 function ImageWithRetry({ src, alt, className }: { src: string, alt: string, className?: string }) {
+    const { t } = useTranslation();
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(false);
     const [retryCount, setRetryCount] = useState(0);
@@ -821,7 +826,7 @@ function ImageWithRetry({ src, alt, className }: { src: string, alt: string, cla
             />
             {error && retryCount >= 10 && (
                 <div className="absolute inset-0 flex items-center justify-center bg-red-500/10 backdrop-blur-sm z-20">
-                    <span className="text-xs text-red-400 font-bold">Failed to load</span>
+                    <span className="text-xs text-red-400 font-bold">{t("modules.assets.failedToLoad", undefined, "Failed to load")}</span>
                 </div>
             )}
         </div>
@@ -829,6 +834,7 @@ function ImageWithRetry({ src, alt, className }: { src: string, alt: string, cla
 }
 
 function AssetCard({ asset, type, isGenerating, onGenerate, onToggleLock, onClick, onDelete, onUpload }: any) {
+    const { t } = useTranslation();
     const isLocked = asset.locked || false;
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
@@ -848,7 +854,7 @@ function AssetCard({ asset, type, isGenerating, onGenerate, onToggleLock, onClic
             updateProject(currentProject.id, updatedProject);
         } catch (error) {
             console.error("Failed to upload asset image:", error);
-            alert("Failed to upload image");
+            alert(t("modules.assets.uploadImageFailed", undefined, "Failed to upload image"));
         }
     };
 
@@ -883,7 +889,7 @@ function AssetCard({ asset, type, isGenerating, onGenerate, onToggleLock, onClic
             {isGenerating && (
                 <div className="absolute inset-0 z-20 bg-black/60 backdrop-blur-sm flex items-center justify-center flex-col gap-2">
                     <RefreshCw className="animate-spin text-primary" size={32} />
-                    <span className="text-xs font-mono text-primary">Generating...</span>
+                    <span className="text-xs font-mono text-primary">{t("modules.assets.generatingShort", undefined, "Generating...")}</span>
                 </div>
             )}
 
@@ -895,7 +901,7 @@ function AssetCard({ asset, type, isGenerating, onGenerate, onToggleLock, onClic
                         onDelete();
                     }}
                     className="p-2 rounded-full backdrop-blur-md bg-red-500/20 text-red-400 hover:bg-red-500/40 transition-colors"
-                    title="Delete"
+                    title={t("common.delete")}
                 >
                     <Trash2 size={14} />
                 </button>
@@ -917,7 +923,7 @@ function AssetCard({ asset, type, isGenerating, onGenerate, onToggleLock, onClic
             <div className="absolute bottom-0 left-0 right-0 p-4 z-30">
                 <h3 className="text-lg font-bold text-white mb-1 truncate">{asset.name}</h3>
                 <p className="text-xs text-gray-400 line-clamp-2 mb-3 h-8">
-                    {asset.description || "No description"}
+                    {asset.description || t("modules.assets.noDescription", undefined, "No description")}
                 </p>
 
                 <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity transform translate-y-2 group-hover:translate-y-0">
@@ -933,7 +939,7 @@ function AssetCard({ asset, type, isGenerating, onGenerate, onToggleLock, onClic
                             }`}
                     >
                         <RefreshCw size={14} className={isGenerating ? "animate-spin" : ""} />
-                        {isGenerating ? "Generating..." : "Generate"}
+                        {isGenerating ? t("modules.assets.generatingShort", undefined, "Generating...") : t("modules.assets.generateBtn", undefined, "Generate")}
                     </button>
                     <button
                         onClick={(e) => {
@@ -941,7 +947,7 @@ function AssetCard({ asset, type, isGenerating, onGenerate, onToggleLock, onClic
                             onUpload?.();
                         }}
                         className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white cursor-pointer transition-colors"
-                        title="上传图片"
+                        title={t("modules.assets.uploadImage", undefined, "上传图片")}
                     >
                         <Upload size={14} />
                     </button>
@@ -954,13 +960,14 @@ function AssetCard({ asset, type, isGenerating, onGenerate, onToggleLock, onClic
 
 
 function CreateAssetDialog({ type, onClose, onCreate }: { type: string; onClose: () => void; onCreate: (data: { name: string; description: string }) => void }) {
+    const { t } = useTranslation();
     const [name, setName] = useState("");
     const [description, setDescription] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const handleSubmit = async () => {
         if (!name.trim()) {
-            alert("Name is required");
+            alert(t("modules.assets.nameRequired", undefined, "Name is required"));
             return;
         }
         setIsSubmitting(true);
@@ -971,7 +978,11 @@ function CreateAssetDialog({ type, onClose, onCreate }: { type: string; onClose:
         }
     };
 
-    const typeLabel = type === "character" ? "Character" : type === "scene" ? "Scene" : "Prop";
+    const typeLabel = type === "character"
+        ? t("modules.assets.typeCharacter", undefined, "Character")
+        : type === "scene"
+            ? t("modules.assets.typeScene", undefined, "Scene")
+            : t("modules.assets.typeProp", undefined, "Prop");
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-8">
@@ -984,7 +995,7 @@ function CreateAssetDialog({ type, onClose, onCreate }: { type: string; onClose:
                 <div className="p-6 border-b border-white/10 flex justify-between items-center bg-black/20">
                     <div className="flex items-center gap-3">
                         <Plus className="text-primary" size={20} />
-                        <h2 className="text-lg font-bold text-white">Create New {typeLabel}</h2>
+                        <h2 className="text-lg font-bold text-white">{t("modules.assets.createNewTyped", { type: typeLabel }, `Create New ${typeLabel}`)}</h2>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
                         <X size={20} className="text-gray-400" />
@@ -993,21 +1004,21 @@ function CreateAssetDialog({ type, onClose, onCreate }: { type: string; onClose:
 
                 <div className="p-6 space-y-4">
                     <div>
-                        <label className="block text-sm font-medium text-gray-400 mb-2">Name *</label>
+                        <label className="block text-sm font-medium text-gray-400 mb-2">{t("modules.assets.nameRequiredLabel", undefined, "Name *")}</label>
                         <input
                             type="text"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
-                            placeholder={`Enter ${type} name`}
+                            placeholder={t("modules.assets.enterTypedName", { type }, `Enter ${type} name`)}
                             className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:border-primary/50 focus:outline-none"
                         />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-400 mb-2">Description</label>
+                        <label className="block text-sm font-medium text-gray-400 mb-2">{t("modules.assets.descriptionLabel", undefined, "Description")}</label>
                         <textarea
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
-                            placeholder={`Describe the ${type}...`}
+                            placeholder={t("modules.assets.describeTyped", { type }, `Describe the ${type}...`)}
                             rows={4}
                             className="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:border-primary/50 focus:outline-none resize-none"
                         />
@@ -1019,7 +1030,7 @@ function CreateAssetDialog({ type, onClose, onCreate }: { type: string; onClose:
                         onClick={onClose}
                         className="px-6 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg transition-colors"
                     >
-                        Cancel
+                        {t("common.cancel")}
                     </button>
                     <button
                         onClick={handleSubmit}
@@ -1027,7 +1038,7 @@ function CreateAssetDialog({ type, onClose, onCreate }: { type: string; onClose:
                         className="px-6 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                     >
                         {isSubmitting && <RefreshCw size={16} className="animate-spin" />}
-                        Create {typeLabel}
+                        {t("modules.assets.createTyped", { type: typeLabel }, `Create ${typeLabel}`)}
                     </button>
                 </div>
             </motion.div>

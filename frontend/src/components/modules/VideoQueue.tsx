@@ -6,6 +6,7 @@ import { Loader2, RefreshCw, Copy, Download, Trash2, AlertCircle } from "lucide-
 
 import { VideoTask, API_URL } from "@/lib/api";
 import { getAssetUrl } from "@/lib/utils";
+import { useTranslation } from "@/i18n";
 
 interface VideoQueueProps {
     tasks: VideoTask[];
@@ -13,33 +14,34 @@ interface VideoQueueProps {
 }
 
 export default function VideoQueue({ tasks, onRemix }: VideoQueueProps) {
+    const { t } = useTranslation();
     const [filter, setFilter] = useState<"all" | "processing" | "completed" | "failed">("all");
 
-    const filteredTasks = tasks.filter(t => {
+    const filteredTasks = tasks.filter(tt => {
         if (filter === "all") return true;
-        if (filter === "processing") return t.status === "pending" || t.status === "processing";
-        return t.status === filter;
+        if (filter === "processing") return tt.status === "pending" || tt.status === "processing";
+        return tt.status === filter;
     }).reverse(); // Newest first
 
-    const processingCount = tasks.filter(t => t.status === "pending" || t.status === "processing").length;
+    const processingCount = tasks.filter(tt => tt.status === "pending" || tt.status === "processing").length;
 
     return (
         <div className="h-full flex flex-col bg-black/40 backdrop-blur-sm border-l border-white/5">
             {/* Header & Tabs */}
             <div className="p-4 border-b border-white/5">
                 <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-display font-bold text-white">任务队列</h3>
+                    <h3 className="font-display font-bold text-white">{t("modules.video.taskQueueTitle", undefined, "任务队列")}</h3>
                     <div className="text-xs font-mono text-gray-500 flex items-center gap-2">
                         <div className={`w-2 h-2 rounded-full ${processingCount > 0 ? "bg-green-500 animate-pulse" : "bg-gray-600"}`} />
-                        GPU: {processingCount > 0 ? "Running" : "Idle"}
+                        {t("modules.video.gpuLabel", undefined, "GPU:")} {processingCount > 0 ? t("modules.video.gpuRunning", undefined, "Running") : t("modules.video.gpuIdle", undefined, "Idle")}
                     </div>
                 </div>
 
                 <div className="flex bg-white/5 rounded-lg p-1 gap-1">
                     {[
-                        { id: "all", label: "全部" },
-                        { id: "processing", label: "进行中" },
-                        { id: "completed", label: "已完成" },
+                        { id: "all", label: t("modules.video.filterAll", undefined, "全部") },
+                        { id: "processing", label: t("modules.video.filterProcessing", undefined, "进行中") },
+                        { id: "completed", label: t("modules.video.filterCompleted", undefined, "已完成") },
                     ].map((tab) => (
                         <button
                             key={tab.id}
@@ -64,7 +66,7 @@ export default function VideoQueue({ tasks, onRemix }: VideoQueueProps) {
 
                     {filteredTasks.length === 0 && (
                         <div className="text-center py-10 text-gray-600 text-sm">
-                            暂无任务
+                            {t("modules.video.queueEmpty")}
                         </div>
                     )}
                 </AnimatePresence>
@@ -74,6 +76,7 @@ export default function VideoQueue({ tasks, onRemix }: VideoQueueProps) {
 }
 
 function TaskCard({ task, onRemix }: { task: VideoTask; onRemix: (t: VideoTask) => void }) {
+    const { t } = useTranslation();
     const isCompleted = task.status === "completed";
     const isProcessing = task.status === "processing" || task.status === "pending";
     const isFailed = task.status === "failed";
@@ -117,7 +120,7 @@ function TaskCard({ task, onRemix }: { task: VideoTask; onRemix: (t: VideoTask) 
                         <div className="flex justify-between items-center mb-1">
                             <span className="text-xs font-mono text-gray-400">#{task.id.slice(0, 6)}</span>
                             <span className="text-xs text-primary animate-pulse">
-                                {task.status === "pending" ? "排队中" : "生成中..."}
+                                {task.status === "pending" ? t("modules.video.queuePending") : t("modules.common.generating")}
                             </span>
                         </div>
                         <p className="text-xs text-gray-300 truncate">{task.prompt}</p>
@@ -135,9 +138,9 @@ function TaskCard({ task, onRemix }: { task: VideoTask; onRemix: (t: VideoTask) 
                             <button
                                 onClick={() => onRemix(task)}
                                 className="text-xs flex items-center gap-1 text-gray-400 hover:text-white transition-colors"
-                                title="使用此参数重做"
+                                title={t("modules.video.remixWithParams", undefined, "使用此参数重做")}
                             >
-                                <RefreshCw size={12} /> Remix
+                                <RefreshCw size={12} /> {t("modules.video.remix", undefined, "Remix")}
                             </button>
                         </div>
                     </div>
@@ -167,10 +170,10 @@ function TaskCard({ task, onRemix }: { task: VideoTask; onRemix: (t: VideoTask) 
                                 </div>
                             ) : (
                                 <div className="w-full h-full flex items-center justify-center bg-purple-900/10 text-purple-400/50 text-xs font-bold">
-                                    R2V Input
+                                    {t("modules.video.r2vInput", undefined, "R2V Input")}
                                 </div>
                             )}
-                            <div className="absolute top-2 left-2 bg-black/60 px-1.5 py-0.5 rounded text-[10px] text-gray-300">Input</div>
+                            <div className="absolute top-2 left-2 bg-black/60 px-1.5 py-0.5 rounded text-[10px] text-gray-300">{t("modules.video.inputBadge", undefined, "Input")}</div>
                         </div>
 
                         {/* Output Video (Right) */}
@@ -183,10 +186,10 @@ function TaskCard({ task, onRemix }: { task: VideoTask; onRemix: (t: VideoTask) 
                                 />
                             ) : (
                                 <div className="w-full h-full flex items-center justify-center text-red-500 text-xs">
-                                    Error
+                                    {t("common.error")}
                                 </div>
                             )}
-                            <div className="absolute top-2 right-2 bg-primary/80 px-1.5 py-0.5 rounded text-[10px] text-white">Result</div>
+                            <div className="absolute top-2 right-2 bg-primary/80 px-1.5 py-0.5 rounded text-[10px] text-white">{t("modules.video.resultBadge", undefined, "Result")}</div>
                         </div>
                     </div>
 
@@ -218,14 +221,14 @@ function TaskCard({ task, onRemix }: { task: VideoTask; onRemix: (t: VideoTask) 
                 <div className="p-3">
                     <div className="flex items-center gap-2 text-red-400 mb-2">
                         <AlertCircle size={16} />
-                        <span className="text-sm font-medium">生成失败</span>
+                        <span className="text-sm font-medium">{t("modules.common.generationFailed")}</span>
                     </div>
-                    <p className="text-xs text-gray-500 mb-3">未知错误，请重试</p>
+                    <p className="text-xs text-gray-500 mb-3">{t("modules.video.unknownErrorRetry", undefined, "未知错误，请重试")}</p>
                     <button
                         onClick={() => onRemix(task)}
                         className="w-full py-1.5 bg-white/5 hover:bg-white/10 rounded text-xs text-gray-300 transition-colors"
                     >
-                        重试任务
+                        {t("modules.video.retryTask")}
                     </button>
                 </div>
             )}

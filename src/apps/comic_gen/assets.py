@@ -7,6 +7,7 @@ from .models import Character, Scene, Prop, GenerationStatus, ImageAsset, ImageV
 from ...models.image import WanxImageModel
 from ...utils import get_logger
 from ...utils.oss_utils import is_object_key
+from ...i18n import t as _t
 
 logger = get_logger(__name__)
 
@@ -292,7 +293,7 @@ class AssetGenerator:
                 
                 # Raise exception if all variants failed
                 if successful_generations == 0:
-                    raise RuntimeError("生成失败，请检查 API 配置或修改描述内容后重试。")
+                    raise RuntimeError(_t("errors.generation_failed_check_config"))
                 
                 # Mark downstream as inconsistent if generating only full body
                 if generation_type == "full_body":
@@ -438,7 +439,7 @@ class AssetGenerator:
                 
                 # Raise exception if all variants failed
                 if successful_generations == 0:
-                    raise RuntimeError("生成失败，请检查 API 配置或修改描述内容后重试。")
+                    raise RuntimeError(_t("errors.generation_failed_check_config"))
 
             # 3. Headshot (Derived)
             if generation_type in ["all", "headshot"]:
@@ -514,7 +515,7 @@ class AssetGenerator:
                 
                 # Raise exception if all variants failed
                 if successful_generations == 0:
-                    raise RuntimeError("生成失败，请检查 API 配置或修改描述内容后重试。")
+                    raise RuntimeError(_t("errors.generation_failed_check_config"))
 
             # Update consistency status (Legacy support, but also useful for quick checks)
             if generation_type == "all":

@@ -150,20 +150,20 @@ export interface ModelSettings {
 // during SSR / before the network round-trip resolves. Adding a new model
 // belongs in `src/utils/model_catalog.py` on the backend, not here.
 export const T2I_MODELS = [
-    { id: 'wan2.6-t2i', name: 'Wan 2.6 T2I', description: '通义万相 2.6 默认' },
-    { id: 'wan2.5-t2i-preview', name: 'Wan 2.5 T2I Preview', description: '通义万相 2.5 预览' },
-    { id: 'wan2.2-t2i-plus', name: 'Wan 2.2 T2I Plus', description: '通义万相 2.2 高质量' },
-    { id: 'wan2.2-t2i-flash', name: 'Wan 2.2 T2I Flash', description: '通义万相 2.2 快速' },
-    { id: 'qwen-image', name: 'Qwen-Image', description: '千问图像基础' },
-    { id: 'qwen-image-plus', name: 'Qwen-Image Plus', description: '千问图像 2K' },
-    { id: 'flux-schnell', name: 'FLUX.1 Schnell', description: 'FLUX 快速' },
-    { id: 'flux-dev', name: 'FLUX.1 Dev', description: 'FLUX 高质量' },
+    { id: 'wan2.6-t2i', name: 'Wan 2.6 T2I', description: 'modelCatalog.descriptions.wan26t2i' },
+    { id: 'wan2.5-t2i-preview', name: 'Wan 2.5 T2I Preview', description: 'modelCatalog.descriptions.wan25t2ipreview' },
+    { id: 'wan2.2-t2i-plus', name: 'Wan 2.2 T2I Plus', description: 'modelCatalog.descriptions.wan22t2iplus' },
+    { id: 'wan2.2-t2i-flash', name: 'Wan 2.2 T2I Flash', description: 'modelCatalog.descriptions.wan22t2iflash' },
+    { id: 'qwen-image', name: 'Qwen-Image', description: 'modelCatalog.descriptions.qwenimage' },
+    { id: 'qwen-image-plus', name: 'Qwen-Image Plus', description: 'modelCatalog.descriptions.qwenimageplus' },
+    { id: 'flux-schnell', name: 'FLUX.1 Schnell', description: 'modelCatalog.descriptions.fluxschnell' },
+    { id: 'flux-dev', name: 'FLUX.1 Dev', description: 'modelCatalog.descriptions.fluxdev' },
 ];
 
 export const I2I_MODELS = [
-    { id: 'wan2.6-image', name: 'Wan 2.6 Image', description: '通义万相 2.6 (HTTP)' },
-    { id: 'wan2.5-i2i-preview', name: 'Wan 2.5 I2I Preview', description: '通义万相 2.5 预览' },
-    { id: 'qwen-image-edit', name: 'Qwen-Image Edit', description: '千问图像编辑' },
+    { id: 'wan2.6-image', name: 'Wan 2.6 Image', description: 'modelCatalog.descriptions.wan26image' },
+    { id: 'wan2.5-i2i-preview', name: 'Wan 2.5 I2I Preview', description: 'modelCatalog.descriptions.wan25i2ipreview' },
+    { id: 'qwen-image-edit', name: 'Qwen-Image Edit', description: 'modelCatalog.descriptions.qwenimageedit' },
 ];
 
 export type DurationConfig =
@@ -229,32 +229,32 @@ const PIXVERSE_PARAMS: ModelParamSupport = {
 };
 
 export const I2V_MODELS: I2VModelConfig[] = [
-    { id: 'wan2.6-i2v', name: 'Wan 2.6 I2V / R2V', description: '通义万相 2.6,支持 R2V',
+    { id: 'wan2.6-i2v', name: 'Wan 2.6 I2V / R2V', description: 'modelCatalog.descriptions.wan26i2v',
       duration: { type: 'slider', min: 2, max: 15, step: 1, default: 5 }, params: WAN26_PARAMS },
-    { id: 'wan2.6-i2v-flash', name: 'Wan 2.6 I2V Flash', description: '通义万相 2.6 快速',
+    { id: 'wan2.6-i2v-flash', name: 'Wan 2.6 I2V Flash', description: 'modelCatalog.descriptions.wan26i2vflash',
       duration: { type: 'slider', min: 2, max: 15, step: 1, default: 5 }, params: WAN26_PARAMS },
-    { id: 'wan2.5-i2v-preview', name: 'Wan 2.5 I2V Preview', description: '通义万相 2.5 默认',
+    { id: 'wan2.5-i2v-preview', name: 'Wan 2.5 I2V Preview', description: 'modelCatalog.descriptions.wan25i2vpreview',
       duration: { type: 'buttons', options: [5, 10], default: 5 }, params: WAN25_PARAMS },
-    { id: 'wan2.2-i2v-plus', name: 'Wan 2.2 I2V Plus', description: '通义万相 2.2 高质量',
+    { id: 'wan2.2-i2v-plus', name: 'Wan 2.2 I2V Plus', description: 'modelCatalog.descriptions.wan22i2vplus',
       duration: { type: 'fixed', value: 5 }, params: WAN22_PARAMS },
-    { id: 'wan2.2-i2v-flash', name: 'Wan 2.2 I2V Flash', description: '通义万相 2.2 快速',
+    { id: 'wan2.2-i2v-flash', name: 'Wan 2.2 I2V Flash', description: 'modelCatalog.descriptions.wan22i2vflash',
       duration: { type: 'fixed', value: 5 }, params: WAN22_PARAMS },
-    { id: 'kling-v3', name: 'Kling v3', description: 'Kling AI v3',
+    { id: 'kling-v3', name: 'Kling v3', description: 'modelCatalog.descriptions.klingv3',
       duration: { type: 'slider', min: 3, max: 15, step: 1, default: 5 }, params: KLING_PARAMS },
-    { id: 'kling-2.1-master', name: 'Kling 2.1 Master', description: 'Kling 2.1 电影级',
+    { id: 'kling-2.1-master', name: 'Kling 2.1 Master', description: 'modelCatalog.descriptions.kling21master',
       duration: { type: 'slider', min: 3, max: 10, step: 1, default: 5 }, params: KLING_PARAMS },
-    { id: 'viduq3-pro', name: 'Vidu Q3 Pro', description: 'Vidu Q3 高质量',
+    { id: 'viduq3-pro', name: 'Vidu Q3 Pro', description: 'modelCatalog.descriptions.viduq3pro',
       duration: { type: 'slider', min: 1, max: 16, step: 1, default: 5 }, params: VIDU_PARAMS },
-    { id: 'viduq3-turbo', name: 'Vidu Q3 Turbo', description: 'Vidu Q3 快速',
+    { id: 'viduq3-turbo', name: 'Vidu Q3 Turbo', description: 'modelCatalog.descriptions.viduq3turbo',
       duration: { type: 'slider', min: 1, max: 16, step: 1, default: 5 }, params: VIDU_PARAMS },
-    { id: 'pixverse-v4', name: 'Pixverse v4', description: 'Pixverse v4',
+    { id: 'pixverse-v4', name: 'Pixverse v4', description: 'modelCatalog.descriptions.pixversev4',
       duration: { type: 'buttons', options: [5, 8], default: 5 }, params: PIXVERSE_PARAMS },
 ];
 
 export const ASPECT_RATIOS = [
-    { id: '9:16', name: '9:16', description: 'Portrait (576*1024)' },
-    { id: '16:9', name: '16:9', description: 'Landscape (1024*576)' },
-    { id: '1:1', name: '1:1', description: 'Square (1024*1024)' },
+    { id: '9:16', name: '9:16', description: 'modelCatalog.aspectRatios.portrait' },
+    { id: '16:9', name: '16:9', description: 'modelCatalog.aspectRatios.landscape' },
+    { id: '1:1', name: '1:1', description: 'modelCatalog.aspectRatios.square' },
 ];
 
 export interface VideoParams {

@@ -21,6 +21,7 @@ from ...utils import get_logger
 from ...utils.oss_utils import is_object_key
 from ...utils.provider_registry import resolve_provider_backend
 from ...utils.system_check import get_ffmpeg_path, get_ffmpeg_install_instructions
+from ...i18n import t as _t
 
 logger = get_logger(__name__)
 
@@ -908,7 +909,7 @@ class ComicGenPipeline:
             raw_frames = self.script_processor.analyze_to_storyboard(text, entities_json)
 
         if not raw_frames:
-            raise RuntimeError("AI 分镜分析未返回任何帧数据，请重试。")
+            raise RuntimeError(_t("errors.storyboard_no_frames"))
 
         # Convert raw frame dicts to StoryboardFrame objects
         new_frames = []

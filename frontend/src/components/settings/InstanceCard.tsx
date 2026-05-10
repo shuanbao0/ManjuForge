@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import {
-    Star, Trash2, Pencil, ZapOff, Zap, Loader2, Check, X, ExternalLink,
+    Star, Trash2, Pencil, ZapOff, Zap, Loader2, Check, X,
 } from "lucide-react";
 import { instances as instancesApi, type ModelInstanceOut } from "@/lib/api";
+import { useTranslation } from "@/i18n";
 
 const VENDOR_ACCENT: Record<string, string> = {
     dashscope: "border-amber-500/40 bg-amber-500/5",
@@ -22,6 +23,7 @@ const VENDOR_ACCENT: Record<string, string> = {
     hailuo: "border-sky-500/40 bg-sky-500/5",
 };
 
+// Vendor display names — kept as-is because they're brand names.
 const VENDOR_LABEL: Record<string, string> = {
     dashscope: "阿里云 DashScope",
     openai: "OpenAI",
@@ -48,6 +50,7 @@ export interface InstanceCardProps {
 
 
 export function InstanceCard({ instance, onSetDefault, onDelete, onEdit }: InstanceCardProps) {
+    const { t } = useTranslation();
     const accent = VENDOR_ACCENT[instance.vendor_id] ?? "border-white/10 bg-white/5";
     const vendorLabel = VENDOR_LABEL[instance.vendor_id] ?? instance.vendor_id;
 
@@ -61,7 +64,7 @@ export function InstanceCard({ instance, onSetDefault, onDelete, onEdit }: Insta
         try {
             const res = await instancesApi.test(instance.id);
             setTestResult(res.ok ? "ok" : "fail");
-            if (!res.ok) setTestError(res.error || "未知错误");
+            if (!res.ok) setTestError(res.error || t("instances.unknownError", undefined, "未知错误"));
         } catch (e) {
             setTestResult("fail");
             setTestError(e instanceof Error ? e.message : String(e));
@@ -75,7 +78,7 @@ export function InstanceCard({ instance, onSetDefault, onDelete, onEdit }: Insta
     };
 
     const handleDelete = async () => {
-        if (!confirm(`确定删除「${instance.display_name}」?`)) return;
+        if (!confirm(t("instances.deleteConfirm", { name: instance.display_name }))) return;
         await onDelete(instance.id);
     };
 
@@ -88,7 +91,7 @@ export function InstanceCard({ instance, onSetDefault, onDelete, onEdit }: Insta
                         {instance.is_default && (
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[9px] rounded border border-amber-500/40 bg-amber-500/15 text-amber-200">
                                 <Star size={9} className="fill-amber-400 text-amber-400" />
-                                默认
+                                {t("instances.isDefault")}
                             </span>
                         )}
                     </div>
@@ -97,8 +100,8 @@ export function InstanceCard({ instance, onSetDefault, onDelete, onEdit }: Insta
                     </div>
                     <div className="text-[10px] text-gray-600 mt-1">
                         {instance.credential_keys.length > 0
-                            ? `凭证: ${instance.credential_keys.join(", ")}`
-                            : "未填凭证"}
+                            ? `${t("instances.credentialsLabel", undefined, "凭证")}: ${instance.credential_keys.join(", ")}`
+                            : t("instances.noCredentials", undefined, "未填凭证")}
                     </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
@@ -106,7 +109,7 @@ export function InstanceCard({ instance, onSetDefault, onDelete, onEdit }: Insta
                         <button
                             type="button"
                             onClick={() => onSetDefault(instance.id)}
-                            title="设为默认"
+                            title={t("instances.setDefault")}
                             className="p-1.5 rounded text-gray-500 hover:text-amber-400 hover:bg-white/5 transition-colors"
                         >
                             <Star size={14} />
@@ -116,7 +119,7 @@ export function InstanceCard({ instance, onSetDefault, onDelete, onEdit }: Insta
                         type="button"
                         onClick={handleTest}
                         disabled={testing}
-                        title={testing ? "测试中..." : "测试连通"}
+                        title={testing ? t("instances.testing") : t("instances.testConnectivity", undefined, "测试连通")}
                         className="p-1.5 rounded text-gray-500 hover:text-emerald-400 hover:bg-white/5 transition-colors disabled:opacity-50"
                     >
                         {testing ? <Loader2 size={14} className="animate-spin" /> : testResult === "ok" ? <Zap size={14} className="text-emerald-400" /> : testResult === "fail" ? <ZapOff size={14} className="text-rose-400" /> : <Zap size={14} />}
@@ -124,7 +127,7 @@ export function InstanceCard({ instance, onSetDefault, onDelete, onEdit }: Insta
                     <button
                         type="button"
                         onClick={() => onEdit(instance)}
-                        title="编辑"
+                        title={t("instances.edit")}
                         className="p-1.5 rounded text-gray-500 hover:text-blue-400 hover:bg-white/5 transition-colors"
                     >
                         <Pencil size={14} />
@@ -132,7 +135,7 @@ export function InstanceCard({ instance, onSetDefault, onDelete, onEdit }: Insta
                     <button
                         type="button"
                         onClick={handleDelete}
-                        title="删除"
+                        title={t("instances.delete")}
                         className="p-1.5 rounded text-gray-500 hover:text-rose-400 hover:bg-white/5 transition-colors"
                     >
                         <Trash2 size={14} />
@@ -148,7 +151,7 @@ export function InstanceCard({ instance, onSetDefault, onDelete, onEdit }: Insta
             {testResult === "ok" && !testError && (
                 <div className="mt-2 px-2 py-1 rounded bg-emerald-500/10 border border-emerald-500/30 text-[11px] text-emerald-300">
                     <Check size={11} className="inline mr-1" />
-                    连通正常
+                    {t("instances.connectivityOk", undefined, "连通正常")}
                 </div>
             )}
         </div>

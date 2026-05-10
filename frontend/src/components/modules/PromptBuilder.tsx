@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useImperativeHandle, forwardRef, useLayoutEffect } from "react";
 import { X, ChevronDown, Video, User } from "lucide-react";
+import { useTranslation } from "@/i18n";
 
 export type PromptSegment =
     | { type: "text"; value: string; id: string }
@@ -54,6 +55,7 @@ const findCameraOption = (value: string) => {
 };
 
 const PromptBuilder = forwardRef<PromptBuilderRef, PromptBuilderProps>(({ segments, onChange, onSubmit, placeholder }, ref) => {
+    const { t } = useTranslation();
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     // Local state to manage the textarea value directly, avoiding cursor jumps from prop sync
     const [value, setValue] = useState("");
@@ -228,7 +230,7 @@ const PromptBuilder = forwardRef<PromptBuilderRef, PromptBuilderProps>(({ segmen
                         onSubmit?.();
                     }
                 }}
-                placeholder={placeholder || "输入提示词... \n插入角色格式: [character1:名称]\n插入运镜格式: (camera: 运镜指令)"}
+                placeholder={placeholder || t("modules.video.promptBuilderPlaceholder", undefined, "输入提示词... \n插入角色格式: [character1:名称]\n插入运镜格式: (camera: 运镜指令)")}
             />
         </div>
     );

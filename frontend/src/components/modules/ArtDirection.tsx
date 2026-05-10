@@ -5,8 +5,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, Palette, Wand2, Plus, Check, Loader2, ChevronRight } from "lucide-react";
 import { useProjectStore, type StyleConfig, type StylePreset } from "@/store/projectStore"; // Combined imports
 import { api } from "@/lib/api";
+import { useTranslation } from "@/i18n";
 
 export default function ArtDirection() {
+    const { t } = useTranslation();
     const {
         currentProject,
         updateProject,
@@ -81,7 +83,7 @@ export default function ArtDirection() {
             );
         } catch (error) {
             console.error("Failed to analyze script:", error);
-            alert("风格分析失败");
+            alert(t("modules.artDirection.analyzeFailed", undefined, "风格分析失败"));
         }
     };
 
@@ -109,7 +111,7 @@ export default function ArtDirection() {
 
     const handleSaveCustom = async () => {
         if (!editingName || !editingPositive) {
-            alert("请填写风格名称和正向提示词");
+            alert(t("modules.artDirection.fillNameAndPrompt", undefined, "请填写风格名称和正向提示词"));
             return;
         }
 
@@ -137,17 +139,17 @@ export default function ArtDirection() {
                     aiRecommendations
                 );
                 updateProject(currentProject.id, updated);
-                alert("自定义风格已保存！");
+                alert(t("modules.artDirection.customSaved", undefined, "自定义风格已保存！"));
             } catch (error) {
                 console.error("Failed to save custom style:", error);
-                alert("保存失败，请重试");
+                alert(t("modules.artDirection.saveRetry", undefined, "保存失败，请重试"));
             }
         }
     };
 
     const handleApply = async () => {
         if (!currentProject || !selectedStyle) {
-            alert("请先选择一个风格");
+            alert(t("modules.artDirection.selectStyleFirst", undefined, "请先选择一个风格"));
             return;
         }
 
@@ -168,10 +170,10 @@ export default function ArtDirection() {
                 aiRecommendations
             );
             updateProject(currentProject.id, updated);
-            alert("风格配置已应用！");
+            alert(t("modules.artDirection.applied", undefined, "风格配置已应用！"));
         } catch (error) {
             console.error("Failed to save art direction:", error);
-            alert("保存失败");
+            alert(t("modules.artDirection.saveFailed", undefined, "保存失败"));
         } finally {
             setIsSaving(false);
         }
@@ -186,8 +188,8 @@ export default function ArtDirection() {
                         <Palette className="text-white" size={20} />
                     </div>
                     <div>
-                        <h2 className="text-xl font-display font-bold text-white">Art Direction</h2>
-                        <p className="text-xs text-gray-400">风格定调 - 建立全局视觉标准</p>
+                        <h2 className="text-xl font-display font-bold text-white">{t("modules.artDirection.title")}</h2>
+                        <p className="text-xs text-gray-400">{t("modules.artDirection.headerSubtitle", undefined, "风格定调 - 建立全局视觉标准")}</p>
                     </div>
                 </div>
 
@@ -199,11 +201,11 @@ export default function ArtDirection() {
                     {isSaving ? (
                         <>
                             <Loader2 size={16} className="animate-spin" />
-                            保存中...
+                            {t("modules.common.saving")}
                         </>
                     ) : (
                         <>
-                            应用并继续
+                            {t("modules.artDirection.applyAndContinue", undefined, "应用并继续")}
                             <ChevronRight size={16} />
                         </>
                     )}
@@ -218,7 +220,7 @@ export default function ArtDirection() {
                         <div className="flex items-center justify-between mb-4">
                             <h3 className="text-lg font-bold text-white flex items-center gap-2">
                                 <Sparkles size={20} className="text-yellow-400" />
-                                AI 智能推荐
+                                {t("modules.artDirection.aiRecommendations", undefined, "AI 智能推荐")}
                             </h3>
                             <button
                                 onClick={handleAnalyze}
@@ -228,12 +230,12 @@ export default function ArtDirection() {
                                 {isAnalyzingArtStyle ? (
                                     <>
                                         <Loader2 size={14} className="animate-spin" />
-                                        分析中...
+                                        {t("modules.storyboard.analyzing")}
                                     </>
                                 ) : (
                                     <>
                                         <Wand2 size={14} />
-                                        分析剧本
+                                        {t("modules.storyboard.analyzeScript")}
                                     </>
                                 )}
                             </button>
@@ -255,7 +257,7 @@ export default function ArtDirection() {
                     <div>
                         <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                             <Palette size={20} className="text-blue-400" />
-                            内置风格预设
+                            {t("modules.artDirection.builtInPresets", undefined, "内置风格预设")}
                         </h3>
 
                         <div className="grid grid-cols-2 gap-4">
@@ -275,7 +277,7 @@ export default function ArtDirection() {
                         <div>
                             <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
                                 <Plus size={20} className="text-green-400" />
-                                自定义风格
+                                {t("modules.artDirection.customStyles", undefined, "自定义风格")}
                             </h3>
 
                             <div className="grid grid-cols-2 gap-4">
@@ -312,6 +314,7 @@ export default function ArtDirection() {
 
 // Sub-components
 function StyleRecommendationCard({ style, isSelected, onSelect }: any) {
+    const { t } = useTranslation();
     return (
         <motion.div
             layout
@@ -331,7 +334,7 @@ function StyleRecommendationCard({ style, isSelected, onSelect }: any) {
                     {style.reason && (
                         <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 mb-3">
                             <p className="text-xs text-yellow-300">
-                                <span className="font-bold">推荐理由：</span>
+                                <span className="font-bold">{t("modules.artDirection.recommendReason", undefined, "推荐理由：")}</span>
                                 {style.reason}
                             </p>
                         </div>
@@ -376,59 +379,60 @@ function StylePresetCard({ style, isSelected, onSelect }: any) {
 }
 
 function StyleEditor({ name, positivePrompt, negativePrompt, onNameChange, onPositiveChange, onNegativeChange, onSaveCustom, selectedStyle }: any) {
+    const { t } = useTranslation();
     return (
         <div className="space-y-6">
             <div>
-                <h3 className="text-lg font-bold text-white mb-4">风格编辑器</h3>
+                <h3 className="text-lg font-bold text-white mb-4">{t("modules.artDirection.editorTitle", undefined, "风格编辑器")}</h3>
                 {!selectedStyle && (
                     <div className="text-sm text-gray-500 italic mb-4">
-                        请先从左侧选择一个风格
+                        {t("modules.artDirection.selectStyleHint", undefined, "请先从左侧选择一个风格")}
                     </div>
                 )}
             </div>
 
             <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                    风格名称
+                    {t("modules.artDirection.styleNameLabel", undefined, "风格名称")}
                 </label>
                 <input
                     type="text"
                     value={name}
                     onChange={(e) => onNameChange(e.target.value)}
-                    placeholder="例如: Cyberpunk Neon"
+                    placeholder={t("modules.artDirection.styleNamePlaceholder", undefined, "例如: Cyberpunk Neon")}
                     className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm text-white placeholder-gray-600 focus:border-primary focus:outline-none"
                 />
             </div>
 
             <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                    正向提示词 (Positive Prompt)
+                    {t("modules.artDirection.positivePromptLabel", undefined, "正向提示词 (Positive Prompt)")}
                 </label>
                 <textarea
                     value={positivePrompt}
                     onChange={(e) => onPositiveChange(e.target.value)}
-                    placeholder="例如: cinematic, 8k, volumetric lighting..."
+                    placeholder={t("modules.artDirection.positivePromptPlaceholder", undefined, "例如: cinematic, 8k, volumetric lighting...")}
                     rows={6}
                     className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm text-white placeholder-gray-600 focus:border-primary focus:outline-none resize-none"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                    将自动应用到所有资产和分镜生成
+                    {t("modules.artDirection.positivePromptHint", undefined, "将自动应用到所有资产和分镜生成")}
                 </p>
             </div>
 
             <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                    负向提示词 (Negative Prompt)
+                    {t("modules.artDirection.negativePromptLabelFull", undefined, "负向提示词 (Negative Prompt)")}
                 </label>
                 <textarea
                     value={negativePrompt}
                     onChange={(e) => onNegativeChange(e.target.value)}
-                    placeholder="例如: low quality, blurry, cartoon..."
+                    placeholder={t("modules.artDirection.negativePromptEditorPlaceholder", undefined, "例如: low quality, blurry, cartoon...")}
                     rows={4}
                     className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm text-white placeholder-gray-600 focus:border-primary focus:outline-none resize-none"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                    避免的视觉元素
+                    {t("modules.artDirection.negativePromptHint", undefined, "避免的视觉元素")}
                 </p>
             </div>
 
@@ -439,16 +443,16 @@ function StyleEditor({ name, positivePrompt, negativePrompt, onNameChange, onPos
                     className="w-full px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-sm rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                     <Plus size={14} />
-                    保存为自定义风格
+                    {t("modules.artDirection.saveAsCustom", undefined, "保存为自定义风格")}
                 </button>
             </div>
 
             {/* Preview */}
             {positivePrompt && (
                 <div className="bg-white/5 border border-white/10 rounded-lg p-4">
-                    <p className="text-xs text-gray-500 mb-2">生成时的最终提示词预览：</p>
+                    <p className="text-xs text-gray-500 mb-2">{t("modules.artDirection.finalPreview", undefined, "生成时的最终提示词预览：")}</p>
                     <p className="text-xs text-blue-400 font-mono">
-                        "{positivePrompt}, [用户描述]"
+                        "{positivePrompt}, {t("modules.artDirection.userDescPlaceholder", undefined, "[用户描述]")}"
                     </p>
                 </div>
             )}

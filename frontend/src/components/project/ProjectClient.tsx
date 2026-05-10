@@ -18,10 +18,12 @@ import ExportStudio from "@/components/modules/ExportStudio";
 import ModelSettingsModal from "@/components/common/ModelSettingsModal";
 import PromptConfigModal from "@/components/project/PromptConfigModal";
 import dynamic from "next/dynamic";
+import { useTranslation } from "@/i18n";
 
 const CreativeCanvas = dynamic(() => import("@/components/canvas/CreativeCanvas"), { ssr: false });
 
 export default function ProjectClient({ id, breadcrumbSegments }: { id: string; breadcrumbSegments?: BreadcrumbSegment[] }) {
+    const { t } = useTranslation();
     const [activeStep, setActiveStep] = useState("script");
     const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
     const [promptConfigOpen, setPromptConfigOpen] = useState(false);
@@ -34,15 +36,15 @@ export default function ProjectClient({ id, breadcrumbSegments }: { id: string; 
     };
 
     const steps = [
-        { id: "script", label: "1. Script", icon: BookOpen },
-        { id: "art_direction", label: "2. Art Direction", icon: Palette },
-        { id: "assets", label: "3. Assets", icon: Users },
-        { id: "storyboard", label: "4. Storyboard", icon: Layout },
-        { id: "motion", label: "5. Motion", icon: Video },
-        { id: "assembly", label: "6. Assembly", icon: Film },
-        { id: "audio", label: "7. Voice", icon: Mic, comingSoon: true },
-        { id: "mix", label: "8. Final Mix", icon: Music, comingSoon: true },
-        { id: "export", label: "9. Export", icon: Share2, comingSoon: true },
+        { id: "script", label: t("pipeline.step1Script"), icon: BookOpen },
+        { id: "art_direction", label: t("pipeline.step2ArtDirection"), icon: Palette },
+        { id: "assets", label: t("pipeline.step3Assets"), icon: Users },
+        { id: "storyboard", label: t("pipeline.step4Storyboard"), icon: Layout },
+        { id: "motion", label: t("pipeline.step5Motion"), icon: Video },
+        { id: "assembly", label: t("pipeline.step6Assembly"), icon: Film },
+        { id: "audio", label: t("pipeline.step7Voice"), icon: Mic, comingSoon: true },
+        { id: "mix", label: t("pipeline.step8FinalMix"), icon: Music, comingSoon: true },
+        { id: "export", label: t("pipeline.step9Export"), icon: Share2, comingSoon: true },
     ];
 
     useEffect(() => {
@@ -53,12 +55,12 @@ export default function ProjectClient({ id, breadcrumbSegments }: { id: string; 
         return (
             <div className="flex items-center justify-center h-screen bg-background">
                 <div className="text-center">
-                    <p className="text-gray-400 mb-4">项目未找到</p>
+                    <p className="text-gray-400 mb-4">{t("project.notFound")}</p>
                     <button
                         onClick={handleBackToHome}
                         className="text-primary hover:underline"
                     >
-                        返回项目列表
+                        {t("project.backToList")}
                     </button>
                 </div>
             </div>
@@ -72,14 +74,14 @@ export default function ProjectClient({ id, breadcrumbSegments }: { id: string; 
             <button
                 onClick={() => setPromptConfigOpen(true)}
                 className="p-2 hover:bg-white/10 rounded-lg transition-colors group"
-                title="Prompt Configuration"
+                title={t("pipeline.promptConfigTitle")}
             >
                 <MessageSquareCode size={16} className="text-gray-400 group-hover:text-purple-400 transition-colors" />
             </button>
             <button
                 onClick={() => setModelSettingsOpen(true)}
                 className="p-2 hover:bg-white/10 rounded-lg transition-colors group"
-                title="Model Settings"
+                title={t("pipeline.modelSettingsTitle")}
             >
                 <Settings size={16} className="text-gray-400 group-hover:text-white transition-colors" />
             </button>

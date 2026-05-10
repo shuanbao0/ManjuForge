@@ -4,8 +4,10 @@ import clsx from "clsx";
 import { useProjectStore } from "@/store/projectStore";
 import { api } from "@/lib/api";
 import { getAssetUrl } from "@/lib/utils";
+import { useTranslation } from "@/i18n";
 
 export default function ExportStudio() {
+    const { t } = useTranslation();
     const currentProject = useProjectStore((state) => state.currentProject);
 
     const [isExporting, setIsExporting] = useState(false);
@@ -31,7 +33,7 @@ export default function ExportStudio() {
             setExportUrl(result.url);
         } catch (error: any) {
             console.error("Export failed:", error);
-            setExportError(error?.message || "Export failed. Please check that videos have been generated.");
+            setExportError(error?.message || t("modules.export.exportFailedDetail", undefined, "Export failed. Please check that videos have been generated."));
         } finally {
             setIsExporting(false);
         }
@@ -42,14 +44,14 @@ export default function ExportStudio() {
             {/* Left: Configuration */}
             <div className="w-96 border-r border-white/10 bg-black/20 p-8 flex flex-col">
                 <h2 className="text-2xl font-display font-bold mb-8 flex items-center gap-3">
-                    <Film className="text-primary" /> Export Studio
+                    <Film className="text-primary" /> {t("modules.export.studioTitle", undefined, "Export Studio")}
                 </h2>
 
                 <div className="space-y-8 flex-1">
                     {/* Resolution */}
                     <div className="space-y-3">
                         <label className="text-sm font-bold text-gray-400 flex items-center gap-2">
-                            <Monitor size={16} /> Resolution
+                            <Monitor size={16} /> {t("modules.export.resolution", undefined, "Resolution")}
                         </label>
                         <div className="grid grid-cols-2 gap-3">
                             {["1080p", "4K"].map(res => (
@@ -72,7 +74,7 @@ export default function ExportStudio() {
                     {/* Format */}
                     <div className="space-y-3">
                         <label className="text-sm font-bold text-gray-400 flex items-center gap-2">
-                            <FileVideo size={16} /> Format
+                            <FileVideo size={16} /> {t("modules.export.formatLabel", undefined, "导出格式")}
                         </label>
                         <div className="grid grid-cols-3 gap-3">
                             {["mp4", "mov", "gif"].map(fmt => (
@@ -95,13 +97,13 @@ export default function ExportStudio() {
                     {/* Subtitles */}
                     <div className="space-y-3">
                         <label className="text-sm font-bold text-gray-400 flex items-center gap-2">
-                            <Captions size={16} /> Subtitles
+                            <Captions size={16} /> {t("modules.export.subtitles", undefined, "Subtitles")}
                         </label>
                         <div className="space-y-2">
                             {[
-                                { id: "burn-in", label: "Burn-in (Hardcoded)" },
-                                { id: "srt", label: "Export .SRT File" },
-                                { id: "none", label: "None" }
+                                { id: "burn-in", label: t("modules.export.subtitleBurnIn", undefined, "Burn-in (Hardcoded)") },
+                                { id: "srt", label: t("modules.export.subtitleSrt", undefined, "Export .SRT File") },
+                                { id: "none", label: t("modules.export.subtitleNone", undefined, "None") }
                             ].map(opt => (
                                 <button
                                     key={opt.id}
@@ -125,7 +127,7 @@ export default function ExportStudio() {
                     disabled={isExporting}
                     className="w-full bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-600/90 text-white py-4 rounded-xl font-bold text-lg shadow-xl shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all mt-8"
                 >
-                    {isExporting ? "Rendering..." : "Start Render"}
+                    {isExporting ? t("modules.export.rendering", undefined, "Rendering...") : t("modules.export.startRender", undefined, "Start Render")}
                 </button>
             </div>
 
@@ -138,21 +140,21 @@ export default function ExportStudio() {
                     {isExporting ? (
                         <div className="bg-black/30 backdrop-blur-xl border border-white/10 rounded-2xl p-12 shadow-2xl">
                             <div className="w-24 h-24 border-4 border-white/10 border-t-primary rounded-full animate-spin mx-auto mb-8" />
-                            <h3 className="text-2xl font-bold mb-2">Rendering Your Masterpiece</h3>
-                            <p className="text-gray-400">Stitching video, mixing audio, and burning subtitles...</p>
+                            <h3 className="text-2xl font-bold mb-2">{t("modules.export.renderingTitle", undefined, "Rendering Your Masterpiece")}</h3>
+                            <p className="text-gray-400">{t("modules.export.renderingSubtitle", undefined, "Stitching video, mixing audio, and burning subtitles...")}</p>
                         </div>
                     ) : exportError ? (
                         <div className="bg-black/30 backdrop-blur-xl border border-red-500/30 rounded-2xl p-12 shadow-2xl shadow-red-900/20">
                             <div className="w-20 h-20 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6">
                                 <Film size={40} />
                             </div>
-                            <h3 className="text-2xl font-bold mb-2 text-white">Export Failed</h3>
+                            <h3 className="text-2xl font-bold mb-2 text-white">{t("modules.export.exportFailed", undefined, "导出失败")}</h3>
                             <p className="text-gray-400 mb-4">{exportError}</p>
                             <button
                                 onClick={handleExport}
                                 className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-6 py-3 rounded-xl font-bold transition-colors"
                             >
-                                Retry
+                                {t("common.retry", undefined, "重试")}
                             </button>
                         </div>
                     ) : effectiveUrl ? (
@@ -160,21 +162,21 @@ export default function ExportStudio() {
                             <div className="w-20 h-20 bg-green-500/20 text-green-500 rounded-full flex items-center justify-center mx-auto mb-6">
                                 <CheckCircle size={40} />
                             </div>
-                            <h3 className="text-2xl font-bold mb-2 text-white">Export Complete!</h3>
-                            <p className="text-gray-400 mb-8">Your video is ready to be shared with the world.</p>
+                            <h3 className="text-2xl font-bold mb-2 text-white">{t("modules.export.exportCompleteTitle", undefined, "Export Complete!")}</h3>
+                            <p className="text-gray-400 mb-8">{t("modules.export.exportCompleteDesc", undefined, "Your video is ready to be shared with the world.")}</p>
 
                             <a
                                 href={getAssetUrl(effectiveUrl)}
                                 target="_blank"
                                 className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-8 py-4 rounded-xl font-bold text-lg transition-colors shadow-lg shadow-green-600/20"
                             >
-                                <Download size={20} /> Download Video
+                                <Download size={20} /> {t("modules.export.downloadVideo", undefined, "Download Video")}
                             </a>
                         </div>
                     ) : (
                         <div className="opacity-50">
                             <Film size={64} className="mx-auto mb-4 text-gray-600" />
-                            <p className="text-gray-500">Configure your export settings and click "Start Render"</p>
+                            <p className="text-gray-500">{t("modules.export.configureHint", undefined, "Configure your export settings and click \"Start Render\"")}</p>
                         </div>
                     )}
                 </div>

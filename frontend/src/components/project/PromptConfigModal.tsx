@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, FileText, RotateCcw, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { useProjectStore } from '@/store/projectStore';
 import { api } from '@/lib/api';
+import { useTranslation } from '@/i18n';
 
 interface PromptConfigModalProps {
     isOpen: boolean;
@@ -17,27 +18,28 @@ interface PromptDefaults {
     r2v_polish: string;
 }
 
-const SECTIONS = [
-    {
-        key: 'storyboard_polish' as const,
-        label: 'Storyboard Polish (Prompt C)',
-        description: 'System prompt for storyboard/image prompt polishing. Placeholders: {ASSETS} (asset context), {DRAFT} (user draft prompt).',
-    },
-    {
-        key: 'video_polish' as const,
-        label: 'Video I2V Polish (Prompt D)',
-        description: 'System prompt for Image-to-Video prompt polishing. No dynamic placeholders needed.',
-    },
-    {
-        key: 'r2v_polish' as const,
-        label: 'Video R2V Polish (Prompt E)',
-        description: 'System prompt for Reference-to-Video prompt polishing. Placeholder: {SLOTS} (character slot context).',
-    },
-];
-
 export default function PromptConfigModal({ isOpen, onClose }: PromptConfigModalProps) {
+    const { t } = useTranslation();
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
+
+    const SECTIONS = useMemo(() => [
+        {
+            key: 'storyboard_polish' as const,
+            label: t("modals.promptConfig.storyboardPolishLabel", undefined, "Storyboard Polish (Prompt C)"),
+            description: t("modals.promptConfig.storyboardPolishDesc", undefined, "System prompt for storyboard/image prompt polishing. Placeholders: {ASSETS} (asset context), {DRAFT} (user draft prompt)."),
+        },
+        {
+            key: 'video_polish' as const,
+            label: t("modals.promptConfig.videoPolishLabel", undefined, "Video I2V Polish (Prompt D)"),
+            description: t("modals.promptConfig.videoPolishDesc", undefined, "System prompt for Image-to-Video prompt polishing. No dynamic placeholders needed."),
+        },
+        {
+            key: 'r2v_polish' as const,
+            label: t("modals.promptConfig.r2vPolishLabel", undefined, "Video R2V Polish (Prompt E)"),
+            description: t("modals.promptConfig.r2vPolishDesc", undefined, "System prompt for Reference-to-Video prompt polishing. Placeholder: {SLOTS} (character slot context)."),
+        },
+    ], [t]);
 
     const [config, setConfig] = useState({ storyboard_polish: '', video_polish: '', r2v_polish: '' });
     const [defaults, setDefaults] = useState<PromptDefaults | null>(null);
@@ -58,11 +60,11 @@ export default function PromptConfigModal({ isOpen, onClose }: PromptConfigModal
                 })
                 .catch((err) => {
                     console.error("Failed to load prompt config:", err);
-                    setLoadError("Failed to load prompt configuration. Please try again.");
+                    setLoadError(t("modals.promptConfig.loadError", undefined, "Failed to load prompt configuration. Please try again."));
                 })
                 .finally(() => setIsLoading(false));
         }
-    }, [isOpen, currentProject?.id]);
+    }, [isOpen, currentProject?.id, t]);
 
     const handleSave = async () => {
         if (!currentProject) return;
@@ -73,7 +75,7 @@ export default function PromptConfigModal({ isOpen, onClose }: PromptConfigModal
             onClose();
         } catch (error) {
             console.error("Failed to save prompt config:", error);
-            alert("Failed to save prompt configuration");
+            alert(t("modals.promptConfig.saveError", undefined, "Failed to save prompt configuration"));
         } finally {
             setIsSaving(false);
         }
@@ -108,8 +110,8 @@ export default function PromptConfigModal({ isOpen, onClose }: PromptConfigModal
                                 <FileText size={20} className="text-purple-400" />
                             </div>
                             <div>
-                                <h2 className="text-lg font-bold text-white">Prompt Configuration</h2>
-                                <p className="text-xs text-gray-400">Customize system prompts for AI polish stages</p>
+                                <h2 className="text-lg font-bold text-white">{t("modals.promptConfig.title")}</h2>
+                                <p className="text-xs text-gray-400">{t("modals.promptConfig.subtitle")}</p>
                             </div>
                         </div>
                         <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
@@ -122,7 +124,7 @@ export default function PromptConfigModal({ isOpen, onClose }: PromptConfigModal
                         {isLoading ? (
                             <div className="flex items-center justify-center py-12">
                                 <Loader2 size={24} className="animate-spin text-purple-400" />
-                                <span className="ml-2 text-gray-400">Loading configuration...</span>
+                                <span className="ml-2 text-gray-400">{t("modals.promptConfig.loading", undefined, "Loading configuration...")}</span>
                             </div>
                         ) : loadError ? (
                             <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 text-sm text-red-300">
@@ -131,7 +133,7 @@ export default function PromptConfigModal({ isOpen, onClose }: PromptConfigModal
                         ) : (
                             <>
                                 <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 text-xs text-blue-300">
-                                    Leave a field empty to use the system default prompt. Custom prompts completely replace the default for that stage.
+                                    {t("modals.promptConfig.banner", undefined, "Leave a field empty to use the system default prompt. Custom prompts completely replace the default for that stage.")}
                                 </div>
 
                                 {SECTIONS.map((section) => (
@@ -146,14 +148,14 @@ export default function PromptConfigModal({ isOpen, onClose }: PromptConfigModal
                                                 disabled={!config[section.key]}
                                                 className="text-[10px] text-gray-400 hover:text-white flex items-center gap-1 px-2 py-1 rounded hover:bg-white/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                                             >
-                                                <RotateCcw size={10} /> Reset to default
+                                                <RotateCcw size={10} /> {t("modals.promptConfig.resetToDefault", undefined, "Reset to default")}
                                             </button>
                                         </div>
 
                                         <textarea
                                             value={config[section.key]}
                                             onChange={(e) => setConfig(prev => ({ ...prev, [section.key]: e.target.value }))}
-                                            placeholder={defaults ? defaults[section.key].slice(0, 150) + '...' : 'Loading default...'}
+                                            placeholder={defaults ? defaults[section.key].slice(0, 150) + '...' : t("modals.promptConfig.loadingDefault", undefined, "Loading default...")}
                                             className="w-full h-32 bg-black/30 border border-white/10 rounded-lg p-3 text-xs text-gray-300 resize-y focus:outline-none focus:border-purple-500/50 font-mono placeholder-gray-600"
                                         />
 
@@ -165,7 +167,7 @@ export default function PromptConfigModal({ isOpen, onClose }: PromptConfigModal
                                                     className="text-[10px] text-gray-500 hover:text-gray-300 flex items-center gap-1 transition-colors"
                                                 >
                                                     {expandedDefault === section.key ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-                                                    View full default prompt
+                                                    {t("modals.promptConfig.viewFullDefault", undefined, "View full default prompt")}
                                                 </button>
                                                 {expandedDefault === section.key && (
                                                     <pre className="mt-2 bg-black/40 border border-white/5 rounded-lg p-3 text-[10px] text-gray-500 overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap font-mono">{defaults[section.key]}</pre>
@@ -188,7 +190,7 @@ export default function PromptConfigModal({ isOpen, onClose }: PromptConfigModal
                             onClick={onClose}
                             className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
                         >
-                            Cancel
+                            {t("common.cancel")}
                         </button>
                         <button
                             onClick={handleSave}
@@ -196,7 +198,7 @@ export default function PromptConfigModal({ isOpen, onClose }: PromptConfigModal
                             className="px-6 py-2 text-sm font-medium bg-purple-600 hover:bg-purple-500 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
                         >
                             {isSaving && <Loader2 size={14} className="animate-spin" />}
-                            Save
+                            {t("modals.promptConfig.save")}
                         </button>
                     </div>
                 </motion.div>

@@ -4,8 +4,10 @@ import { FolderOpen, Library, Settings, ShieldCheck, LogOut } from "lucide-react
 import clsx from "clsx";
 import { useEffect, useState } from "react";
 import ManjuForgeBranding from "./ManjuForgeBranding";
+import LanguageSwitcher from "../common/LanguageSwitcher";
 import { auth as authApi } from "@/lib/api";
 import { getCurrentUser, isAdmin, onAuthChange, type CurrentUser } from "@/lib/auth";
+import { useTranslation } from "@/i18n";
 
 export type GlobalTab = "workspace" | "library" | "settings" | "admin";
 
@@ -14,13 +16,8 @@ interface GlobalSidebarProps {
   onTabChange: (tab: GlobalTab) => void;
 }
 
-const NAV_ITEMS: { id: GlobalTab; label: string; icon: typeof FolderOpen; hash: string }[] = [
-  { id: "workspace", label: "工作区", icon: FolderOpen, hash: "#/" },
-  { id: "library", label: "主体库", icon: Library, hash: "#/library" },
-  { id: "settings", label: "设置", icon: Settings, hash: "#/settings" },
-];
-
 export default function GlobalSidebar({ activeTab, onTabChange }: GlobalSidebarProps) {
+  const { t } = useTranslation();
   const [user, setUser] = useState<CurrentUser | null>(() => getCurrentUser());
 
   useEffect(() => {
@@ -28,7 +25,13 @@ export default function GlobalSidebar({ activeTab, onTabChange }: GlobalSidebarP
     return off;
   }, []);
 
-  const handleNav = (item: (typeof NAV_ITEMS)[number]) => {
+  const navItems: { id: GlobalTab; label: string; icon: typeof FolderOpen; hash: string }[] = [
+    { id: "workspace", label: t("nav.workspace"), icon: FolderOpen, hash: "#/" },
+    { id: "library", label: t("nav.library"), icon: Library, hash: "#/library" },
+    { id: "settings", label: t("nav.settings"), icon: Settings, hash: "#/settings" },
+  ];
+
+  const handleNav = (item: (typeof navItems)[number]) => {
     onTabChange(item.id);
     window.location.hash = item.hash;
   };
@@ -55,7 +58,7 @@ export default function GlobalSidebar({ activeTab, onTabChange }: GlobalSidebarP
 
       {/* Navigation */}
       <nav className="flex-1 p-4 space-y-1">
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const isActive = activeTab === item.id;
           const Icon = item.icon;
           return (
@@ -92,13 +95,14 @@ export default function GlobalSidebar({ activeTab, onTabChange }: GlobalSidebarP
               <div className="absolute left-0 w-1 h-full bg-amber-500 rounded-r" />
             )}
             <ShieldCheck size={18} />
-            <span className="text-sm font-medium">管理控制台</span>
+            <span className="text-sm font-medium">{t("nav.admin")}</span>
           </button>
         )}
       </nav>
 
-      {/* Footer: user + logout */}
+      {/* Footer: language + user + logout */}
       <div className="p-4 border-t border-glass-border space-y-2">
+        <LanguageSwitcher />
         {user && (
           <div className="px-2 py-1">
             <div className="text-xs font-medium text-gray-300 truncate">{user.display_name || user.email}</div>
@@ -110,7 +114,7 @@ export default function GlobalSidebar({ activeTab, onTabChange }: GlobalSidebarP
           className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
         >
           <LogOut size={14} />
-          退出登录
+          {t("app.logout")}
         </button>
         <span className="text-xs text-gray-600 block px-2">v0.1.0</span>
       </div>

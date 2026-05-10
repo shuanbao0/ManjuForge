@@ -6,12 +6,14 @@ import { useProjectStore } from "@/store/projectStore";
 import { useState, useEffect } from "react";
 import { api, API_URL } from "@/lib/api";
 import { getAssetUrl } from "@/lib/utils";
+import { useTranslation } from "@/i18n";
 
 interface PropertiesPanelProps {
     activeStep: string;
 }
 
 export default function PropertiesPanel({ activeStep }: PropertiesPanelProps) {
+    const { t } = useTranslation();
     const currentProject = useProjectStore((state) => state.currentProject);
 
     // Hide panel for Motion step as it has its own sidebar
@@ -34,7 +36,7 @@ export default function PropertiesPanel({ activeStep }: PropertiesPanelProps) {
             case "export":
                 return <ExportInspector />;
             default:
-                return <div className="p-4 text-gray-500">Select a step to view properties.</div>;
+                return <div className="p-4 text-gray-500">{t("modules.properties.selectStep", undefined, "Select a step to view properties.")}</div>;
         }
     };
 
@@ -46,7 +48,7 @@ export default function PropertiesPanel({ activeStep }: PropertiesPanelProps) {
         >
             <div className="p-4 border-b border-glass-border flex items-center justify-between">
                 <h2 className="font-display font-bold text-white flex items-center gap-2">
-                    <Info size={16} className="text-primary" /> Context
+                    <Info size={16} className="text-primary" /> {t("modules.properties.context", undefined, "Context")}
                 </h2>
                 <span className="text-xs font-mono text-gray-500 uppercase">{activeStep}</span>
             </div>
@@ -61,6 +63,7 @@ export default function PropertiesPanel({ activeStep }: PropertiesPanelProps) {
 // --- Sub-Inspectors ---
 
 function ScriptInspector({ project }: { project: any }) {
+    const { t } = useTranslation();
     if (!project) return null;
     const wordCount = project.originalText?.length || 0;
     const charCount = project.characters?.length || 0;
@@ -70,23 +73,23 @@ function ScriptInspector({ project }: { project: any }) {
         <div className="space-y-6">
             <div className="space-y-3">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <FileText size={14} /> Project Stats
+                    <FileText size={14} /> {t("modules.properties.projectStats", undefined, "Project Stats")}
                 </h3>
                 <div className="grid grid-cols-2 gap-2">
-                    <StatBox label="Words" value={wordCount} />
-                    <StatBox label="Chars" value={charCount} />
-                    <StatBox label="Scenes" value={sceneCount} />
-                    <StatBox label="Est. Dur" value="~2m" />
+                    <StatBox label={t("modules.properties.statWords", undefined, "Words")} value={wordCount} />
+                    <StatBox label={t("modules.properties.statChars", undefined, "Chars")} value={charCount} />
+                    <StatBox label={t("modules.properties.statScenes", undefined, "Scenes")} value={sceneCount} />
+                    <StatBox label={t("modules.properties.statEstDur", undefined, "Est. Dur")} value="~2m" />
                 </div>
             </div>
 
             <div className="space-y-3">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <StickyNote size={14} /> Quick Notes
+                    <StickyNote size={14} /> {t("modules.properties.quickNotes", undefined, "Quick Notes")}
                 </h3>
                 <textarea
                     className="w-full h-32 bg-white/5 border border-white/10 rounded-lg p-3 text-xs text-gray-300 resize-none focus:outline-none focus:border-primary/50"
-                    placeholder="Jot down ideas here..."
+                    placeholder={t("modules.properties.quickNotesPlaceholder", undefined, "Jot down ideas here...")}
                 />
             </div>
 
@@ -98,6 +101,7 @@ function ScriptInspector({ project }: { project: any }) {
 }
 
 function AssetsInspector({ project }: { project: any }) {
+    const { t } = useTranslation();
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
 
@@ -129,10 +133,10 @@ function AssetsInspector({ project }: { project: any }) {
         <div className="space-y-6">
             <div className="space-y-3">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Users size={14} /> Asset Overview
+                    <Users size={14} /> {t("modules.properties.assetOverview", undefined, "Asset Overview")}
                 </h3>
                 <div className="text-xs text-gray-400">
-                    Manage aspect ratios and view global style settings.
+                    {t("modules.properties.assetOverviewDesc", undefined, "Manage aspect ratios and view global style settings.")}
                 </div>
             </div>
 
@@ -140,12 +144,12 @@ function AssetsInspector({ project }: { project: any }) {
             <div className="space-y-4 pt-4 border-t border-white/10">
                 <div className="flex items-center gap-2 mb-2">
                     <Layout className="text-primary" size={14} />
-                    <h3 className="font-bold text-white text-xs">Aspect Ratios</h3>
+                    <h3 className="font-bold text-white text-xs">{t("modules.properties.aspectRatios", undefined, "Aspect Ratios")}</h3>
                 </div>
 
                 {/* Character Aspect Ratio */}
                 <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-gray-500 uppercase">Character</label>
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">{t("modules.properties.aspectCharacter", undefined, "Character")}</label>
                     <div className="grid grid-cols-3 gap-1.5">
                         {['9:16', '16:9', '1:1'].map((ratio) => (
                             <button
@@ -164,7 +168,7 @@ function AssetsInspector({ project }: { project: any }) {
 
                 {/* Scene Aspect Ratio */}
                 <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-gray-500 uppercase">Scene</label>
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">{t("modules.properties.aspectScene", undefined, "Scene")}</label>
                     <div className="grid grid-cols-3 gap-1.5">
                         {['9:16', '16:9', '1:1'].map((ratio) => (
                             <button
@@ -183,7 +187,7 @@ function AssetsInspector({ project }: { project: any }) {
 
                 {/* Prop Aspect Ratio */}
                 <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-gray-500 uppercase">Prop</label>
+                    <label className="text-[10px] font-bold text-gray-500 uppercase">{t("modules.properties.aspectProp", undefined, "Prop")}</label>
                     <div className="grid grid-cols-3 gap-1.5">
                         {['9:16', '16:9', '1:1'].map((ratio) => (
                             <button
@@ -210,34 +214,35 @@ function AssetsInspector({ project }: { project: any }) {
 }
 
 function ArtDirectionStyleDisplay({ project }: { project: any }) {
+    const { t } = useTranslation();
     const artDirectionStyle = project?.art_direction?.style_config;
 
     return (
         <div className="space-y-4">
             <div className="flex items-center gap-2 mb-2">
                 <Paintbrush className="text-primary" size={14} />
-                <h3 className="font-bold text-white text-xs">Art Direction Style</h3>
+                <h3 className="font-bold text-white text-xs">{t("modules.properties.artDirectionStyle", undefined, "Art Direction Style")}</h3>
             </div>
 
             {artDirectionStyle ? (
                 <div className="space-y-3">
                     <div>
-                        <label className="text-[10px] font-bold text-gray-500 uppercase mb-1.5 block">Style Name</label>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase mb-1.5 block">{t("modules.properties.styleName", undefined, "Style Name")}</label>
                         <div className="text-xs font-bold text-white bg-gradient-to-r from-blue-500/20 to-purple-500/20 p-2.5 rounded-lg border border-white/10">
                             {artDirectionStyle.name}
                         </div>
                     </div>
 
                     <div>
-                        <label className="text-[10px] font-bold text-gray-500 uppercase mb-1.5 block">Positive Prompt</label>
+                        <label className="text-[10px] font-bold text-gray-500 uppercase mb-1.5 block">{t("modules.properties.positivePrompt", undefined, "Positive Prompt")}</label>
                         <div className="bg-black/40 border border-white/5 rounded-lg p-2.5 text-[10px] text-gray-400 leading-relaxed max-h-20 overflow-y-auto">
-                            {artDirectionStyle.positive_prompt || 'No positive prompt defined'}
+                            {artDirectionStyle.positive_prompt || t("modules.properties.noPositivePrompt", undefined, "No positive prompt defined")}
                         </div>
                     </div>
 
                     {artDirectionStyle.negative_prompt && (
                         <div>
-                            <label className="text-[10px] font-bold text-gray-500 uppercase mb-1.5 block">Negative Prompt</label>
+                            <label className="text-[10px] font-bold text-gray-500 uppercase mb-1.5 block">{t("modules.properties.negativePrompt", undefined, "Negative Prompt")}</label>
                             <div className="bg-black/40 border border-white/5 rounded-lg p-2.5 text-[10px] text-gray-400 leading-relaxed max-h-16 overflow-y-auto">
                                 {artDirectionStyle.negative_prompt}
                             </div>
@@ -246,15 +251,15 @@ function ArtDirectionStyleDisplay({ project }: { project: any }) {
 
                     <div className="pt-2">
                         <p className="text-[9px] text-gray-500 leading-relaxed">
-                            💡 Tip: Edit style in Step 2 (Art Direction)
+                            {t("modules.properties.tipEditStyle")}
                         </p>
                     </div>
                 </div>
             ) : (
                 <div className="bg-white/5 border border-white/10 rounded-lg p-3 text-center">
-                    <p className="text-xs text-gray-500 mb-2">No style configured</p>
+                    <p className="text-xs text-gray-500 mb-2">{t("modules.properties.noStyleConfigured", undefined, "No style configured")}</p>
                     <p className="text-[9px] text-gray-600">
-                        Go to Step 2 (Art Direction) to set up your project's visual style
+                        {t("modules.properties.goToArtDirection")}
                     </p>
                 </div>
             )}
@@ -263,6 +268,7 @@ function ArtDirectionStyleDisplay({ project }: { project: any }) {
 }
 
 function StoryboardInspector() {
+    const { t } = useTranslation();
     const currentProject = useProjectStore((state) => state.currentProject);
     const updateProject = useProjectStore((state) => state.updateProject);
     const selectedFrameId = useProjectStore((state) => state.selectedFrameId);
@@ -399,7 +405,7 @@ function StoryboardInspector() {
             }
         } catch (err) {
             console.error("Polish failed", err);
-            alert("Prompt polishing failed");
+            alert(t("modules.properties.polishFailed", undefined, "Prompt polishing failed"));
         } finally {
             setIsPolishing(false);
         }
@@ -409,10 +415,10 @@ function StoryboardInspector() {
         return (
             <div className="space-y-6">
                 <div className="p-4 bg-white/5 rounded-lg border border-white/10 text-center text-gray-500 text-xs">
-                    Select a frame to edit its details.
+                    {t("modules.properties.selectFrameToEdit", undefined, "Select a frame to edit its details.")}
                 </div>
                 <p className="text-xs text-gray-500 text-center">
-                    Tip: Use the ⚙️ icon in the sidebar to configure aspect ratios.
+                    {t("modules.properties.aspectRatiosTip", undefined, "Tip: Use the ⚙️ icon in the sidebar to configure aspect ratios.")}
                 </p>
             </div>
         );
@@ -422,32 +428,32 @@ function StoryboardInspector() {
         <div className="space-y-6">
             <div className="space-y-3">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Layout size={14} /> Frame Editor
+                    <Layout size={14} /> {t("modules.properties.frameEditor", undefined, "Frame Editor")}
                 </h3>
                 <div className="text-xs text-gray-400">
-                    Editing Frame {currentProject?.frames?.findIndex((f: any) => f.id === selectedFrameId) + 1}
+                    {t("modules.properties.editingFrameN", { n: (currentProject?.frames?.findIndex((f: any) => f.id === selectedFrameId) ?? 0) + 1 }, `Editing Frame ${(currentProject?.frames?.findIndex((f: any) => f.id === selectedFrameId) ?? 0) + 1}`)}
                 </div>
             </div>
 
             {/* Action Description */}
             <div className="space-y-2">
-                <label className="text-xs font-bold text-gray-500 uppercase">Action / Visuals</label>
+                <label className="text-xs font-bold text-gray-500 uppercase">{t("modules.properties.actionVisuals", undefined, "Action / Visuals")}</label>
                 <textarea
                     className="w-full h-24 bg-black/20 border border-white/10 rounded-lg p-3 text-xs text-gray-300 resize-none focus:outline-none focus:border-primary/50"
                     value={selectedFrame.action_description || ""}
                     onChange={(e) => updateFrame({ action_description: e.target.value })}
-                    placeholder="Describe the action..."
+                    placeholder={t("modules.properties.actionPlaceholder", undefined, "Describe the action...")}
                 />
             </div>
 
             {/* Dialogue */}
             <div className="space-y-2">
-                <label className="text-xs font-bold text-gray-500 uppercase">Dialogue</label>
+                <label className="text-xs font-bold text-gray-500 uppercase">{t("modules.properties.dialogue", undefined, "Dialogue")}</label>
                 <textarea
                     className="w-full h-16 bg-black/20 border border-white/10 rounded-lg p-3 text-xs text-gray-300 resize-none focus:outline-none focus:border-primary/50"
                     value={selectedFrame.dialogue || ""}
                     onChange={(e) => updateFrame({ dialogue: e.target.value })}
-                    placeholder="Speaker: Content"
+                    placeholder={t("modules.properties.dialoguePlaceholder", undefined, "Speaker: Content")}
                 />
             </div>
 
@@ -477,15 +483,15 @@ function StoryboardInspector() {
                     return (
                         <>
                             <div className="flex justify-between items-center">
-                                <label className="text-xs font-bold text-gray-500 uppercase">Reference Assets</label>
+                                <label className="text-xs font-bold text-gray-500 uppercase">{t("modules.properties.referenceAssets", undefined, "Reference Assets")}</label>
                                 <span className={`text-[10px] ${isLimitReached ? "text-yellow-500 font-bold" : "text-gray-500"}`}>
-                                    {referenceCount}/{referenceLimit} Images
+                                    {t("modules.properties.imagesCount", { n: referenceCount, total: referenceLimit }, `${referenceCount}/${referenceLimit} Images`)}
                                 </span>
                             </div>
 
                             {/* Scene Selector */}
                             <div className="mb-2 space-y-2">
-                                <label className="text-[10px] font-bold text-gray-500 uppercase">Scene</label>
+                                <label className="text-[10px] font-bold text-gray-500 uppercase">{t("modules.properties.aspectScene", undefined, "Scene")}</label>
                                 <select
                                     className="w-full bg-black/20 border border-white/10 rounded p-2 text-xs text-gray-300 focus:outline-none"
                                     value={selectedFrame.scene_id || ""}
@@ -504,13 +510,13 @@ function StoryboardInspector() {
                                         const predictedCount = (newSceneHasImage ? 1 : 0) + charImageCount + propImageCount;
 
                                         if (predictedCount > referenceLimit) {
-                                            alert(`Cannot select this scene: Reference image limit (${referenceLimit}) would be exceeded. Deselect some characters or props first.`);
+                                            alert(t("modules.properties.refLimitExceeded", { limit: referenceLimit }, `Cannot select this scene: Reference image limit (${referenceLimit}) would be exceeded. Deselect some characters or props first.`));
                                             return;
                                         }
                                         updateFrame({ scene_id: newSceneId });
                                     }}
                                 >
-                                    <option value="">Select Scene...</option>
+                                    <option value="">{t("modules.properties.selectScene", undefined, "Select Scene...")}</option>
                                     {currentProject?.scenes?.map((scene: any) => (
                                         <option key={scene.id} value={scene.id}>{scene.name}</option>
                                     ))}
@@ -519,7 +525,7 @@ function StoryboardInspector() {
                                 {/* Show Scene Description if selected */}
                                 {selectedScene?.description && (
                                     <div className="bg-white/5 p-2 rounded text-[10px] text-gray-400 italic border border-white/5">
-                                        <span className="font-bold not-italic text-gray-500">Scene: </span>
+                                        <span className="font-bold not-italic text-gray-500">{t("modules.properties.sceneLabel", undefined, "Scene: ")}</span>
                                         {selectedScene.description}
                                     </div>
                                 )}
@@ -527,7 +533,7 @@ function StoryboardInspector() {
 
                             {/* Character Toggles */}
                             <div className="space-y-2">
-                                <label className="text-[10px] font-bold text-gray-500 uppercase">Characters</label>
+                                <label className="text-[10px] font-bold text-gray-500 uppercase">{t("modules.properties.characters", undefined, "Characters")}</label>
                                 <div className="grid grid-cols-2 gap-2">
                                     {currentProject?.characters?.map((char: any) => {
                                         const isSelected = selectedFrame.character_ids?.includes(char.id);
@@ -575,7 +581,7 @@ function StoryboardInspector() {
                             {/* Prop Toggles */}
                             {currentProject?.props && currentProject.props.length > 0 && (
                                 <div className="space-y-2">
-                                    <label className="text-[10px] font-bold text-gray-500 uppercase">Props</label>
+                                    <label className="text-[10px] font-bold text-gray-500 uppercase">{t("modules.properties.props", undefined, "Props")}</label>
                                     <div className="grid grid-cols-2 gap-2">
                                         {currentProject.props.map((prop: any) => {
                                             const isSelected = selectedFrame.prop_ids?.includes(prop.id);
@@ -638,20 +644,20 @@ function StoryboardInspector() {
 
             {/* Camera Controls */}
             <div className="space-y-2">
-                <label className="text-xs font-bold text-gray-500 uppercase">Camera</label>
+                <label className="text-xs font-bold text-gray-500 uppercase">{t("modules.properties.camera", undefined, "Camera")}</label>
                 <div className="grid grid-cols-1 gap-2">
                     <select
                         className="bg-black/20 border border-white/10 rounded p-2 text-xs text-gray-300 focus:outline-none"
                         value={selectedFrame.camera_angle || ""}
                         onChange={(e) => updateFrame({ camera_angle: e.target.value })}
                     >
-                        <option value="">Angle...</option>
-                        <option value="Wide Shot">Wide Shot</option>
-                        <option value="Medium Shot">Medium Shot</option>
-                        <option value="Close Up">Close Up</option>
-                        <option value="Low Angle">Low Angle</option>
-                        <option value="High Angle">High Angle</option>
-                        <option value="Over the Shoulder">Over the Shoulder</option>
+                        <option value="">{t("modules.properties.cameraAnglePlaceholder", undefined, "Angle...")}</option>
+                        <option value="Wide Shot">{t("modules.properties.cameraWideShot", undefined, "Wide Shot")}</option>
+                        <option value="Medium Shot">{t("modules.properties.cameraMediumShot", undefined, "Medium Shot")}</option>
+                        <option value="Close Up">{t("modules.properties.cameraCloseUp", undefined, "Close Up")}</option>
+                        <option value="Low Angle">{t("modules.properties.cameraLowAngle", undefined, "Low Angle")}</option>
+                        <option value="High Angle">{t("modules.properties.cameraHighAngle", undefined, "High Angle")}</option>
+                        <option value="Over the Shoulder">{t("modules.properties.cameraOverShoulder", undefined, "Over the Shoulder")}</option>
                     </select>
                 </div>
             </div>
@@ -659,28 +665,28 @@ function StoryboardInspector() {
             {/* Prompt */}
             <div className="space-y-2">
                 <div className="flex justify-between items-center">
-                    <label className="text-xs font-bold text-gray-500 uppercase">Image Prompt</label>
+                    <label className="text-xs font-bold text-gray-500 uppercase">{t("modules.properties.imagePrompt", undefined, "Image Prompt")}</label>
                     <button
                         onClick={handleComposePrompt}
                         className="flex items-center gap-1 text-[10px] bg-white/10 hover:bg-white/20 px-2 py-1 rounded text-white transition-colors"
-                        title="Auto-generate prompt from metadata"
+                        title={t("modules.properties.autoComposeTitle", undefined, "Auto-generate prompt from metadata")}
                     >
-                        <Wand2 size={10} /> Auto-Compose
+                        <Wand2 size={10} /> {t("modules.properties.autoCompose", undefined, "Auto-Compose")}
                     </button>
                     <button
                         onClick={() => handlePolish()}
                         disabled={isPolishing}
                         className="flex items-center gap-1 text-[10px] bg-purple-600 hover:bg-purple-700 px-2 py-1 rounded text-white transition-colors ml-2 disabled:opacity-50"
-                        title="AI Polish Prompt"
+                        title={t("modules.properties.aiPolishTitle", undefined, "AI Polish Prompt")}
                     >
-                        {isPolishing ? <Sparkles size={10} className="animate-spin" /> : <Sparkles size={10} />} Polish
+                        {isPolishing ? <Sparkles size={10} className="animate-spin" /> : <Sparkles size={10} />} {t("modules.properties.polish", undefined, "Polish")}
                     </button>
                 </div>
                 <textarea
                     className="w-full h-32 bg-black/20 border border-white/10 rounded-lg p-3 text-xs text-gray-300 resize-none focus:outline-none focus:border-primary/50"
                     value={selectedFrame.image_prompt || ""}
                     onChange={(e) => updateFrame({ image_prompt: e.target.value })}
-                    placeholder="Full image generation prompt..."
+                    placeholder={t("modules.properties.imagePromptPlaceholder", undefined, "Full image generation prompt...")}
                 />
 
                 {/* Polished Result Display - Bilingual */}
@@ -693,7 +699,7 @@ function StoryboardInspector() {
                     >
                         <div className="flex justify-between items-start">
                             <span className="text-xs font-bold text-purple-400 flex items-center gap-1">
-                                <Wand2 size={12} /> AI 双语润色
+                                <Wand2 size={12} /> {t("modules.video.aiBilingualPolish", undefined, "AI 双语润色")}
                             </span>
                             <button
                                 onClick={() => {
@@ -713,15 +719,15 @@ function StoryboardInspector() {
                         {/* Chinese Prompt */}
                         <div className="space-y-1">
                             <div className="flex justify-between items-center">
-                                <span className="text-[10px] font-bold text-gray-500 uppercase">中文 (预览)</span>
+                                <span className="text-[10px] font-bold text-gray-500 uppercase">{t("modules.video.chinesePreview", undefined, "中文 (预览)")}</span>
                                 <button
                                     onClick={() => {
                                         navigator.clipboard.writeText(polishedPrompt.cn);
-                                        alert("中文提示词已复制");
+                                        alert(t("modules.video.cnPromptCopied", undefined, "中文提示词已复制"));
                                     }}
                                     className="text-[10px] text-gray-400 hover:text-white bg-black/20 px-2 py-0.5 rounded"
                                 >
-                                    复制
+                                    {t("common.copy")}
                                 </button>
                             </div>
                             <p className="text-xs text-gray-300 leading-relaxed whitespace-pre-wrap bg-black/20 p-2 rounded">
@@ -732,16 +738,16 @@ function StoryboardInspector() {
                         {/* English Prompt */}
                         <div className="space-y-1">
                             <div className="flex justify-between items-center">
-                                <span className="text-[10px] font-bold text-gray-500 uppercase">English (生图用)</span>
+                                <span className="text-[10px] font-bold text-gray-500 uppercase">{t("modules.properties.englishForImage", undefined, "English (生图用)")}</span>
                                 <div className="flex gap-1">
                                     <button
                                         onClick={() => {
                                             navigator.clipboard.writeText(polishedPrompt.en);
-                                            alert("English prompt copied");
+                                            alert(t("modules.video.enPromptCopied", undefined, "English prompt copied"));
                                         }}
                                         className="text-[10px] text-gray-400 hover:text-white bg-black/20 px-2 py-0.5 rounded"
                                     >
-                                        Copy
+                                        {t("modules.video.copyEn", undefined, "Copy")}
                                     </button>
                                     <button
                                         onClick={() => {
@@ -758,7 +764,7 @@ function StoryboardInspector() {
                                         }}
                                         className="text-[10px] text-white bg-purple-600 hover:bg-purple-500 px-2 py-0.5 rounded font-bold"
                                     >
-                                        应用
+                                        {t("modules.common.apply")}
                                     </button>
                                 </div>
                             </div>
@@ -779,7 +785,7 @@ function StoryboardInspector() {
                                             handlePolish(feedbackText.trim());
                                         }
                                     }}
-                                    placeholder="哪里不满意？描述你的修改意见..."
+                                    placeholder={t("modules.video.feedbackPlaceholder", undefined, "哪里不满意？描述你的修改意见...")}
                                     className="flex-1 text-[10px] bg-black/30 border border-purple-500/20 rounded px-2 py-1.5 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
                                 />
                                 <button
@@ -788,7 +794,7 @@ function StoryboardInspector() {
                                     className="text-[10px] text-white bg-purple-600 hover:bg-purple-500 px-2 py-1.5 rounded font-medium flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                                 >
                                     {isPolishing ? <Sparkles size={8} className="animate-spin" /> : <Sparkles size={8} />}
-                                    再润色
+                                    {t("modules.video.repolish", undefined, "再润色")}
                                 </button>
                             </div>
                         </div>
@@ -800,23 +806,24 @@ function StoryboardInspector() {
 }
 
 function MotionInspector() {
+    const { t } = useTranslation();
     return (
         <div className="space-y-6">
             <div className="space-y-3">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Video size={14} /> Motion Params
+                    <Video size={14} /> {t("modules.properties.motionParams", undefined, "Motion Params")}
                 </h3>
                 <div className="space-y-4">
                     <div className="space-y-1">
                         <div className="flex justify-between text-xs text-gray-400">
-                            <span>Motion Bucket</span>
+                            <span>{t("modules.properties.motionBucket", undefined, "Motion Bucket")}</span>
                             <span>127</span>
                         </div>
                         <input type="range" className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer" />
                     </div>
                     <div className="space-y-1">
                         <div className="flex justify-between text-xs text-gray-400">
-                            <span>FPS</span>
+                            <span>{t("modules.properties.fps", undefined, "FPS")}</span>
                             <span>24</span>
                         </div>
                         <input type="range" className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer" />
@@ -828,6 +835,7 @@ function MotionInspector() {
 }
 
 function AudioInspector({ project }: { project: any }) {
+    const { t } = useTranslation();
     const assignedCount = project?.characters?.filter((c: any) => c.voice_id).length || 0;
     const totalCount = project?.characters?.length || 0;
 
@@ -835,7 +843,7 @@ function AudioInspector({ project }: { project: any }) {
         <div className="space-y-6">
             <div className="space-y-3">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Mic size={14} /> Casting Status
+                    <Mic size={14} /> {t("modules.properties.castingStatus", undefined, "Casting Status")}
                 </h3>
                 <div className="flex items-center gap-2">
                     <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
@@ -847,7 +855,7 @@ function AudioInspector({ project }: { project: any }) {
                     <span className="text-xs font-mono text-gray-400">{assignedCount}/{totalCount}</span>
                 </div>
                 <p className="text-xs text-gray-500">
-                    {assignedCount === totalCount ? "All characters casted." : "Some characters need voices."}
+                    {assignedCount === totalCount ? t("modules.properties.allCasted", undefined, "All characters casted.") : t("modules.properties.someNeedVoices", undefined, "Some characters need voices.")}
                 </p>
             </div>
         </div>
@@ -855,14 +863,15 @@ function AudioInspector({ project }: { project: any }) {
 }
 
 function MixInspector() {
+    const { t } = useTranslation();
     return (
         <div className="space-y-6">
             <div className="space-y-3">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Music size={14} /> Track Inspector
+                    <Music size={14} /> {t("modules.properties.trackInspector", undefined, "Track Inspector")}
                 </h3>
                 <div className="p-4 bg-white/5 rounded-lg border border-white/10 text-center text-xs text-gray-500">
-                    Select a clip on the timeline to view details.
+                    {t("modules.properties.selectClipHint", undefined, "Select a clip on the timeline to view details.")}
                 </div>
             </div>
         </div>
@@ -870,16 +879,17 @@ function MixInspector() {
 }
 
 function ExportInspector() {
+    const { t } = useTranslation();
     return (
         <div className="space-y-6">
             <div className="space-y-3">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <Film size={14} /> Export History
+                    <Film size={14} /> {t("modules.properties.exportHistory", undefined, "Export History")}
                 </h3>
                 <div className="space-y-2">
                     <div className="p-2 bg-white/5 rounded border border-white/10 flex justify-between items-center">
                         <span className="text-xs text-gray-300">Project_v1.mp4</span>
-                        <span className="text-[10px] text-gray-500">2h ago</span>
+                        <span className="text-[10px] text-gray-500">{t("modules.properties.hoursAgo", { n: 2 }, "2h ago")}</span>
                     </div>
                 </div>
             </div>

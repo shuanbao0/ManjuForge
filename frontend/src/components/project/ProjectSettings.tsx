@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Palette, Info } from "lucide-react";
 import { api } from "@/lib/api";
+import { useTranslation } from "@/i18n";
 
 interface ProjectSettingsProps {
     project: any;
@@ -12,18 +13,18 @@ interface ProjectSettingsProps {
     onUpdate: (updatedProject: any) => void;
 }
 
-const STYLE_PRESETS = [
-    { value: "realistic", label: "Realistic (写实)", description: "Photorealistic, detailed imagery" },
-    { value: "cartoon", label: "Cartoon (卡通)", description: "Animated, colorful style" },
-    { value: "anime", label: "Anime (动漫)", description: "Japanese animation style" },
-    { value: "cyberpunk", label: "Cyberpunk (赛博朋克)", description: "Futuristic, neon-lit aesthetic" },
-    { value: "watercolor", label: "Watercolor (水彩)", description: "Soft, painterly look" },
-    { value: "sketch", label: "Sketch (素描)", description: "Hand-drawn pencil style" },
-    { value: "comic", label: "Comic Book (漫画)", description: "Bold outlines, halftone shading" },
-    { value: "cinematic", label: "Cinematic (电影)", description: "Film-like, dramatic lighting" },
-];
-
 export default function ProjectSettings({ project, isOpen, onClose, onUpdate }: ProjectSettingsProps) {
+    const { t } = useTranslation();
+    const STYLE_PRESETS = useMemo(() => [
+        { value: "realistic", label: t("projectSettings.styleRealisticLabel", undefined, "Realistic (写实)"), description: t("projectSettings.styleRealisticDesc", undefined, "Photorealistic, detailed imagery") },
+        { value: "cartoon", label: t("projectSettings.styleCartoonLabel", undefined, "Cartoon (卡通)"), description: t("projectSettings.styleCartoonDesc", undefined, "Animated, colorful style") },
+        { value: "anime", label: t("projectSettings.styleAnimeLabel", undefined, "Anime (动漫)"), description: t("projectSettings.styleAnimeDesc", undefined, "Japanese animation style") },
+        { value: "cyberpunk", label: t("projectSettings.styleCyberpunkLabel", undefined, "Cyberpunk (赛博朋克)"), description: t("projectSettings.styleCyberpunkDesc", undefined, "Futuristic, neon-lit aesthetic") },
+        { value: "watercolor", label: t("projectSettings.styleWatercolorLabel", undefined, "Watercolor (水彩)"), description: t("projectSettings.styleWatercolorDesc", undefined, "Soft, painterly look") },
+        { value: "sketch", label: t("projectSettings.styleSketchLabel", undefined, "Sketch (素描)"), description: t("projectSettings.styleSketchDesc", undefined, "Hand-drawn pencil style") },
+        { value: "comic", label: t("projectSettings.styleComicLabel", undefined, "Comic Book (漫画)"), description: t("projectSettings.styleComicDesc", undefined, "Bold outlines, halftone shading") },
+        { value: "cinematic", label: t("projectSettings.styleCinematicLabel", undefined, "Cinematic (电影)"), description: t("projectSettings.styleCinematicDesc", undefined, "Film-like, dramatic lighting") },
+    ], [t]);
     const [stylePreset, setStylePreset] = useState(project?.style_preset || "realistic");
     const [stylePrompt, setStylePrompt] = useState(project?.style_prompt || "");
     const [isSaving, setIsSaving] = useState(false);
@@ -52,8 +53,8 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate }: 
             onClose();
         } catch (error: any) {
             console.error("Failed to update style:", error);
-            const errorMessage = error?.response?.data?.detail || error?.message || "更新风格失败";
-            alert(`更新风格失败: ${errorMessage}`);
+            const errorMessage = error?.response?.data?.detail || error?.message || t("projectSettings.updateFailed", undefined, "更新风格失败");
+            alert(`${t("projectSettings.updateFailed", undefined, "更新风格失败")}: ${errorMessage}`);
         } finally {
             setIsSaving(false);
         }
@@ -85,8 +86,8 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate }: 
                                     <Palette className="text-primary" size={20} />
                                 </div>
                                 <div>
-                                    <h2 className="text-xl font-bold text-white">项目风格设置</h2>
-                                    <p className="text-xs text-gray-500">Project Style Settings</p>
+                                    <h2 className="text-xl font-bold text-white">{t("projectSettings.title", undefined, "项目风格设置")}</h2>
+                                    <p className="text-xs text-gray-500">{t("projectSettings.subtitle", undefined, "Project Style Settings")}</p>
                                 </div>
                             </div>
                             <button
@@ -103,9 +104,9 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate }: 
                             <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4 flex gap-3">
                                 <Info size={18} className="text-blue-400 flex-shrink-0 mt-0.5" />
                                 <div className="text-sm text-gray-300">
-                                    <p className="font-semibold mb-1">全局风格设置</p>
+                                    <p className="font-semibold mb-1">{t("projectSettings.globalStyleTitle", undefined, "全局风格设置")}</p>
                                     <p className="text-xs text-gray-400">
-                                        此风格将自动应用到所有资产生成和故事板渲染。您仍可在生成时单独覆盖特定项目的风格。
+                                        {t("projectSettings.globalStyleDesc", undefined, "此风格将自动应用到所有资产生成和故事板渲染。您仍可在生成时单独覆盖特定项目的风格。")}
                                     </p>
                                 </div>
                             </div>
@@ -113,7 +114,7 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate }: 
                             {/* Style Preset Selector */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-300 mb-3">
-                                    风格预设 <span className="text-gray-600">(Style Preset)</span>
+                                    {t("projectSettings.stylePresetLabel", undefined, "风格预设")} <span className="text-gray-600">(Style Preset)</span>
                                 </label>
                                 <div className="grid grid-cols-2 gap-3">
                                     {STYLE_PRESETS.map((style) => (
@@ -135,24 +136,24 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate }: 
                             {/* Custom Style Prompt */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                                    自定义风格描述 <span className="text-gray-600">(Optional)</span>
+                                    {t("projectSettings.customStyleLabel", undefined, "自定义风格描述")} <span className="text-gray-600">({t("common.optional")})</span>
                                 </label>
                                 <textarea
                                     value={stylePrompt}
                                     onChange={(e) => setStylePrompt(e.target.value)}
-                                    placeholder="例如: vibrant colors, soft lighting, dreamlike atmosphere"
+                                    placeholder={t("projectSettings.customStylePlaceholder", undefined, "例如: vibrant colors, soft lighting, dreamlike atmosphere")}
                                     className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm text-white placeholder-gray-600 focus:border-primary focus:outline-none resize-none"
                                     rows={3}
                                 />
                                 <p className="text-xs text-gray-600 mt-1">
-                                    此描述将与风格预设一起应用（可选）
+                                    {t("projectSettings.customStyleHint", undefined, "此描述将与风格预设一起应用（可选）")}
                                 </p>
                             </div>
 
                             {/* Preview */}
                             {selectedStyle && (
                                 <div className="bg-white/5 border border-white/10 rounded-lg p-4">
-                                    <p className="text-xs text-gray-500 mb-2">生成时将应用的风格：</p>
+                                    <p className="text-xs text-gray-500 mb-2">{t("projectSettings.previewLabel", undefined, "生成时将应用的风格：")}</p>
                                     <p className="text-sm text-blue-400 italic">
                                         &quot;{selectedStyle.value} style{stylePrompt ? `, ${stylePrompt}` : ""}&quot;
                                     </p>
@@ -166,14 +167,14 @@ export default function ProjectSettings({ project, isOpen, onClose, onUpdate }: 
                                 onClick={onClose}
                                 className="px-4 py-2 text-sm text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
                             >
-                                取消
+                                {t("common.cancel")}
                             </button>
                             <button
                                 onClick={handleSave}
                                 disabled={isSaving}
                                 className="px-6 py-2 text-sm bg-primary hover:bg-primary/90 text-white rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                             >
-                                {isSaving ? "保存中..." : "保存设置"}
+                                {isSaving ? t("common.saving") : t("projectSettings.saveSettings", undefined, "保存设置")}
                             </button>
                         </div>
                     </motion.div>

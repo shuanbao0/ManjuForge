@@ -20,6 +20,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field, asdict
 from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
+from src.i18n import get_current_locale
+from src.i18n.locales.en_us import messages as _EN_BUNDLE
+from src.i18n.locales.zh_cn import messages as _ZH_BUNDLE
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # Model cards
@@ -863,9 +867,14 @@ class ModelCatalog:
         cards = self.by_capability(capability) if capability else list(self._cards)
         return {
             "cards": [_card_to_dict(c) for c in cards],
-            "presets": [asdict(p) for p in self._presets],
+            "presets": [_preset_to_dict(p) for p in self._presets],
             "aspect_ratios": [dict(r) for r in self._aspect_ratios],
         }
+
+
+def _active_bundle() -> Dict[str, object]:
+    """Return the locale bundle matching the current request locale."""
+    return _EN_BUNDLE if get_current_locale() == "en-US" else _ZH_BUNDLE
 
 
 def _card_to_dict(card: ModelCard) -> Dict[str, object]:
@@ -873,6 +882,31 @@ def _card_to_dict(card: ModelCard) -> Dict[str, object]:
     # Drop empty params dicts to keep the payload tidy on the wire.
     if not payload.get("params"):
         payload.pop("params", None)
+    # Locale-aware description override. Falls back to the dataclass value if
+    # the active bundle has no entry for this card id.
+    bundle = _active_bundle()
+    descriptions = bundle.get("model_descriptions", {}) if isinstance(bundle, dict) else {}
+    if isinstance(descriptions, dict):
+        translated = descriptions.get(card.id)
+        if isinstance(translated, str) and translated:
+            payload["description"] = translated
+    return payload
+
+
+def _preset_to_dict(preset: "LLMPreset") -> Dict[str, object]:
+    payload = asdict(preset)
+    bundle = _active_bundle()
+    if isinstance(bundle, dict):
+        descs = bundle.get("llm_preset_descriptions", {})
+        if isinstance(descs, dict):
+            translated = descs.get(preset.id)
+            if isinstance(translated, str) and translated:
+                payload["description"] = translated
+        names = bundle.get("llm_preset_display_names", {})
+        if isinstance(names, dict):
+            translated_name = names.get(preset.id)
+            if isinstance(translated_name, str) and translated_name:
+                payload["display_name"] = translated_name
     return payload
 
 

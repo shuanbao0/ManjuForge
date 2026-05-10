@@ -1,11 +1,14 @@
 "use client";
 
+import { useTranslation } from "@/i18n";
+
 interface ManjuForgeBrandingProps {
   size?: "sm" | "md";
   showSlogan?: boolean;
 }
 
 export default function ManjuForgeBranding({ size = "md", showSlogan = true }: ManjuForgeBrandingProps) {
+  const { t } = useTranslation();
   const logoSize = size === "sm" ? "w-10 h-10" : "w-16 h-16";
   const titleSize = size === "sm" ? "text-2xl" : "text-3xl";
   const accentSize = size === "sm" ? "text-3xl" : "text-4xl";
@@ -57,7 +60,7 @@ export default function ManjuForgeBranding({ size = "md", showSlogan = true }: M
       </div>
       {showSlogan && (
         <p className="text-[9px] text-gray-500 tracking-wide text-center mt-3">
-          Render Noise into Narrative
+          {t("app.slogan", undefined, "Render Noise into Narrative")}
         </p>
       )}
     </div>

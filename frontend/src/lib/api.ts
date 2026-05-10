@@ -51,6 +51,23 @@ export const API_URL = getApiUrl();
 
 const AUTH_FREE_PATHS = ["/auth/setup", "/auth/setup-status", "/auth/login"];
 
+const LOCALE_LS_KEY = "manju_forge_locale";
+
+/** Read the user's chosen UI locale from localStorage. Mirrors the value the
+ *  i18n provider persists; kept as a plain helper so non-React code (this
+ *  axios interceptor, fetch wrappers) doesn't have to import the React layer.
+ */
+function readUiLocale(): string {
+    if (typeof window === "undefined") return "zh-CN";
+    try {
+        const v = window.localStorage.getItem(LOCALE_LS_KEY);
+        if (v === "zh-CN" || v === "en-US") return v;
+    } catch {
+        /* ignore */
+    }
+    return "zh-CN";
+}
+
 let _interceptorsInstalled = false;
 function installAuthInterceptors() {
     if (_interceptorsInstalled || typeof window === "undefined") return;
@@ -59,11 +76,14 @@ function installAuthInterceptors() {
     axios.interceptors.request.use((config) => {
         const url = (config.url ?? "").toString();
         if (!url.startsWith(API_URL)) return config; // leave third-party requests alone
+        // Tag every backend request with the user's chosen locale so the
+        // FastAPI LocaleMiddleware can return error messages in that language.
+        config.headers = config.headers ?? {};
+        (config.headers as Record<string, string>)["Accept-Language"] = readUiLocale();
         const path = url.slice(API_URL.length);
         if (AUTH_FREE_PATHS.some((p) => path.startsWith(p))) return config;
         const token = getToken();
         if (token) {
-            config.headers = config.headers ?? {};
             (config.headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
         }
         return config;
@@ -90,11 +110,14 @@ function installAuthInterceptors() {
 
 installAuthInterceptors();
 
-/** Wrap raw fetch() with the same Authorization header behavior. */
+/** Wrap raw fetch() with the same Authorization + locale header behavior. */
 export async function authedFetch(input: string, init: RequestInit = {}): Promise<Response> {
     const token = typeof window === "undefined" ? null : getToken();
     const headers = new Headers(init.headers ?? {});
     const isAuthFree = AUTH_FREE_PATHS.some((p) => input.startsWith(`${API_URL}${p}`));
+    if (input.startsWith(API_URL)) {
+        headers.set("Accept-Language", readUiLocale());
+    }
     if (token && input.startsWith(API_URL) && !isAuthFree) {
         headers.set("Authorization", `Bearer ${token}`);
     }

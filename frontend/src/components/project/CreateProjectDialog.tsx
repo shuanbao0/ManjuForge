@@ -4,6 +4,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
+import { useTranslation } from "@/i18n";
 
 
 interface CreateProjectDialogProps {
@@ -12,6 +13,7 @@ interface CreateProjectDialogProps {
 }
 
 export default function CreateProjectDialog({ isOpen, onClose }: CreateProjectDialogProps) {
+    const { t } = useTranslation();
     const [title, setTitle] = useState("");
     const [text, setText] = useState("");
     const [isCreating, setIsCreating] = useState(false);
@@ -20,7 +22,7 @@ export default function CreateProjectDialog({ isOpen, onClose }: CreateProjectDi
 
     const handleCreate = async () => {
         if (!title) {
-            alert("请填写项目标题");
+            alert(t("createProject.titleRequired", undefined, "请填写项目标题"));
             return;
         }
 
@@ -35,8 +37,8 @@ export default function CreateProjectDialog({ isOpen, onClose }: CreateProjectDi
             }
             onClose();
         } catch (error: any) {
-            const errorMessage = error?.response?.data?.detail || error?.message || "请检查后端连接";
-            alert(`创建项目失败: ${errorMessage}`);
+            const errorMessage = error?.response?.data?.detail || error?.message || t("createProject.checkBackend", undefined, "请检查后端连接");
+            alert(`${t("createProject.failed")}: ${errorMessage}`);
         } finally {
             setIsCreating(false);
         }
@@ -60,7 +62,7 @@ export default function CreateProjectDialog({ isOpen, onClose }: CreateProjectDi
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="flex items-center justify-between mb-6">
-                            <h2 className="text-2xl font-display font-bold text-white">创建新项目</h2>
+                            <h2 className="text-2xl font-display font-bold text-white">{t("createProject.title")}</h2>
                             <button
                                 onClick={onClose}
                                 className="p-2 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
@@ -72,25 +74,25 @@ export default function CreateProjectDialog({ isOpen, onClose }: CreateProjectDi
                         <div className="space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                                    项目标题
+                                    {t("createProject.titleLabel")}
                                 </label>
                                 <input
                                     type="text"
                                     value={title}
                                     onChange={(e) => setTitle(e.target.value)}
-                                    placeholder="输入项目标题..."
+                                    placeholder={t("createProject.titlePlaceholder", undefined, "输入项目标题...")}
                                     className="glass-input w-full"
                                 />
                             </div>
 
                             <div>
                                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                                    脚本内容
+                                    {t("createProject.scriptLabel", undefined, "脚本内容")}
                                 </label>
                                 <textarea
                                     value={text}
                                     onChange={(e) => setText(e.target.value)}
-                                    placeholder="粘贴小说或剧本内容..."
+                                    placeholder={t("createProject.scriptPlaceholder", undefined, "粘贴小说或剧本内容...")}
                                     rows={10}
                                     className="glass-input w-full resize-none font-mono text-sm"
                                 />
@@ -101,14 +103,14 @@ export default function CreateProjectDialog({ isOpen, onClose }: CreateProjectDi
                                     onClick={onClose}
                                     className="flex-1 glass-button"
                                 >
-                                    取消
+                                    {t("common.cancel")}
                                 </button>
                                 <button
                                     onClick={handleCreate}
                                     disabled={isCreating || !title}
                                     className="flex-1 bg-primary hover:bg-primary/90 text-white px-6 py-3 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                    {isCreating ? "创建中..." : "创建项目"}
+                                    {isCreating ? t("createProject.creating") : t("createProject.create")}
                                 </button>
                             </div>
                         </div>
