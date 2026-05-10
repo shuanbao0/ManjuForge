@@ -1993,15 +1993,6 @@ class ComicGenPipeline:
         self._save_data()
         return script
 
-    def _download_temp_image(self, url: str) -> str:
-        """Materialize a media reference (http URL, local path under
-        ``output/``, OSS object key, or data URI) as a local file path
-        the model adapter can read."""
-        try:
-            return MediaResolver().to_local_file(url, suffix=".png")
-        except Exception as e:
-            logger.error(f"Failed to download image: {e}")
-            raise
     def select_video_for_frame(self, script_id: str, frame_id: str, video_id: str) -> Script:
         """Step 5a: Select a video variant for a frame."""
         script = self.scripts.get(script_id)
@@ -2603,12 +2594,7 @@ class ComicGenPipeline:
             # Update status to processing
             task.status = "processing"
             self._save_data()
-            
-            # Download image to temp file
-            img_path = None
-            if task.image_url:
-                img_path = self._download_temp_image(task.image_url)
-            
+
             # Generate video
             output_filename = f"video_{task_id}.mp4"
             output_path = os.path.join(self.data_root, "video", output_filename)
@@ -2663,12 +2649,15 @@ class ComicGenPipeline:
                 model_name = task.model or ""
                 backend = self._resolve_video_backend(model_name)
                 adapter = self._video_dispatcher.resolve(model_name, backend)
+                # Adapters resolve their own bytes/URL via MediaResolver from
+                # the stable img_url ref — no per-call temp materialization
+                # here. (`video.py::generate_clip` still passes img_path for
+                # legacy in-output references; that path is unaffected.)
                 video_path, _ = adapter.generate(
                     VideoGenerationContext(
                         task=task,
                         output_path=output_path,
                         img_url=img_url,
-                        img_path=img_path,
                         audio_url=final_audio_url,
                         generate_audio=final_generate_audio,
                     )

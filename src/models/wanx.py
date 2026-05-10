@@ -91,7 +91,10 @@ class WanxModel(VideoGenModel):
         names (e.g. Kling/Vidu via DashScope) and prevents raw local filesystem
         paths from leaking into SDK payloads.
         """
-        image_ref = img_path or img_url
+        # Prefer the stable project-side ref over the pipeline's temp copy:
+        # ``resolve_media_input`` handles every ref shape natively, but a
+        # ``/tmp/…`` path falls outside ``output/`` and won't classify.
+        image_ref = img_url or img_path
         if not image_ref:
             return img_url
 
@@ -264,7 +267,7 @@ class WanxModel(VideoGenModel):
                 backend = self._resolve_provider_backend_for_model(resolver_model)
                 temp_url_resolver = self._build_dashscope_temp_url_resolver(resolver_model)
 
-                image_ref = img_path or img_url
+                image_ref = img_url or img_path
                 if image_ref:
                     resolved_image = resolve_media_input(
                         image_ref,
@@ -326,7 +329,7 @@ class WanxModel(VideoGenModel):
                 backend = self._resolve_provider_backend_for_model(resolver_model)
                 temp_url_resolver = self._build_dashscope_temp_url_resolver(resolver_model)
 
-                image_ref = img_path or img_url
+                image_ref = img_url or img_path
                 if not image_ref:
                     raise ValueError(f"{final_model_name} requires a source image (img_url or img_path)")
                 resolved_image = resolve_media_input(

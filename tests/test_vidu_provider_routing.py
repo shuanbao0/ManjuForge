@@ -38,7 +38,6 @@ def _build_pipeline(task: VideoTask, wanx_model) -> ComicGenPipeline:
     )
     pipeline.scripts = {task.project_id: script}
     pipeline._save_data = lambda: None
-    pipeline._download_temp_image = lambda _: "/tmp/downloaded-vidu.png"
     pipeline._kling_model = None
     pipeline._vidu_model = None
     pipeline.video_generator = SimpleNamespace(model=wanx_model)
@@ -87,7 +86,7 @@ def test_pipeline_routes_vidu_vendor_mode_to_vendor_adapter(monkeypatch):
     assert "vendor_kwargs" in calls
     assert "wanx_kwargs" not in calls
     assert calls["vendor_kwargs"]["model"] == "viduq3-pro"
-    assert calls["vendor_kwargs"]["img_path"] == "/tmp/downloaded-vidu.png"
+    assert calls["vendor_kwargs"]["img_url"] == "https://example.com/ref.png"
     assert task.status == "completed"
 
 
@@ -126,7 +125,7 @@ def test_pipeline_routes_vidu_dashscope_mode_to_wanx_without_vendor_credentials(
     assert "wanx_kwargs" in calls
     assert "vendor_kwargs" not in calls
     assert calls["wanx_kwargs"]["model"] == "viduq3-pro"
-    assert calls["wanx_kwargs"]["img_path"] == "/tmp/downloaded-vidu.png"
+    assert calls["wanx_kwargs"]["img_url"] == "https://example.com/ref.png"
     assert task.status == "completed"
 
 
