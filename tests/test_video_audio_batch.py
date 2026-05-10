@@ -10,6 +10,7 @@ from src.apps.comic_gen.models import (
     ModelSettings,
     Script,
     StoryboardFrame,
+    VideoTask,
 )
 from src.apps.comic_gen.pipeline import ComicGenPipeline
 
@@ -81,6 +82,64 @@ def test_video_batch_task_counts_and_runs(monkeypatch):
     p.process_video_batch_render_task(task_id)
     assert rendered == ["a"]
     assert p.asset_generation_tasks[task_id]["status"] == "completed"
+
+
+def _frame_video_task(frame_id: str, task_id: str = "vt1", video_url: str = "v.mp4") -> VideoTask:
+    return VideoTask(
+        id=task_id,
+        project_id="proj1",
+        frame_id=frame_id,
+        image_url="x.png",
+        prompt="p",
+        status="completed",
+        video_url=video_url,
+    )
+
+
+def test_sync_frame_video_task_auto_selects_first_render():
+    """First completed render for a pending frame becomes its selected variant
+    so the UI's pending count drops without requiring a manual click."""
+    p, script = _bare_pipeline([
+        StoryboardFrame(id="a", scene_id="s1", image_url="x.png"),
+    ])
+    task = _frame_video_task("a", task_id="vt1", video_url="out/v1.mp4")
+
+    p._sync_frame_video_task(script, task)
+
+    frame = script.frames[0]
+    assert frame.selected_video_id == "vt1"
+    assert frame.video_url == "out/v1.mp4"
+    # And the predicate flips to "no longer pending":
+    assert ComicGenPipeline._should_render_video(frame) is False
+
+
+def test_sync_frame_video_task_preserves_user_selection():
+    """A second completed render must NOT silently override an existing
+    selection — that selection might be the one the user picked."""
+    p, script = _bare_pipeline([
+        StoryboardFrame(
+            id="a",
+            scene_id="s1",
+            image_url="x.png",
+            selected_video_id="vt_user_choice",
+            video_url="out/user.mp4",
+        ),
+    ])
+    task = _frame_video_task("a", task_id="vt2", video_url="out/v2.mp4")
+
+    p._sync_frame_video_task(script, task)
+
+    frame = script.frames[0]
+    assert frame.selected_video_id == "vt_user_choice"
+    assert frame.video_url == "out/user.mp4"
+
+
+def test_sync_frame_video_task_ignores_unknown_frame():
+    """Tasks whose frame was deleted between submit and completion must not
+    raise — just no-op."""
+    p, script = _bare_pipeline([])
+    task = _frame_video_task("ghost")
+    p._sync_frame_video_task(script, task)  # must not raise
 
 
 def test_video_batch_isolates_failure():

@@ -2689,11 +2689,17 @@ class ComicGenPipeline:
             
             task.video_url = os.path.relpath(output_path, self.data_root)
             task.status = "completed"
-            
+
             # Sync with asset if this is an asset video
             if task.asset_id:
                 self._sync_asset_video_task(script, task)
-            
+            # Auto-link the first successful render back to its storyboard
+            # frame so the "pending video" count drops as renders complete.
+            # Mirrors the asset auto-select at L1622; never overwrites a
+            # user's explicit selection.
+            if task.frame_id:
+                self._sync_frame_video_task(script, task)
+
         except Exception as e:
             import traceback
             logger.exception("Failed to process video task")
@@ -2732,6 +2738,20 @@ class ComicGenPipeline:
             else:
                 # Not found, append it (shouldn't happen if created correctly, but good fallback)
                 target_asset.video_assets.append(task)
+
+    def _sync_frame_video_task(self, script: Script, task: VideoTask) -> None:
+        """Auto-link a completed video task back to its storyboard frame.
+
+        Counterpart to :meth:`_sync_asset_video_task`. The first successful
+        render for a frame becomes its selected variant; later renders for
+        the same frame are kept on ``script.video_tasks`` but never
+        silently overwrite an existing ``selected_video_id``.
+        """
+        frame = next((f for f in script.frames if f.id == task.frame_id), None)
+        if frame is None or frame.selected_video_id:
+            return
+        frame.selected_video_id = task.id
+        frame.video_url = task.video_url
 
     def create_asset_video_task(self, script_id: str, asset_id: str, asset_type: str, prompt: str = None, duration: int = 5, aspect_ratio: str = None) -> Tuple[Script, str]:
         """Creates a video generation task for an asset (I2V)."""
