@@ -1,8 +1,11 @@
 import base64
+import logging
 import mimetypes
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Callable, Dict, List, Mapping, Optional, Sequence
+
+import requests
 
 from .media_refs import (
     MEDIA_REF_BLOB_URL,
@@ -18,6 +21,8 @@ from .provider_registry import (
     ProviderRegistry,
     get_default_provider_registry,
 )
+
+logger = logging.getLogger(__name__)
 
 
 RESOLVE_HEADER_DASHSCOPE_OSS_RESOURCE = "X-DashScope-OssResourceResolve"
@@ -119,6 +124,21 @@ def _resolve_dashscope_image(
     prefer_inline = bool(uploader) and bool(getattr(uploader, "prefers_inline_for_api", False))
 
     if ref_type == MEDIA_REF_REMOTE_URL:
+        # When the storage endpoint is internal-only (e.g. ``http://minio:9000``
+        # behind Docker compose), an upstream layer may have already converted
+        # the asset into a presigned URL using that internal hostname. DashScope
+        # cannot reach it and would return ``InvalidParameter.DataInspection:
+        # Unable to download the media resource``. The backend itself can reach
+        # the URL, so fetch the bytes here and inline as base64.
+        if prefer_inline:
+            data_uri = _fetch_url_as_data_uri(ref)
+            if data_uri:
+                return _resolved(data_uri, source_ref=ref, media_ref_type=ref_type)
+            logger.warning(
+                "DashScope image input: failed to inline bytes from %s; passing URL through. "
+                "DashScope may reject if the host is unreachable from the public internet.",
+                ref,
+            )
         return _resolved(ref, source_ref=ref, media_ref_type=ref_type)
     if ref_type == MEDIA_REF_DATA_URI:
         return _resolved(ref, source_ref=ref, media_ref_type=ref_type)
@@ -163,6 +183,32 @@ def _download_object_as_data_uri(object_key: str, uploader) -> Optional[str]:
         mime_type = "image/png"
     encoded = base64.b64encode(raw).decode("ascii")
     return f"data:{mime_type};base64,{encoded}"
+
+
+def _fetch_url_as_data_uri(url: str, *, timeout: int = 30) -> Optional[str]:
+    """GET ``url`` and wrap the response body as a base64 data URI.
+
+    Used when ``prefer_inline_for_api`` is True and the ref is already a
+    full URL (typically a presigned URL pointing at an internal-only
+    storage endpoint that DashScope cannot reach). The backend container
+    can reach the URL itself, so fetching + inlining keeps the call
+    working without leaking the internal hostname.
+    """
+    try:
+        resp = requests.get(url, timeout=timeout)
+        resp.raise_for_status()
+    except Exception as e:
+        logger.debug("Failed to fetch URL for inlining: %s — %s", url, e)
+        return None
+    if not resp.content:
+        return None
+    content_type = (resp.headers.get("Content-Type") or "").split(";")[0].strip()
+    if not content_type:
+        # Strip query string before guessing from the path.
+        path = url.split("?", 1)[0]
+        content_type = mimetypes.guess_type(path)[0] or "image/png"
+    encoded = base64.b64encode(resp.content).decode("ascii")
+    return f"data:{content_type};base64,{encoded}"
 
 
 def _resolve_dashscope_temp_url(
