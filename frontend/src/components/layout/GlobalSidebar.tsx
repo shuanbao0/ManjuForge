@@ -18,10 +18,18 @@ interface GlobalSidebarProps {
 
 export default function GlobalSidebar({ activeTab, onTabChange }: GlobalSidebarProps) {
   const { t } = useTranslation();
-  const [user, setUser] = useState<CurrentUser | null>(() => getCurrentUser());
+  // Both fields read from localStorage; defer to post-mount so SSR / first
+  // hydration render is deterministic (avoids React #418).
+  const [user, setUser] = useState<CurrentUser | null>(null);
+  const [admin, setAdmin] = useState(false);
 
   useEffect(() => {
-    const off = onAuthChange(() => setUser(getCurrentUser()));
+    setUser(getCurrentUser());
+    setAdmin(isAdmin());
+    const off = onAuthChange(() => {
+      setUser(getCurrentUser());
+      setAdmin(isAdmin());
+    });
     return off;
   }, []);
 
@@ -81,7 +89,7 @@ export default function GlobalSidebar({ activeTab, onTabChange }: GlobalSidebarP
           );
         })}
 
-        {isAdmin() && (
+        {admin && (
           <button
             onClick={handleAdmin}
             className={clsx(

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { CONFIRM_TOKENS } from "./variants";
@@ -14,8 +14,10 @@ export default function ConfirmHost() {
     dialogStore.getServerSnapshot,
   );
   const current = confirmQueue[0];
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
-  if (typeof document === "undefined") return null;
+  if (!mounted) return null;
 
   return createPortal(
     <AnimatePresence>{current && <ConfirmModal req={current} />}</AnimatePresence>,

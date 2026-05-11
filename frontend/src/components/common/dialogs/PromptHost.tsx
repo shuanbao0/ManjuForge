@@ -15,8 +15,10 @@ export default function PromptHost() {
     dialogStore.getServerSnapshot,
   );
   const current = promptQueue[0];
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
-  if (typeof document === "undefined") return null;
+  if (!mounted) return null;
 
   return createPortal(
     <AnimatePresence>{current && <PromptModal req={current} />}</AnimatePresence>,

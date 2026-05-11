@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence } from "framer-motion";
 import Toast from "./Toast";
@@ -12,8 +12,10 @@ export default function ToastViewport() {
     dialogStore.getSnapshot,
     dialogStore.getServerSnapshot,
   );
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
-  if (typeof document === "undefined") return null;
+  if (!mounted) return null;
 
   return createPortal(
     <div className="fixed top-6 right-6 z-[100] flex flex-col gap-3 pointer-events-none">
