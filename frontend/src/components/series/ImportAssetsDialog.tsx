@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Download, Users, MapPin, Package, Check, Loader2, ArrowRight, ArrowLeft, Image as ImageIcon } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { Series, Character, Scene, Prop } from '@/store/projectStore';
+import { getAssetUrl } from '@/lib/utils';
 
 interface ImportAssetsDialogProps {
     isOpen: boolean;
@@ -24,28 +25,33 @@ interface SelectableAsset {
 }
 
 function getAssetImageUrl(asset: Character | Scene | Prop, type: AssetTab): string | undefined {
+    let raw: string | undefined;
     if (type === "characters") {
         const char = asset as Character;
         if (char.full_body_asset?.variants?.length) {
             const selected = char.full_body_asset.variants.find(v => v.id === char.full_body_asset?.selected_id);
-            return selected?.url || char.full_body_asset.variants[0]?.url;
+            raw = selected?.url || char.full_body_asset.variants[0]?.url;
+        } else {
+            raw = char.image_url || char.full_body_image_url;
         }
-        return char.image_url || char.full_body_image_url;
-    }
-    if (type === "scenes") {
+    } else if (type === "scenes") {
         const scene = asset as Scene;
         if (scene.image_asset?.variants?.length) {
             const selected = scene.image_asset.variants.find(v => v.id === scene.image_asset?.selected_id);
-            return selected?.url || scene.image_asset.variants[0]?.url;
+            raw = selected?.url || scene.image_asset.variants[0]?.url;
+        } else {
+            raw = scene.image_url;
         }
-        return scene.image_url;
+    } else {
+        const prop = asset as Prop;
+        if (prop.image_asset?.variants?.length) {
+            const selected = prop.image_asset.variants.find(v => v.id === prop.image_asset?.selected_id);
+            raw = selected?.url || prop.image_asset.variants[0]?.url;
+        } else {
+            raw = prop.image_url;
+        }
     }
-    const prop = asset as Prop;
-    if (prop.image_asset?.variants?.length) {
-        const selected = prop.image_asset.variants.find(v => v.id === prop.image_asset?.selected_id);
-        return selected?.url || prop.image_asset.variants[0]?.url;
-    }
-    return prop.image_url;
+    return raw ? getAssetUrl(raw) : undefined;
 }
 
 export default function ImportAssetsDialog({ isOpen, onClose, seriesId, onImported }: ImportAssetsDialogProps) {

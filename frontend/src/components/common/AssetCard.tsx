@@ -2,6 +2,7 @@
 
 import { Image as ImageIcon } from "lucide-react";
 import type { Character, Scene, Prop } from "@/store/projectStore";
+import { getAssetUrl } from "@/lib/utils";
 
 type AssetTab = "characters" | "scenes" | "props";
 
@@ -42,7 +43,8 @@ function getImageUrl(asset: Character | Scene | Prop, type: AssetTab): string | 
 }
 
 export default function AssetCard({ asset, type }: AssetCardProps) {
-  const imageUrl = getImageUrl(asset, type);
+  const rawUrl = getImageUrl(asset, type);
+  const imageUrl = rawUrl ? getAssetUrl(rawUrl) : undefined;
 
   return (
     <div className="glass-panel rounded-xl overflow-hidden">

@@ -9,6 +9,7 @@ import type { Series, Character, Scene, Prop, Project } from "@/store/projectSto
 import AssetCard from "@/components/common/AssetCard";
 import SeriesSidebar, { type SidebarItem } from "./SeriesSidebar";
 import { useTranslation } from "@/i18n";
+import { getAssetUrl } from "@/lib/utils";
 
 const SeriesModelSettingsModal = dynamic(() => import("./SeriesModelSettingsModal"), { ssr: false });
 const SeriesPromptConfigModal = dynamic(() => import("./SeriesPromptConfigModal"), { ssr: false });
@@ -404,7 +405,7 @@ function EpisodeContentPanel({
                 <div className="aspect-video bg-gray-800/50 flex items-center justify-center overflow-hidden relative">
                   {frame.rendered_image_url ? (
                     <img
-                      src={frame.rendered_image_url}
+                      src={getAssetUrl(frame.rendered_image_url)}
                       alt={t("series.frameLabel", { n: i + 1 }, `分镜 ${i + 1}`)}
                       className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                     />
