@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, RefreshCw, Check, AlertTriangle, Image as ImageIcon, Lock, Unlock, ChevronRight, Maximize2 } from "lucide-react";
 import { api, API_URL } from "@/lib/api";
 import { VariantSelector } from "../common/VariantSelector";
 import { useProjectStore } from "@/store/projectStore";
 import { useTranslation } from "@/i18n";
+import TimelineSlicer from "./huobao/TimelineSlicer";
 
 interface StoryboardFrameEditorProps {
     frame: any;
@@ -27,10 +28,54 @@ export default function StoryboardFrameEditor({ frame: initialFrame, onClose }: 
     const [prompt, setPrompt] = useState(frame.image_prompt || frame.action_description || "");
     const [isGenerating, setIsGenerating] = useState(false);
 
+    // Local state for title / duration_seconds — debounced-saved on blur so
+    // every keystroke doesn't hit the backend. Initial values come from
+    // the frame; changing frames resets them.
+    const [title, setTitle] = useState<string>(frame.title ?? "");
+    const [duration, setDuration] = useState<string>(
+        frame.duration_seconds != null ? String(frame.duration_seconds) : ""
+    );
+    const saveMetaTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
     // Sync prompt when frame changes
     useEffect(() => {
         setPrompt(frame.image_prompt || frame.action_description || "");
-    }, [frame.id, frame.image_prompt, frame.action_description]);
+        setTitle(frame.title ?? "");
+        setDuration(frame.duration_seconds != null ? String(frame.duration_seconds) : "");
+    }, [frame.id, frame.image_prompt, frame.action_description, frame.title, frame.duration_seconds]);
+
+    const saveMeta = async (patch: { title?: string | null; duration_seconds?: number | null }) => {
+        if (!currentProject) return;
+        try {
+            const updated = await api.updateFrame(currentProject.id, frame.id, patch);
+            updateProject(currentProject.id, updated);
+        } catch (e) {
+            console.error("Failed to save frame metadata:", e);
+        }
+    };
+
+    const handleTitleBlur = () => {
+        const trimmed = title.trim();
+        const next = trimmed.length > 0 ? trimmed : null;
+        if ((frame.title ?? null) === next) return;
+        saveMeta({ title: next });
+    };
+
+    const handleDurationBlur = () => {
+        if (duration === "") {
+            if (frame.duration_seconds == null) return;
+            saveMeta({ duration_seconds: null });
+            return;
+        }
+        const n = parseInt(duration, 10);
+        if (!Number.isFinite(n) || n < 1 || n > 60) {
+            // Reset to last-saved value rather than POSTing garbage.
+            setDuration(frame.duration_seconds != null ? String(frame.duration_seconds) : "");
+            return;
+        }
+        if (frame.duration_seconds === n) return;
+        saveMeta({ duration_seconds: n });
+    };
 
     const handleGenerate = async (batchSize: number) => {
         if (!currentProject) return;
@@ -122,12 +167,40 @@ export default function StoryboardFrameEditor({ frame: initialFrame, onClose }: 
                     </div>
 
                     {/* Right: Controls & Prompt */}
-                    <div className="w-1/3 min-w-[350px] border-l border-white/10 bg-[#111] flex flex-col">
-                        <div className="p-4 border-b border-white/5">
-                            <h3 className="font-bold text-sm uppercase tracking-wider text-gray-400 mb-2">
+                    <div className="w-1/3 min-w-[350px] border-l border-white/10 bg-[#111] flex flex-col overflow-y-auto">
+                        <div className="p-4 border-b border-white/5 space-y-3">
+                            <h3 className="font-bold text-sm uppercase tracking-wider text-gray-400">
                                 {t("modules.storyboard.sceneContext", undefined, "Scene Context")}
                             </h3>
-                            <p className="text-xs text-gray-300 mb-2">
+                            {/* huobao-parity: title + duration_seconds inline edit */}
+                            <div className="grid grid-cols-[1fr_90px] gap-2">
+                                <div>
+                                    <label className="text-[10px] uppercase text-gray-500 font-bold">镜头标题</label>
+                                    <input
+                                        type="text"
+                                        value={title}
+                                        onChange={(e) => setTitle(e.target.value)}
+                                        onBlur={handleTitleBlur}
+                                        placeholder="如:震动惊醒"
+                                        maxLength={20}
+                                        className="w-full mt-1 bg-black/20 border border-white/10 rounded px-2 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-primary"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] uppercase text-gray-500 font-bold">时长(秒)</label>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        max={60}
+                                        value={duration}
+                                        onChange={(e) => setDuration(e.target.value)}
+                                        onBlur={handleDurationBlur}
+                                        placeholder="—"
+                                        className="w-full mt-1 bg-black/20 border border-white/10 rounded px-2 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-primary"
+                                    />
+                                </div>
+                            </div>
+                            <p className="text-xs text-gray-300">
                                 <span className="font-bold text-gray-500">{t("modules.storyboard.actionLabel", undefined, "Action:")}</span> {frame.action_description}
                             </p>
                             {frame.dialogue && (
@@ -144,12 +217,15 @@ export default function StoryboardFrameEditor({ frame: initialFrame, onClose }: 
                             <textarea
                                 value={prompt}
                                 onChange={(e) => setPrompt(e.target.value)}
-                                className="flex-1 w-full bg-black/20 border border-white/10 rounded-lg p-4 text-sm text-gray-300 resize-none focus:outline-none focus:border-primary/50 font-mono leading-relaxed"
+                                className="flex-1 min-h-[160px] w-full bg-black/20 border border-white/10 rounded-lg p-4 text-sm text-gray-300 resize-none focus:outline-none focus:border-primary/50 font-mono leading-relaxed"
                                 placeholder={t("modules.storyboard.promptPlaceholder", undefined, "Enter prompt description...")}
                             />
                             <p className="text-xs text-gray-500 mt-2">
                                 {t("modules.storyboard.promptHint", undefined, "Modify the prompt to refine the generated image.")}
                             </p>
+
+                            {/* huobao-parity: time-axis slicer for video_prompt (Seedance / Veo) */}
+                            <TimelineSlicer scriptId={currentProject?.id} frame={frame} />
                         </div>
                     </div>
                 </div>

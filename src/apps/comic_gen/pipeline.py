@@ -1837,7 +1837,15 @@ class ComicGenPipeline:
             frame.scene_id = kwargs['scene_id']
         if kwargs.get('character_ids') is not None:
             frame.character_ids = kwargs['character_ids']
-        
+        # huobao-parity display metadata. Empty-string title → None so the
+        # storyboard list shows the fallback (frame id snippet) instead of a
+        # blank label. Pydantic's ``ge=1, le=60`` guards out-of-range values.
+        if 'title' in kwargs:
+            raw_title = kwargs.get('title')
+            frame.title = raw_title.strip() if isinstance(raw_title, str) and raw_title.strip() else None
+        if 'duration_seconds' in kwargs:
+            frame.duration_seconds = kwargs.get('duration_seconds')
+
         self._save_data()
         return script
 

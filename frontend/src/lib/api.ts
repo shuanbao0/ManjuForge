@@ -698,6 +698,8 @@ export const api = {
         camera_angle?: string;
         scene_id?: string;
         character_ids?: string[];
+        title?: string | null;
+        duration_seconds?: number | null;
     }) => {
         const res = await axios.post(`${API_URL}/projects/${scriptId}/frames/update`, {
             frame_id: frameId,

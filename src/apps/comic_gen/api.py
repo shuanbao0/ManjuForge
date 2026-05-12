@@ -2166,21 +2166,29 @@ class UpdateFrameRequest(BaseModel):
     camera_angle: Optional[str] = None
     scene_id: Optional[str] = None
     character_ids: Optional[List[str]] = None
+    # huobao-parity display metadata. ``model_fields_set`` is consulted in
+    # the pipeline so the client can clear ``title`` (""→None) without
+    # accidentally clearing it via "field not provided".
+    title: Optional[str] = None
+    duration_seconds: Optional[int] = Field(None, ge=1, le=60)
+
 
 @app.post("/projects/{script_id}/frames/update", response_model=Script)
 async def update_frame(script_id: str, request: UpdateFrameRequest):
     """Updates frame data (prompt, scene, characters, etc.)."""
     try:
-        updated_script = pipeline.update_frame(
-            script_id,
-            request.frame_id,
-            image_prompt=request.image_prompt,
-            action_description=request.action_description,
-            dialogue=request.dialogue,
-            camera_angle=request.camera_angle,
-            scene_id=request.scene_id,
-            character_ids=request.character_ids
-        )
+        # Only forward keys the client actually set so partial updates work
+        # for both the legacy fields and the new title / duration_seconds.
+        forwarded = {
+            k: getattr(request, k)
+            for k in (
+                "image_prompt", "action_description", "dialogue",
+                "camera_angle", "scene_id", "character_ids",
+                "title", "duration_seconds",
+            )
+            if k in request.model_fields_set
+        }
+        updated_script = pipeline.update_frame(script_id, request.frame_id, **forwarded)
         return signed_response(updated_script)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

@@ -7,6 +7,8 @@ import { api, crudApi } from "@/lib/api";
 import { useProjectStore } from "@/store/projectStore";
 import { useTranslation } from "@/i18n";
 import { confirmDialog } from "@/components/common/dialogs";
+import EntityExtractor from "./huobao/EntityExtractor";
+import ScreenplayRewriter from "./huobao/ScreenplayRewriter";
 
 interface ScriptNode {
     type: "character" | "scene" | "prop";
@@ -144,7 +146,7 @@ export default function ScriptProcessor() {
                         <Sparkles className="text-primary" size={18} />
                         {t("modules.script.editorTitle", undefined, "剧本编辑器")}
                     </h2>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 items-center">
                         <button
                             onClick={handleAnalyze}
                             disabled={!script || isAnalyzing}
@@ -153,6 +155,7 @@ export default function ScriptProcessor() {
                             {isAnalyzing ? <Wand2 className="animate-spin" size={14} /> : <Wand2 size={14} />}
                             {isAnalyzing ? t("modules.script.analyzingSmart", undefined, "智能分析中...") : t("modules.script.extractEntities", undefined, "提取实体")}
                         </button>
+                        <EntityExtractor scriptId={currentProject?.id} />
                         <button
                             onClick={() => setShowPanel(!showPanel)}
                             className="p-2 hover:bg-white/10 rounded-lg text-gray-400"
@@ -162,21 +165,27 @@ export default function ScriptProcessor() {
                     </div>
                 </div>
 
-                <div className="flex-1 relative p-6">
-                    <textarea
-                        value={script}
-                        onChange={(e) => {
-                            const newText = e.target.value;
-                            setScript(newText);
-                            if (currentProject) {
-                                updateProject(currentProject.id, { originalText: newText });
-                            }
-                        }}
-                        placeholder={t("modules.script.pastePlaceholder")}
-                        className="w-full h-full bg-transparent text-gray-300 font-mono text-base leading-relaxed resize-none focus:outline-none"
-                        spellCheck={false}
-                    />
-                </div>
+                <ScreenplayRewriter
+                    scriptId={currentProject?.id}
+                    originalText={script}
+                    formattedText={(currentProject as any)?.formatted_text}
+                    onOriginalChange={(value) => {
+                        setScript(value);
+                        if (currentProject) {
+                            updateProject(currentProject.id, { originalText: value });
+                        }
+                    }}
+                    renderEditor={({ activeText, readOnly, onChange }) => (
+                        <textarea
+                            value={activeText}
+                            onChange={(e) => onChange?.(e.target.value)}
+                            readOnly={readOnly}
+                            placeholder={t("modules.script.pastePlaceholder")}
+                            className="w-full h-full bg-transparent text-gray-300 font-mono text-base leading-relaxed resize-none focus:outline-none p-6"
+                            spellCheck={false}
+                        />
+                    )}
+                />
             </div>
 
             {/* Right: Entity Intelligence Panel */}
