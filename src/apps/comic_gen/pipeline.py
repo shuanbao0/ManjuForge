@@ -9,7 +9,7 @@ import subprocess
 import threading
 import platform
 from urllib.parse import quote
-from .models import Script, GenerationStatus, VideoTask, Character, Scene, StoryboardFrame, Series, PromptConfig
+from .models import Script, GenerationStatus, VideoTask, Character, Scene, StoryboardFrame, Series, PromptConfig, ImageAsset, ImageVariant
 from .llm import ScriptProcessor
 from .assets import AssetGenerator
 from .storyboard import StoryboardGenerator
@@ -1123,6 +1123,176 @@ class ComicGenPipeline:
                 "props": result.reused_prop_ids,
             },
         }
+
+    # === BATCH KEYFRAME GENERATION (vendor-aware grid) ===
+
+    def batch_generate_frame_keyframes(
+        self,
+        script_id: str,
+        frame_ids: List[str],
+        *,
+        mode: str = "first_frame",
+        force_per_shot: bool = False,
+    ) -> Dict[str, Any]:
+        """Render keyframes for multiple frames in one batch.
+
+        On a grid-capable T2I vendor (currently only Seedream via the
+        ``doubao`` vendor id), one composite image is requested and
+        split into ``N`` tiles — each frame gets one tile written to
+        its ``rendered_image_asset``. On other vendors, falls back to
+        per-shot parallel calls through ``StoryboardGenerator``.
+
+        Use ``force_per_shot=True`` to bypass the grid path even when
+        the vendor supports it (e.g. when iterating on a single frame
+        and you want fine control). Result shape::
+
+            {"method": "grid"|"per_shot",
+             "vendor": "doubao"|...,
+             "assignments": {frame_id: [tile_url_rel, ...]}}
+        """
+        from .keyframes import get_grid_capability, get_mode
+
+        script = self.scripts.get(script_id)
+        if not script:
+            raise ValueError("Script not found")
+        if not frame_ids:
+            raise ValueError("frame_ids must not be empty")
+
+        id_to_frame = {f.id: f for f in script.frames}
+        missing = [fid for fid in frame_ids if fid not in id_to_frame]
+        if missing:
+            raise ValueError(f"Frames not found: {missing}")
+        frames = [id_to_frame[fid] for fid in frame_ids]
+
+        strategy = get_mode(mode)
+        total_panels = len(frames) * strategy.panels_per_frame()
+
+        with scoped_instance(
+            script.model_settings.t2i_instance_id, InstanceType.T2I
+        ) as t2i_inst:
+            vendor_id = t2i_inst.vendor_id if t2i_inst else None
+            capability = get_grid_capability(vendor_id)
+            use_grid = (
+                capability.supports_native_grid
+                and not force_per_shot
+                and total_panels > 1
+                and total_panels <= capability.max_panels
+            )
+
+            if use_grid:
+                method = "grid"
+                assignments = self._render_keyframes_grid(
+                    script, frames, strategy, capability,
+                )
+            else:
+                method = "per_shot"
+                assignments = self._render_keyframes_per_shot(script, frames)
+
+        script.updated_at = time.time()
+        self._save_data()
+
+        return {
+            "method": method,
+            "vendor": vendor_id,
+            "assignments": assignments,
+        }
+
+    def _render_keyframes_grid(
+        self,
+        script: Script,
+        frames: List[StoryboardFrame],
+        strategy: Any,
+        capability: Any,
+    ) -> Dict[str, List[str]]:
+        """Native-grid path: one composite call → split → distribute tiles.
+
+        The vendor adapter is reached via :meth:`StoryboardGenerator._route_for_call`
+        so the same instance/credential plumbing is reused; we just pass
+        a composite prompt and a square output size.
+        """
+        from .keyframes import pick_layout, split_grid_image
+
+        layout = pick_layout(len(frames) * strategy.panels_per_frame())
+        style_prompt = ""
+        if script.art_direction and script.art_direction.style_config:
+            style_prompt = script.art_direction.style_config.get("positive_prompt", "")
+        composite_prompt = strategy.build_composite_prompt(frames, style_prompt)
+
+        grid_dir = os.path.join(self.data_root, "storyboard", "grid")
+        tile_dir = os.path.join(self.data_root, "storyboard", "tiles")
+        os.makedirs(grid_dir, exist_ok=True)
+        composite_id = str(uuid.uuid4())
+        composite_path = os.path.join(grid_dir, f"{composite_id}.png")
+
+        adapter = self.storyboard_generator._route_for_call()
+        adapter.generate(
+            composite_prompt,
+            composite_path,
+            size=capability.recommended_composite_size,
+        )
+
+        tile_paths = split_grid_image(
+            composite_path, layout.rows, layout.cols, tile_dir, composite_id,
+        )
+        assignments_by_frame = strategy.tiles_to_assignments(tile_paths, frames)
+
+        result: Dict[str, List[str]] = {}
+        for frame in frames:
+            tile_list = assignments_by_frame.get(frame.id, [])
+            rel_urls: List[str] = []
+            if not frame.rendered_image_asset:
+                frame.rendered_image_asset = ImageAsset()
+            for tile_path in tile_list:
+                variant_id = str(uuid.uuid4())
+                rel_url = os.path.relpath(tile_path, self.data_root)
+                frame.rendered_image_asset.variants.append(
+                    ImageVariant(
+                        id=variant_id,
+                        url=rel_url,
+                        prompt_used=composite_prompt,
+                        created_at=time.time(),
+                    )
+                )
+                frame.rendered_image_asset.selected_id = variant_id
+                frame.rendered_image_url = rel_url
+                frame.image_url = rel_url
+                frame.updated_at = time.time()
+                frame.status = GenerationStatus.COMPLETED
+                rel_urls.append(rel_url)
+            result[frame.id] = rel_urls
+        return result
+
+    def _render_keyframes_per_shot(
+        self,
+        script: Script,
+        frames: List[StoryboardFrame],
+    ) -> Dict[str, List[str]]:
+        """Fallback path: call StoryboardGenerator.generate_frame per shot.
+
+        Loses the cross-shot consistency the grid path provides, but
+        works on every vendor. Errors on a single frame don't abort
+        the batch — that frame just maps to an empty list.
+        """
+        result: Dict[str, List[str]] = {}
+        for frame in frames:
+            scene = next((s for s in script.scenes if s.id == frame.scene_id), None)
+            try:
+                self.storyboard_generator.generate_frame(
+                    frame, script.characters, scene,
+                )
+            except Exception as e:
+                logger.error(f"per-shot keyframe render failed for {frame.id}: {e}")
+                result[frame.id] = []
+                continue
+            variant = None
+            if frame.rendered_image_asset and frame.rendered_image_asset.selected_id:
+                variant = next(
+                    (v for v in frame.rendered_image_asset.variants
+                     if v.id == frame.rendered_image_asset.selected_id),
+                    None,
+                )
+            result[frame.id] = [variant.url] if variant else []
+        return result
 
     # === VIDEO PROMPT TIMELINE SLICING ===
 

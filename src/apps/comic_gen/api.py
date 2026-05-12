@@ -1304,6 +1304,45 @@ async def extract_script_entities(script_id: str, request: ExtractEntitiesReques
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# === BATCH KEYFRAME GENERATION (vendor-aware grid) ===
+
+
+class BatchKeyframesRequest(BaseModel):
+    """Request to batch-render keyframes for several storyboard frames.
+
+    ``force_per_shot`` bypasses the grid path even on grid-capable
+    vendors — useful when the user is iterating on a single frame and
+    doesn't want it bundled with siblings.
+    """
+
+    frame_ids: List[str] = Field(..., min_length=1)
+    mode: str = Field("first_frame")
+    force_per_shot: bool = Field(False)
+
+
+@app.post("/projects/{script_id}/frames/keyframes/batch")
+async def batch_generate_frame_keyframes(
+    script_id: str, request: BatchKeyframesRequest
+):
+    """Render keyframes for multiple frames in one batch.
+
+    Uses native grid composition on grid-capable vendors (Seedream),
+    falls back to per-shot parallel generation otherwise. Same return
+    shape on either path — caller doesn't need to know which was used.
+    """
+    try:
+        return pipeline.batch_generate_frame_keyframes(
+            script_id, request.frame_ids,
+            mode=request.mode,
+            force_per_shot=request.force_per_shot,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error in batch_generate_frame_keyframes: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # === VIDEO PROMPT TIMELINE SLICING ===
 
 
