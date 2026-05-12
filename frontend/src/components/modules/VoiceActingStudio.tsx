@@ -9,6 +9,7 @@ import { getAssetUrl } from "@/lib/utils";
 import { useTranslation } from "@/i18n";
 import { useAsyncTask } from "@/hooks/useAsyncTask";
 import { confirmDialog } from "@/components/common/dialogs";
+import VoiceAutoAssignButton from "./huobao/VoiceAutoAssignButton";
 
 // Mirror of pipeline._should_render_audio for accurate pending count.
 function isFramePendingAudio(frame: any): boolean {
@@ -157,10 +158,15 @@ export default function VoiceActingStudio() {
 
             {/* Left Sidebar: Casting Room */}
             <div className="w-80 border-r border-white/10 flex flex-col bg-black/20">
-                <div className="p-4 border-b border-white/10">
+                <div className="p-4 border-b border-white/10 space-y-3">
                     <h3 className="font-display font-bold text-sm flex items-center gap-2">
                         <Users size={16} className="text-primary" /> {t("modules.voice.castingRoom", undefined, "Casting Room")}
                     </h3>
+                    <VoiceAutoAssignButton
+                        scriptId={currentProject?.id}
+                        characterCount={currentProject?.characters?.length ?? 0}
+                        className="w-full justify-center"
+                    />
                 </div>
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
                     {currentProject?.characters?.map((char: any) => (
