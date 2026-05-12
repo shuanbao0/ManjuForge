@@ -59,7 +59,10 @@ _VISUAL_ATOMS_BLOCK = """\
    - `character_ref_names` 只列出**当前分镜画面中可见**的角色。
 4. **实体约束**:
    - 场景名、角色名、道具名必须严格匹配"已提取的实体"。
-5. **语言**: 所有输出必须使用简体中文。"""
+5. **语言**: 所有输出必须使用简体中文。
+6. **标签与时长 (LABEL & DURATION)**:
+   - `title`: 3-5 字镜头小标题(如"震动惊醒"、"破门而入"),便于 UI 列表速览。
+   - `duration_seconds`: 该镜头的计划拍摄时长,整数秒,范围 3-10。"""
 
 # The audio-atoms block adds two fields per frame:
 # - ``bgm_prompt``: music style description, consumed by AudioGenerator.generate_bgm
@@ -79,6 +82,8 @@ _AUDIO_ATOMS_BLOCK = """\
 # both the schema documentation and the example shown to the LLM.
 
 _BASE_EXAMPLE_FRAME: Dict[str, Any] = {
+    "title": "震动惊醒",
+    "duration_seconds": 4,
     "scene_ref_name": "卧室",
     "character_ref_names": ["叶墨"],
     "prop_ref_names": ["手机"],
@@ -164,6 +169,8 @@ class StoryboardPromptBuilder:
             example_frame.update(_AUDIO_EXAMPLE_FIELDS)
         # Second example showcases atomization (two frames for one beat)
         second_frame = {
+            "title": "惊恐坐起",
+            "duration_seconds": 3,
             "scene_ref_name": "卧室",
             "character_ref_names": ["叶墨"],
             "prop_ref_names": [],

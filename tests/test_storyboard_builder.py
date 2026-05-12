@@ -123,3 +123,31 @@ def test_repeated_calls_are_idempotent():
     twice = (StoryboardPromptBuilder()
              .with_visual_atoms().with_visual_atoms().build("剧本"))
     assert once == twice
+
+
+# ── Title + duration_seconds (UI metadata) ────────────────────────────
+
+
+def test_visual_atoms_block_documents_title_and_duration():
+    """The visual-atoms block must instruct the LLM about both new
+    metadata fields; otherwise they'll be silently absent from output."""
+    out = StoryboardPromptBuilder().with_visual_atoms().build("...")
+    assert "title" in out
+    assert "duration_seconds" in out
+    # The constraint text mentions the expected ranges so the LLM
+    # doesn't have to guess them.
+    assert "3-5 字" in out
+    assert "3-10" in out
+
+
+def test_example_includes_title_and_duration_fields():
+    """Both example frames must carry the new fields so the LLM has a
+    schema to copy from."""
+    out = StoryboardPromptBuilder().with_visual_atoms().build("...")
+    example = _extract_example_json(out)
+    for frame in example["frames"]:
+        assert "title" in frame
+        assert "duration_seconds" in frame
+        assert isinstance(frame["title"], str) and frame["title"]
+        assert isinstance(frame["duration_seconds"], int)
+        assert 1 <= frame["duration_seconds"] <= 60

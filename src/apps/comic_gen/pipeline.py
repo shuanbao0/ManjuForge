@@ -1530,8 +1530,21 @@ class ComicGenPipeline:
                         prop_ids.append(prop.id)
                         break
             
+            # Defensive parse for duration_seconds — LLMs occasionally return
+            # a string ("4") or a float ("4.0"); clamp to the model's range.
+            raw_dur = frame_data.get("duration_seconds")
+            duration_seconds: Optional[int] = None
+            if raw_dur is not None:
+                try:
+                    duration_seconds = max(1, min(60, int(float(raw_dur))))
+                except (TypeError, ValueError):
+                    duration_seconds = None
+
             frame = StoryboardFrame(
                 id=str(uuid.uuid4()),
+                # Display metadata (rule 6 of the builder's visual-atoms block)
+                title=frame_data.get("title") or None,
+                duration_seconds=duration_seconds,
                 scene_id=scene_id,
                 character_ids=character_ids,
                 prop_ids=prop_ids,

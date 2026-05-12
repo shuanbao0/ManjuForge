@@ -210,6 +210,13 @@ class Prop(BaseModel):
 
 class StoryboardFrame(BaseModel):
     id: str = Field(..., description="Unique identifier for the frame")
+    # Short label for UI lists (3-5 chars typical, e.g. "推门入"). Populated by
+    # the storyboard analyzer; safe to leave empty for older projects.
+    title: Optional[str] = Field(None, description="Short 3-5 char label for this shot, used in UI lists")
+    # Planned shot duration in seconds. Distinct from VideoTask.duration —
+    # this is the *intended* length the analyzer assigned (typically 3-10s),
+    # which the user may override at video-render time.
+    duration_seconds: Optional[int] = Field(None, ge=1, le=60, description="Planned shot duration in seconds")
     scene_id: str = Field(..., description="Reference to the Scene ID")
     character_ids: List[str] = Field(default_factory=list, description="List of Character IDs present in the frame")
     prop_ids: List[str] = Field(default_factory=list, description="List of Prop IDs present in the frame")
