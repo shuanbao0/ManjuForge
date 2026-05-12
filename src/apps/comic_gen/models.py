@@ -251,7 +251,15 @@ class StoryboardFrame(BaseModel):
     audio_url: Optional[str] = Field(None, description="URL of the generated dialogue audio")
     audio_error: Optional[str] = Field(None, description="Audio generation error message")
     sfx_url: Optional[str] = Field(None, description="URL of the generated sound effect")
-    
+    bgm_url: Optional[str] = Field(None, description="URL of the generated background music clip")
+
+    # Audio prompts produced at storyboard analysis time and consumed by
+    # AudioGenerator. Declaring them on the model (rather than relying on
+    # Pydantic ``extra='allow'`` setattr) is what makes them survive
+    # ``model_dump`` → JSON round-trip.
+    bgm_prompt: Optional[str] = Field(None, description="BGM style/mood prompt for music generation")
+    sfx_prompt: Optional[str] = Field(None, description="SFX description for ambient + action audio")
+
     selected_video_id: Optional[str] = Field(None, description="ID of the selected VideoTask for this frame")
     locked: bool = Field(False, description="Whether this frame is locked from regeneration")
     status: GenerationStatus = GenerationStatus.PENDING
@@ -324,6 +332,15 @@ class Script(BaseModel):
     # Series association
     series_id: Optional[str] = Field(None, description="ID of the parent Series, None for standalone projects")
     episode_number: Optional[int] = Field(None, description="Episode number within the Series")
+
+    # Episode-scoped references into the Series-level entity catalog.
+    # Populated by the incremental extraction strategy; lets us answer
+    # "which Series characters/scenes/props appear in this episode?"
+    # without re-scanning the script. Empty for standalone projects or
+    # for scripts that pre-date the incremental extractor.
+    used_character_ids: List[str] = Field(default_factory=list, description="Series character IDs used in this episode")
+    used_scene_ids: List[str] = Field(default_factory=list, description="Series scene IDs used in this episode")
+    used_prop_ids: List[str] = Field(default_factory=list, description="Series prop IDs used in this episode")
 
     created_at: float
     updated_at: float

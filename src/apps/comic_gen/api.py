@@ -1255,6 +1255,54 @@ async def generate_motion_ref(script_id: str, request: GenerateMotionRefRequest,
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# === ENTITY EXTRACTION (incremental / full) ===
+
+
+class ExtractEntitiesRequest(BaseModel):
+    """Request to (re-)extract entities from a script.
+
+    ``strategy`` defaults to ``"incremental"`` — for Series episodes the
+    LLM is fed the existing Series catalog and instructed to reuse
+    matching characters/scenes/props instead of creating duplicates.
+    Pass ``"full"`` to force a clean re-extraction.
+    """
+
+    strategy: str = Field("incremental", description="'incremental' or 'full'")
+
+
+@app.post("/projects/{script_id}/entities/extract")
+async def extract_script_entities(script_id: str, request: ExtractEntitiesRequest):
+    """Run entity extraction and persist results into the Series catalog."""
+    try:
+        result = pipeline.process_script_entities(script_id, strategy=request.strategy)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error in extract_script_entities: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# === AUTO VOICE ASSIGNMENT ===
+
+
+@app.post("/projects/{script_id}/voices/auto-assign")
+async def auto_assign_voices(script_id: str):
+    """Run the voice-assignment chain over the script's characters.
+
+    Characters with an existing ``voice_id`` are left untouched
+    (manual overrides win). Returns the new mapping + IDs that were
+    intentionally skipped (locked-with-blank-voice cases).
+    """
+    try:
+        return pipeline.auto_assign_voices(script_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error in auto_assign_voices: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # === STORYBOARD DRAMATIZATION v2 ===
 
 class AnalyzeToStoryboardRequest(BaseModel):

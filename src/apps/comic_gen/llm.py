@@ -5,7 +5,7 @@ import uuid
 import logging
 import traceback
 import re
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from .models import Script, Character, Scene, Prop, StoryboardFrame, GenerationStatus
 
@@ -704,102 +704,208 @@ CRITICAL STYLE GUIDELINES:
             }
         ]
     
-    def analyze_to_storyboard(self, text: str, entities_json: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def extract_entities(
+        self,
+        text: str,
+        existing: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Entity-only extraction with optional reuse hints.
+
+        Used by :mod:`apps.comic_gen.extraction` strategies. Returns a
+        dict shaped like::
+
+            {
+              "characters": [
+                {"name": "叶墨", "match_id": "<uuid-or-null>",
+                 "description": "...", "gender": "男", "age": "25", ...},
+                ...
+              ],
+              "scenes":  [{"name": "卧室", "match_id": ..., "time_of_day": "夜", ...}, ...],
+              "props":   [{"name": "手机", "match_id": ..., "description": "..."}, ...],
+            }
+
+        When ``existing`` is provided (incremental mode), the LLM is shown
+        the catalog summary and instructed to set ``match_id`` whenever a
+        candidate refers to an already-known entity. Without ``existing``
+        (full mode), all entities come back with ``match_id=null``.
+        """
+        if not self.is_configured:
+            return self._mock_extract_entities(text, existing)
+
+        reuse_block = self._render_reuse_block(existing) if existing else ""
+        system_prompt = self._build_extraction_prompt(reuse_block)
+
+        try:
+            content = self.llm.chat(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": text},
+                ],
+                response_format={"type": "json_object"},
+            ).strip()
+            content = _strip_markdown_json(content)
+            data = json.loads(content)
+            # Normalise shape: always present all three keys
+            for key in ("characters", "scenes", "props"):
+                data.setdefault(key, [])
+            return data
+        except json.JSONDecodeError as e:
+            logger.error(f"extract_entities JSON parse failed: {e}")
+            raise RuntimeError(
+                "实体提取 LLM 输出不是合法 JSON。请重试或检查模型配置。"
+            )
+        except Exception as e:
+            logger.error(f"extract_entities failed: {e}", exc_info=True)
+            raise RuntimeError(f"实体提取失败: {e}")
+
+    @staticmethod
+    def _render_reuse_block(existing: Dict[str, Any]) -> str:
+        """Format the catalog summary as a "already-known" hint block."""
+        return (
+            "# 已存在的实体（必须优先复用，不要重复创建）\n"
+            "如果你识别出的角色/场景/道具与下列任一项指向同一实体，"
+            "**必须**在输出中把 `match_id` 设为对应的 id 字符串。"
+            "只有真正全新的实体才创建,且 `match_id` 留 `null`。\n\n"
+            f"```json\n{json.dumps(existing, ensure_ascii=False, indent=2)}\n```"
+        )
+
+    @staticmethod
+    def _build_extraction_prompt(reuse_block: str) -> str:
+        return (
+            "你是一名专业的剧本分析师。从下面的剧本片段中提取角色、场景、道具，"
+            "全部用简体中文,严格输出 JSON。\n\n"
+            f"{reuse_block}\n\n"
+            "# 输出格式\n"
+            "```json\n"
+            "{\n"
+            '  "characters": [\n'
+            '    {"match_id": null,'
+            ' "name": "叶墨",'
+            ' "description": "短发，瘦削，眼神疲惫",'
+            ' "age": "25",'
+            ' "gender": "男",'
+            ' "clothing": "灰色卫衣",'
+            ' "visual_weight": 5}\n'
+            "  ],\n"
+            '  "scenes": [\n'
+            '    {"match_id": null,'
+            ' "name": "卧室",'
+            ' "description": "昏暗，单人床，乱",'
+            ' "time_of_day": "夜",'
+            ' "lighting_mood": "冷蓝月光",'
+            ' "visual_weight": 3}\n'
+            "  ],\n"
+            '  "props": [\n'
+            '    {"match_id": null,'
+            ' "name": "手机",'
+            ' "description": "黑色直板"}\n'
+            "  ]\n"
+            "}\n"
+            "```\n"
+            "规则:\n"
+            "1. 不输出 Markdown 代码块标记。\n"
+            "2. 缺失字段用 null,不要省略键。\n"
+            "3. 与已存在实体匹配时,`match_id` 必须等于对应 id 字符串。\n"
+        )
+
+    def match_voice_for_character(
+        self,
+        character: Character,
+        candidates: List[Dict[str, Any]],
+    ) -> Optional[str]:
+        """Ask the LLM to pick one voice id from ``candidates`` for a character.
+
+        Lives on ``ScriptProcessor`` so the LLM adapter / instance scope
+        is reused — voice matching is just another LLM call routed by
+        ``script.model_settings.llm_instance_id``. Returns ``None`` if
+        the LLM emits anything unparseable (the caller falls through to
+        the next rule).
+        """
+        if not self.is_configured or not candidates:
+            return None
+        voice_lines = [
+            f"- id: {c.get('id')!r}, name: {c.get('name')!r}, gender: {c.get('gender')!r}"
+            for c in candidates
+        ]
+        system_prompt = (
+            "你是一名配音导演。下面给你一个角色的资料和一组可用音色,"
+            "请挑出**唯一最匹配**的音色 id,只输出 JSON: {\"voice_id\": \"...\"}\n"
+            "不要解释,不要 Markdown 代码块。\n\n"
+            f"# 角色资料\n"
+            f"姓名: {character.name}\n"
+            f"性别: {character.gender or '未知'}\n"
+            f"年龄: {character.age or '未知'}\n"
+            f"描述: {character.description or '无'}\n\n"
+            f"# 可用音色\n" + "\n".join(voice_lines)
+        )
+        try:
+            content = self.llm.chat(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": "请选择最匹配的音色。"},
+                ],
+                response_format={"type": "json_object"},
+            ).strip()
+            content = _strip_markdown_json(content)
+            picked = json.loads(content).get("voice_id")
+            if isinstance(picked, str) and any(c.get("id") == picked for c in candidates):
+                return picked
+            return None
+        except Exception as e:
+            logger.warning(f"match_voice_for_character LLM call failed: {e}")
+            return None
+
+    @staticmethod
+    def _mock_extract_entities(
+        text: str, existing: Optional[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Offline fallback — returns a stable, tiny payload for tests."""
+        return {
+            "characters": [
+                {"match_id": None, "name": "叶墨", "description": "短发青年", "gender": "男", "age": "25"}
+            ],
+            "scenes": [
+                {"match_id": None, "name": "卧室", "description": "昏暗", "time_of_day": "夜"}
+            ],
+            "props": [
+                {"match_id": None, "name": "手机", "description": "黑色直板"}
+            ],
+        }
+
+    def analyze_to_storyboard(
+        self,
+        text: str,
+        entities_json: Dict[str, Any],
+        *,
+        with_audio: bool = True,
+    ) -> List[Dict[str, Any]]:
         """
         Analyzes script text and generates storyboard frames using Prompt B (Storyboard Director).
-        Returns a list of frame dictionaries with visual atoms.
+
+        Returns a list of frame dictionaries with visual atoms. When
+        ``with_audio`` is True (default), each frame also carries
+        ``bgm_prompt`` and ``sfx_prompt`` keys to drive downstream audio
+        generation — set to False only for tests / dry-runs that need a
+        smaller LLM payload.
         """
+        from .prompts import StoryboardPromptBuilder
+
         logger.info(f"Analyzing text to storyboard: {text[:100]}...")
-        
+
         if not self.is_configured:
             logger.warning("DASHSCOPE_API_KEY not set. Returning mock frames.")
             return self._mock_storyboard_frames(text)
-        
-        # Build entities context
-        characters_list = entities_json.get("characters", [])
-        scenes_list = entities_json.get("scenes", [])
-        props_list = entities_json.get("props", [])
-        
-        entities_str = f"""
-Characters:
-{json.dumps(characters_list, ensure_ascii=False, indent=2)}
 
-Scenes:
-{json.dumps(scenes_list, ensure_ascii=False, indent=2)}
-
-Props:
-{json.dumps(props_list, ensure_ascii=False, indent=2)}
-"""
-        
-        system_prompt = f"""
-# 角色
-你是一名电影级的分镜师（Storyboard Artist）和导演。你的任务是将剧本文本拆解为可供 AI 视频模型生成的一系列精细分镜帧。
-
-# 任务目标
-不仅仅是提取文本，而是要进行**视觉化拆解**。你需要将剧本中的文字转化为一系列连续的、单一动作的视觉画面。
-
-# 剧本格式说明
-剧本遵循以下格式：
-- **场景标题行**: `1-1 地点名称 [时间] [内/外]` 
-- **人物行**: `人物： 角色名1，角色名2`
-- **动作描述**: 以 `△` 开头，描述画面中发生的动作
-- **对话**: `角色名（情绪）： 对话内容`，或 `角色名 (V.O.)：` 表示画外音
-
-# 已提取的实体上下文
-{entities_str}
-
-# 核心规则 (CRITICAL)
-1. **视觉节拍拆解 (VISUAL ATOMIZATION)**:
-   - 如果一行动作描述包含多个连续动作，**必须**将其拆分为多个分镜帧。
-   - 每个分镜只应包含一个清晰的主要动作，时长控制在 3-5 秒。
-2. **合并动作描述 (MERGE ACTION)**:
-   - **`action_description` 字段必须包含画面中发生的所有动态要素**。
-   - 包括：人物的神态/微表情 + 肢体动作 + 道具的物理运动（如手机震动、烟雾缭绕）。
-   - 不要遗漏非人物主体的动作（如“车门打开”、“杯子摔碎”）。
-
-3. **角色可见性**:
-   - `character_ref_names` 只列出**当前分镜画面中可见**的角色。
-
-4. **实体约束**: 
-   - 场景名、角色名、道具名必须严格匹配"已提取的实体"。
-
-5. **语言**: 所有输出必须使用简体中文。
-
-# 输出格式
-返回一个包含 `frames` 数组的 JSON 对象。不要包含 Markdown 格式标记（如 ```json）。
-
-{{
-    "frames": [
-        {{
-            "scene_ref_name": "卧室",
-            "character_ref_names": ["叶墨"],
-            "prop_ref_names": ["手机"],
-            "visual_atmosphere": "昏暗的卧室，窗外透进冷色调月光",
-            "action_description": "手机在床头柜上疯狂震动。叶墨眉头紧锁，烦躁地翻身，肩膀挤压枕头产生形变",
-            "shot_size": "中景",
-            "camera_angle": "俯视",
-            "camera_movement": "静止",
-            "dialogue": "妈，这才几点啊！",
-            "speaker": "叶墨"
-        }},
-        {{
-            "scene_ref_name": "卧室",
-            "character_ref_names": ["叶墨"],
-            "prop_ref_names": [],
-            "visual_atmosphere": "昏暗的卧室",
-            "action_description": "被子滑落，叶墨猛地坐起，一脸惊恐",
-            "shot_size": "特写",
-            "camera_angle": "平视",
-            "camera_movement": "快速推镜头",
-            "dialogue": "已经来了？",
-            "speaker": "叶墨"
-        }}
-    ]
-}}
-
-# 剧本内容
-{text}
-"""
+        builder = (
+            StoryboardPromptBuilder()
+            .with_role()
+            .with_script_format()
+            .with_entities(entities_json)
+            .with_visual_atoms()
+        )
+        if with_audio:
+            builder.with_audio_atoms()
+        system_prompt = builder.build(text)
 
         try:
             content = self.llm.chat(
@@ -868,7 +974,9 @@ Props:
                 "camera_angle": "平视",
                 "camera_movement": "Static",
                 "dialogue": None,
-                "speaker": None
+                "speaker": None,
+                "bgm_prompt": "低频环境氛围",
+                "sfx_prompt": "手机震动声",
             }
         ]
 

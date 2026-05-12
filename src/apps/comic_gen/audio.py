@@ -136,62 +136,84 @@ class AudioGenerator:
         logger.warning(f"Mock generate_dialogue called for frame {frame.id} — marking as FAILED")
         return frame
 
+    @staticmethod
+    def _fallback_sfx_prompt(frame: StoryboardFrame) -> str:
+        """Best-effort fallback when the LLM didn't emit ``sfx_prompt`` — use the
+        visible action description so SFX still has *some* anchor text."""
+        return frame.sfx_prompt or frame.action_description or ""
+
+    @staticmethod
+    def _fallback_bgm_prompt(frame: StoryboardFrame) -> str:
+        """Fallback music mood — uses visual atmosphere when no explicit prompt."""
+        return frame.bgm_prompt or frame.visual_atmosphere or ""
+
     def generate_sfx(self, frame: StoryboardFrame) -> StoryboardFrame:
-        """Generates sound effects for the frame."""
+        """Generates sound effects driven by ``frame.sfx_prompt``.
+
+        The SFX generator backend (MMAudio / SeedAudio / etc.) is not wired
+        yet — this method records the prompt resolution and writes a marker
+        file so the downstream export step can detect "intended but not yet
+        rendered" SFX. When a real backend is added it should consume
+        ``self._fallback_sfx_prompt(frame)`` as the driving prompt.
+        """
         frame.status = GenerationStatus.PROCESSING
-        
+
         try:
-            # TODO: Implement actual SFX call (e.g., MMAudio)
-            # For now, we mock it.
-            logger.info(f"Generating SFX for: {frame.action_description}")
-            
+            prompt = self._fallback_sfx_prompt(frame)
+            logger.info(f"SFX prompt for frame {frame.id}: {prompt!r}")
+
             output_path = os.path.join(self.output_dir, 'sfx', f"{frame.id}.mp3")
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            
-            # Create a dummy file
+
+            # Marker file — replaced when a real SFX vendor is plugged in.
             with open(output_path, 'wb') as f:
-                f.write(b'dummy sfx content')
-                
-            # Store relative path for frontend serving
-            rel_path = os.path.relpath(output_path, self.data_root)
-            frame.sfx_url = rel_path
+                f.write(b'')
+
+            frame.sfx_url = os.path.relpath(output_path, self.data_root)
             frame.status = GenerationStatus.COMPLETED
-            
+
         except Exception as e:
             logger.error(f"Failed to generate SFX for frame {frame.id}: {e}")
             frame.status = GenerationStatus.FAILED
-            
+
         return frame
 
     def generate_sfx_from_video(self, frame: StoryboardFrame) -> StoryboardFrame:
-        """Generates SFX based on video content (Video-to-Audio)."""
+        """Generates SFX based on video content (Video-to-Audio).
+
+        Like ``generate_sfx`` this is a placeholder until a V2A vendor is
+        integrated; it just records intent so the rest of the pipeline keeps
+        working.
+        """
         if not frame.video_url:
             return frame
-            
+
         logger.info(f"Generating SFX from video for frame {frame.id}")
-        # Mock V2A Logic
-        time.sleep(1)
-        
+
         output_path = os.path.join(self.output_dir, 'sfx', f"{frame.id}_v2a.mp3")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        
+
         with open(output_path, 'wb') as f:
-            f.write(b'dummy v2a sfx content')
-            
+            f.write(b'')
+
         frame.sfx_url = os.path.relpath(output_path, self.data_root)
         return frame
 
     def generate_bgm(self, frame: StoryboardFrame) -> StoryboardFrame:
-        """Generates BGM based on frame context."""
-        logger.info(f"Generating BGM for frame {frame.id}")
-        # Mock MusicGen Logic
-        time.sleep(1)
-        
+        """Generates BGM driven by ``frame.bgm_prompt``.
+
+        Mirrors ``generate_sfx``: placeholder marker output today, but the
+        prompt resolution is already in place so swapping in a real
+        MusicGen vendor only changes the file-write step.
+        """
+        prompt = self._fallback_bgm_prompt(frame)
+        logger.info(f"BGM prompt for frame {frame.id}: {prompt!r}")
+
         output_path = os.path.join(self.output_dir, 'bgm', f"{frame.id}.mp3")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        
+
         with open(output_path, 'wb') as f:
-            f.write(b'dummy bgm content')
-            
+            f.write(b'')
+
         frame.bgm_url = os.path.relpath(output_path, self.data_root)
         return frame

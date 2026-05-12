@@ -1050,6 +1050,125 @@ class ComicGenPipeline:
         self._save_data()
         return script
 
+    # === ENTITY EXTRACTION (incremental / full) ===
+
+    def process_script_entities(
+        self, script_id: str, strategy: str = "incremental"
+    ) -> Dict[str, Any]:
+        """Run entity extraction and write results into the Series catalog.
+
+        Uses ``"incremental"`` by default — the LLM is shown the existing
+        Series catalog and asked to reuse entities by id rather than
+        invent duplicates. Pass ``strategy="full"`` to force a clean
+        re-extraction (entities still get deduped by the MatchSpec safety
+        net, but no LLM-side reuse hint is provided).
+
+        Returns a summary suitable for the API response::
+
+            {"created": {"characters": [...], "scenes": [...], "props": [...]},
+             "reused":  {"characters": [...], "scenes": [...], "props": [...]}}
+        """
+        from .extraction import EntityCatalog, get_strategy
+
+        script = self.scripts.get(script_id)
+        if not script:
+            raise ValueError("Script not found")
+
+        series = self.series_store.get(script.series_id) if script.series_id else None
+        catalog = EntityCatalog(script, series)
+        strat = get_strategy(strategy)
+
+        with scoped_instance(script.model_settings.llm_instance_id, InstanceType.LLM):
+            result = strat.extract(script.original_text, catalog, self.script_processor)
+
+        # Persist: both the (possibly mutated) Series and the script (for used_*_ids).
+        script.updated_at = time.time()
+        self._save_data()
+        if series is not None:
+            self._save_series_data()
+
+        return {
+            "strategy": strategy,
+            "created": {
+                "characters": result.created_character_ids,
+                "scenes": result.created_scene_ids,
+                "props": result.created_prop_ids,
+            },
+            "reused": {
+                "characters": result.reused_character_ids,
+                "scenes": result.reused_scene_ids,
+                "props": result.reused_prop_ids,
+            },
+        }
+
+    # === AUTO VOICE ASSIGNMENT ===
+
+    def auto_assign_voices(self, script_id: str) -> Dict[str, Any]:
+        """Run the voice-assignment chain over a script's characters.
+
+        Returns ``{"assignments": {char_id: voice_id}, "skipped": [char_id, ...]}``
+        — ``skipped`` covers characters where every rule returned None
+        (typically because the character is locked with no prior voice).
+
+        Manual overrides win: characters with an existing ``voice_id``
+        are kept as-is by :class:`LockedRule` at the head of the chain.
+        Newly-assigned ``voice_name`` is looked up from the available
+        catalog so the Settings UI shows the human-readable label
+        without an extra round-trip.
+        """
+        from .voice import (
+            AssignContext,
+            DefaultPoolRule,
+            LLMMatchRule,
+            LockedRule,
+            SeriesReuseRule,
+            VoiceAssigner,
+        )
+
+        script = self.scripts.get(script_id)
+        if not script:
+            raise ValueError("Script not found")
+
+        series = self.series_store.get(script.series_id) if script.series_id else None
+        available = self.audio_generator.get_available_voices()
+        id_to_name = {v.get("id"): v.get("name") for v in available}
+
+        chain = [
+            LockedRule(),
+            SeriesReuseRule(),
+            LLMMatchRule(self.script_processor),
+            DefaultPoolRule(),
+        ]
+        assigner = VoiceAssigner(chain)
+
+        # The LLMMatchRule talks to the LLM — bind the project's instance
+        # so credentials / model_name come from the right ModelInstance.
+        with scoped_instance(script.model_settings.llm_instance_id, InstanceType.LLM):
+            mapping = assigner.assign_all(
+                script.characters, available, AssignContext(series=series)
+            )
+
+        skipped: List[str] = []
+        for ch in script.characters:
+            vid = mapping.get(ch.id)
+            if vid is None:
+                skipped.append(ch.id)
+                continue
+            if ch.voice_id == vid:
+                continue  # nothing to write back
+            ch.voice_id = vid
+            name = id_to_name.get(vid)
+            if name:
+                ch.voice_name = name
+
+        script.updated_at = time.time()
+        self._save_data()
+        # SeriesReuseRule may have read voice_id off series.characters, but
+        # we don't write back to series here — series-level voice mgmt is
+        # a separate concern handled by the series character endpoints.
+
+        return {"assignments": mapping, "skipped": skipped}
+
     # === STORYBOARD DRAMATIZATION v2 ===
 
     def analyze_text_to_frames(self, script_id: str, text: str) -> Script:
@@ -1132,6 +1251,10 @@ class ComicGenPipeline:
                 # Dialogue
                 dialogue=frame_data.get("dialogue"),
                 speaker=frame_data.get("speaker"),
+                # Audio prompts (populated by builder.with_audio_atoms; may be
+                # absent on older mock fixtures, hence .get with default None)
+                bgm_prompt=frame_data.get("bgm_prompt"),
+                sfx_prompt=frame_data.get("sfx_prompt"),
                 # Status
                 status=GenerationStatus.PENDING
             )
