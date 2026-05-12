@@ -704,6 +704,69 @@ CRITICAL STYLE GUIDELINES:
             }
         ]
     
+    def rewrite_to_screenplay(self, text: str) -> str:
+        """Rewrite a novel-style passage into a normalized screenplay format.
+
+        The downstream ``analyze_to_storyboard`` prompt already
+        describes a specific script format (``1-1 地点 [时间] [内/外]``
+        / ``人物： 角色名``/ ``△`` action / ``角色名（情绪）：`` dialogue).
+        Users typically import raw novel prose, so the analyzer wastes
+        capacity guessing structure. This method runs an LLM pre-pass
+        that emits exactly that format, so storyboard analysis can
+        focus on visual atomization instead of parsing.
+
+        Constraints (mirrored from huobao's ``script_rewriter``):
+
+        * Each scene targets 30–60 seconds of on-screen time.
+        * Structural expansion only — do not invent plot beats.
+        * Emphasise visual/audible action, avoid cinematography jargon
+          (no "推镜", "升格" etc. — those belong in storyboard prompts).
+        * Output in Simplified Chinese.
+
+        Returns the formatted screenplay text. On configuration miss,
+        returns the input unchanged so callers can chain safely.
+        """
+        if not text:
+            return text
+        if not self.is_configured:
+            logger.warning("LLM not configured, rewrite_to_screenplay returning input unchanged")
+            return text
+
+        system_prompt = self._build_screenplay_rewrite_prompt()
+        try:
+            content = self.llm.chat(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": text},
+                ],
+            ).strip()
+            # The rewriter outputs plain text, but defensively strip
+            # markdown fences in case the model wraps anyway.
+            if "```" in content:
+                content = _strip_markdown_json(content)
+            return content
+        except Exception as e:
+            logger.warning(f"rewrite_to_screenplay failed, returning input unchanged: {e}")
+            return text
+
+    @staticmethod
+    def _build_screenplay_rewrite_prompt() -> str:
+        return (
+            "你是一名短剧编剧。把下面的小说原文改写成**短剧拍摄格式**,严格遵守:\n\n"
+            "# 格式规范\n"
+            "- 场景标题行: `1-1 地点名称 [时间] [内/外]` (按出现顺序自增编号)\n"
+            "- 人物行: `人物： 角色名1，角色名2` (本场出场的角色,逗号分隔)\n"
+            "- 动作行: 以 `△` 开头,单独一行,描述画面里发生的视觉/可听动作\n"
+            "- 对话行: `角色名（情绪）: 对话内容` 或 `角色名 (V.O.):` 表示画外音\n\n"
+            "# 内容约束\n"
+            "1. **每场 30-60 秒拍摄时长**,过长就拆场。\n"
+            "2. **保留核心剧情**,不要添加原文没有的情节、人物、对话。\n"
+            "3. **结构性扩写**:把「心想/独白」等不可见内容转成动作 + 表情 + 道具反应;扩写比例 ≤ 30%。\n"
+            "4. **强化画面感**:让每一行动作描述都「看得见、听得到」。\n"
+            "5. **禁用镜头术语**:不要「推/拉/摇/移/升格/慢动作」这类词,那些是分镜阶段的事。\n"
+            "6. 简体中文输出,不要 Markdown 代码块,直接输出剧本正文。"
+        )
+
     def extract_entities(
         self,
         text: str,
@@ -1093,6 +1156,130 @@ CRITICAL STYLE GUIDELINES:
         except Exception:
             logger.exception("Failed to polish video prompt")
             return fallback
+
+    def slice_video_prompt_timeline(
+        self,
+        video_prompt: str,
+        duration_s: int,
+        *,
+        segment_seconds: int = 3,
+        location: Optional[str] = None,
+        characters: Optional[List[str]] = None,
+        sound: Optional[str] = None,
+    ) -> str:
+        """Slice a continuous video prompt into per-segment instructions.
+
+        Long-shot I2V backends (Seedance 2 / Veo / future Wan
+        long-form) produce noticeably better motion when the prompt
+        carries explicit per-second direction instead of one sentence
+        for the whole clip. This method asks the LLM to redistribute
+        the action across ``ceil(duration_s / segment_seconds)`` time
+        windows and wrap each window in an ``<nA-B>...</nA-B>`` tag,
+        mirroring the convention popularised by huobao-drama.
+
+        Output shape::
+
+            <location>卧室</location><role>叶墨</role>
+            <n0-3>叶墨眉头紧锁，烦躁地翻身</n0-3>
+            <n3-6>手机震动声变大，叶墨睁眼</n3-6>
+            <sound>手机震动声</sound>
+
+        On any failure the original ``video_prompt`` is returned
+        unchanged — the caller's existing video gen call still works
+        even if the slicer's LLM call falls over.
+        """
+        if not video_prompt or duration_s <= 0:
+            return video_prompt or ""
+        if not self.is_configured:
+            return self._mock_slice_video_prompt_timeline(
+                video_prompt, duration_s, segment_seconds,
+                location, characters, sound,
+            )
+
+        segments = self._segment_windows(duration_s, segment_seconds)
+        meta_block = self._render_timeline_meta(location, characters, sound)
+        system_prompt = self._build_timeline_prompt(segments, meta_block)
+
+        try:
+            content = self.llm.chat(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": video_prompt},
+                ],
+            ).strip()
+            sliced = _strip_markdown_json(content) if "```" in content else content
+            # Sanity check: must contain at least one <n...> tag.
+            if "<n" not in sliced:
+                logger.warning("Timeline slicer output missing <n> tags, returning original")
+                return video_prompt
+            return sliced
+        except Exception as e:
+            logger.warning(f"slice_video_prompt_timeline failed, returning original: {e}")
+            return video_prompt
+
+    @staticmethod
+    def _segment_windows(duration_s: int, segment_seconds: int) -> List[tuple]:
+        """Generate (start, end) windows covering ``[0, duration_s]``.
+
+        Last window may be shorter than ``segment_seconds`` so the sum
+        equals exactly ``duration_s`` (no rounding-up overshoot).
+        """
+        windows = []
+        start = 0
+        while start < duration_s:
+            end = min(start + segment_seconds, duration_s)
+            windows.append((start, end))
+            start = end
+        return windows
+
+    @staticmethod
+    def _render_timeline_meta(
+        location: Optional[str],
+        characters: Optional[List[str]],
+        sound: Optional[str],
+    ) -> str:
+        parts = []
+        if location:
+            parts.append(f"<location>{location}</location>")
+        if characters:
+            for ch in characters:
+                parts.append(f"<role>{ch}</role>")
+        if sound:
+            parts.append(f"<sound>{sound}</sound>")
+        return "".join(parts)
+
+    @staticmethod
+    def _build_timeline_prompt(segments: List[tuple], meta_block: str) -> str:
+        seg_template = "\n".join(f"<n{a}-{b}>...</n{a}-{b}>" for a, b in segments)
+        return (
+            "你是视频导演,把一个连续的视频提示词重新分配到固定时间窗口里。\n"
+            "**严格输出纯文本**,不要 JSON,不要 Markdown 代码块。\n\n"
+            f"# 元数据(原样保留在输出最前面)\n{meta_block or '(无)'}\n\n"
+            "# 时间窗口骨架(必须用且只用这些标签)\n"
+            f"{seg_template}\n\n"
+            "# 规则\n"
+            "1. 标签数量必须与上面骨架一致,不增不减。\n"
+            "2. 每个窗口里描述该时段画面里发生的主要动作 + 微表情/物理细节。\n"
+            "3. 用户给的提示词内容必须完整覆盖,不要丢失情节。\n"
+            "4. 全部使用简体中文。\n"
+            "5. 元数据放在第一行,然后换行,然后是按顺序的时间窗口。"
+        )
+
+    @staticmethod
+    def _mock_slice_video_prompt_timeline(
+        video_prompt: str,
+        duration_s: int,
+        segment_seconds: int,
+        location: Optional[str],
+        characters: Optional[List[str]],
+        sound: Optional[str],
+    ) -> str:
+        """Offline fallback — produces a deterministic skeleton so tests
+        can exercise the field-write paths without needing an LLM."""
+        windows = ScriptProcessor._segment_windows(duration_s, segment_seconds)
+        meta = ScriptProcessor._render_timeline_meta(location, characters, sound)
+        body = "\n".join(f"<n{a}-{b}>{video_prompt}</n{a}-{b}>" for a, b in windows)
+        return f"{meta}\n{body}" if meta else body
 
     def polish_r2v_prompt(self, draft_prompt: str, slots: List[Dict[str, str]], feedback: str = "", custom_system_prompt: str = "") -> Dict[str, str]:
         """

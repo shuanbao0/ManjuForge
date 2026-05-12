@@ -1255,6 +1255,27 @@ async def generate_motion_ref(script_id: str, request: GenerateMotionRefRequest,
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# === SCRIPT REWRITE (novel → screenplay) ===
+
+
+@app.post("/projects/{script_id}/script/rewrite-to-screenplay")
+async def rewrite_script_to_screenplay(script_id: str):
+    """Rewrite ``original_text`` into structured screenplay format.
+
+    Result is persisted to ``script.formatted_text`` while
+    ``original_text`` stays intact. Downstream storyboard analysis can
+    then use the formatted version for cleaner shot decomposition.
+    """
+    try:
+        script = pipeline.rewrite_script_to_screenplay(script_id)
+        return signed_response(script)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error in rewrite_script_to_screenplay: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # === ENTITY EXTRACTION (incremental / full) ===
 
 
@@ -1280,6 +1301,43 @@ async def extract_script_entities(script_id: str, request: ExtractEntitiesReques
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         logger.error(f"Error in extract_script_entities: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# === VIDEO PROMPT TIMELINE SLICING ===
+
+
+class SliceTimelineRequest(BaseModel):
+    """Request to slice a frame's ``video_prompt`` into a time-axis timeline.
+
+    ``segment_seconds`` defaults to 3 (huobao convention). ``duration_override``
+    lets the caller pin a duration when the frame has no associated video task yet.
+    """
+
+    segment_seconds: int = Field(3, ge=1, le=10)
+    duration_override: Optional[int] = Field(None, ge=1, le=60)
+
+
+@app.post("/projects/{script_id}/frames/{frame_id}/video/slice-timeline")
+async def slice_frame_video_timeline(
+    script_id: str, frame_id: str, request: SliceTimelineRequest
+):
+    """Generate and persist ``video_prompt_timeline`` for one frame.
+
+    Opt-in: the legacy ``video_prompt`` is left untouched so video
+    generation calls that don't consume the timeline format keep working.
+    """
+    try:
+        frame = pipeline.slice_frame_video_timeline(
+            script_id, frame_id,
+            segment_seconds=request.segment_seconds,
+            duration_override=request.duration_override,
+        )
+        return signed_response(frame)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error in slice_frame_video_timeline: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

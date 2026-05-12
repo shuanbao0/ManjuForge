@@ -1050,6 +1050,29 @@ class ComicGenPipeline:
         self._save_data()
         return script
 
+    # === SCRIPT REWRITE (novel → screenplay) ===
+
+    def rewrite_script_to_screenplay(self, script_id: str) -> Script:
+        """Run the screenplay rewriter on ``script.original_text`` and persist.
+
+        Result lands on ``script.formatted_text``; ``original_text`` is
+        preserved so the user can re-rewrite or revert. Downstream
+        analyzers should prefer ``formatted_text`` when present.
+        """
+        script = self.scripts.get(script_id)
+        if not script:
+            raise ValueError("Script not found")
+        if not script.original_text:
+            raise ValueError("Script has no original_text to rewrite")
+
+        with scoped_instance(script.model_settings.llm_instance_id, InstanceType.LLM):
+            formatted = self.script_processor.rewrite_to_screenplay(script.original_text)
+
+        script.formatted_text = formatted
+        script.updated_at = time.time()
+        self._save_data()
+        return script
+
     # === ENTITY EXTRACTION (incremental / full) ===
 
     def process_script_entities(
@@ -1100,6 +1123,67 @@ class ComicGenPipeline:
                 "props": result.reused_prop_ids,
             },
         }
+
+    # === VIDEO PROMPT TIMELINE SLICING ===
+
+    def slice_frame_video_timeline(
+        self,
+        script_id: str,
+        frame_id: str,
+        *,
+        segment_seconds: int = 3,
+        duration_override: Optional[int] = None,
+    ) -> StoryboardFrame:
+        """Generate ``video_prompt_timeline`` for a single frame.
+
+        Pulls the duration from the frame's selected ``VideoTask`` when
+        available, otherwise falls back to ``duration_override``
+        (default 5s, matching ``VideoTask.duration``). Persists the
+        sliced result onto ``frame.video_prompt_timeline`` and returns
+        the updated frame.
+
+        The slicer is opt-in per frame — calling it again overwrites
+        the previous timeline but never mutates ``frame.video_prompt``.
+        """
+        script = self.scripts.get(script_id)
+        if not script:
+            raise ValueError("Script not found")
+        frame = next((f for f in script.frames if f.id == frame_id), None)
+        if frame is None:
+            raise ValueError(f"Frame {frame_id} not found")
+        if not frame.video_prompt:
+            raise ValueError(f"Frame {frame_id} has no video_prompt to slice")
+
+        # Resolve duration: selected video task → first video task → override → 5
+        duration = duration_override
+        if duration is None:
+            selected = next(
+                (vt for vt in script.video_tasks
+                 if vt.frame_id == frame_id and (frame.selected_video_id is None or vt.id == frame.selected_video_id)),
+                None,
+            )
+            duration = (selected.duration if selected else None) or 5
+
+        scene = next((s for s in script.scenes if s.id == frame.scene_id), None)
+        characters = [
+            c.name for c in script.characters if c.id in frame.character_ids
+        ]
+
+        with scoped_instance(script.model_settings.llm_instance_id, InstanceType.LLM):
+            sliced = self.script_processor.slice_video_prompt_timeline(
+                frame.video_prompt,
+                duration,
+                segment_seconds=segment_seconds,
+                location=scene.name if scene else None,
+                characters=characters or None,
+                sound=frame.sfx_prompt,
+            )
+
+        frame.video_prompt_timeline = sliced
+        frame.updated_at = time.time()
+        script.updated_at = time.time()
+        self._save_data()
+        return frame
 
     # === AUTO VOICE ASSIGNMENT ===
 

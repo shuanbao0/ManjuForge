@@ -246,6 +246,12 @@ class StoryboardFrame(BaseModel):
     rendered_image_asset: Optional[ImageAsset] = Field(default_factory=ImageAsset, description="Rendered image asset container")
     
     video_prompt: Optional[str] = Field(None, description="Optimized prompt for I2V")
+    # Time-segmented version of ``video_prompt`` for long-shot backends that
+    # benefit from per-segment direction (Seedance 2 / Veo style). Generated
+    # by :meth:`ScriptProcessor.slice_video_prompt_timeline`; the legacy
+    # ``video_prompt`` stays as the canonical, single-block format so we
+    # don't break callers that don't opt in.
+    video_prompt_timeline: Optional[str] = Field(None, description="Time-sliced video prompt (<n> per-segment XML tags) for long-shot backends")
     video_url: Optional[str] = Field(None, description="URL of the generated video clip")
     
     audio_url: Optional[str] = Field(None, description="URL of the generated dialogue audio")
@@ -341,6 +347,13 @@ class Script(BaseModel):
     used_character_ids: List[str] = Field(default_factory=list, description="Series character IDs used in this episode")
     used_scene_ids: List[str] = Field(default_factory=list, description="Series scene IDs used in this episode")
     used_prop_ids: List[str] = Field(default_factory=list, description="Series prop IDs used in this episode")
+
+    # Optional screenplay-format rewrite of ``original_text``. When set,
+    # storyboard analysis can use this as a normalized input (scene
+    # headers / 人物 / △ action / dialogue lines) which the existing
+    # ``analyze_to_storyboard`` prompt already understands. None means
+    # the user has not run the rewriter yet — fall back to original_text.
+    formatted_text: Optional[str] = Field(None, description="Screenplay-format rewrite of original_text")
 
     created_at: float
     updated_at: float
