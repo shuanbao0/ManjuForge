@@ -1208,7 +1208,10 @@ class ComicGenPipeline:
 
         The vendor adapter is reached via :meth:`StoryboardGenerator._route_for_call`
         so the same instance/credential plumbing is reused; we just pass
-        a composite prompt and a square output size.
+        a composite prompt and a square output size. Per-panel storage
+        slot (``main`` / ``end_frame`` / ``ref``) is decided by the
+        strategy via ``tile_slot(panel_index)`` so this method stays
+        mode-agnostic.
         """
         from .keyframes import pick_layout, split_grid_image
 
@@ -1240,27 +1243,65 @@ class ComicGenPipeline:
         for frame in frames:
             tile_list = assignments_by_frame.get(frame.id, [])
             rel_urls: List[str] = []
-            if not frame.rendered_image_asset:
-                frame.rendered_image_asset = ImageAsset()
-            for tile_path in tile_list:
-                variant_id = str(uuid.uuid4())
+            for panel_idx, tile_path in enumerate(tile_list):
+                slot = strategy.tile_slot(panel_idx)
                 rel_url = os.path.relpath(tile_path, self.data_root)
-                frame.rendered_image_asset.variants.append(
-                    ImageVariant(
-                        id=variant_id,
-                        url=rel_url,
-                        prompt_used=composite_prompt,
-                        created_at=time.time(),
-                    )
+                self._write_keyframe_tile_to_slot(
+                    frame, slot, rel_url, composite_prompt,
                 )
-                frame.rendered_image_asset.selected_id = variant_id
-                frame.rendered_image_url = rel_url
-                frame.image_url = rel_url
+                rel_urls.append(rel_url)
+            if rel_urls:
                 frame.updated_at = time.time()
                 frame.status = GenerationStatus.COMPLETED
-                rel_urls.append(rel_url)
             result[frame.id] = rel_urls
         return result
+
+    @staticmethod
+    def _write_keyframe_tile_to_slot(
+        frame: StoryboardFrame,
+        slot: str,
+        tile_url: str,
+        prompt: str,
+    ) -> None:
+        """Append a new ImageVariant to the slot's asset container.
+
+        Slot map (kept here, not in modes, so future schema changes
+        only touch one place):
+
+        * ``main``      → ``rendered_image_asset`` (canonical seed,
+          also syncs the legacy ``rendered_image_url`` / ``image_url``).
+        * ``end_frame`` → ``end_frame_asset`` (closing keyframe for
+          first+last i2v).
+        * ``ref``       → ``rendered_image_asset.variants`` pool
+          (alternative angles; user picks one as the seed).
+        """
+        from .keyframes import SLOT_END_FRAME, SLOT_MAIN, SLOT_REF
+
+        if slot == SLOT_END_FRAME:
+            if not frame.end_frame_asset:
+                frame.end_frame_asset = ImageAsset()
+            target = frame.end_frame_asset
+        else:
+            # main and ref share rendered_image_asset
+            if not frame.rendered_image_asset:
+                frame.rendered_image_asset = ImageAsset()
+            target = frame.rendered_image_asset
+
+        variant_id = str(uuid.uuid4())
+        target.variants.append(
+            ImageVariant(
+                id=variant_id,
+                url=tile_url,
+                prompt_used=prompt,
+                created_at=time.time(),
+            )
+        )
+        target.selected_id = variant_id
+
+        # Legacy URL fields track the canonical seed only.
+        if slot == SLOT_MAIN:
+            frame.rendered_image_url = tile_url
+            frame.image_url = tile_url
 
     def _render_keyframes_per_shot(
         self,

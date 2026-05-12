@@ -22,9 +22,14 @@ from PIL import Image
 
 from src.apps.comic_gen.keyframes import (
     FirstFrameMode,
+    FirstLastMode,
     GRID_CAPABLE_VENDORS,
     GridCapability,
     GridLayout,
+    MultiRefMode,
+    SLOT_END_FRAME,
+    SLOT_MAIN,
+    SLOT_REF,
     get_grid_capability,
     get_mode,
     pick_layout,
@@ -187,8 +192,185 @@ def test_first_frame_mode_drops_extra_tiles():
 
 def test_get_mode_registry():
     assert isinstance(get_mode("first_frame"), FirstFrameMode)
+    assert isinstance(get_mode("first_last"), FirstLastMode)
+    assert isinstance(get_mode("multi_ref"), MultiRefMode)
     with pytest.raises(ValueError, match="Unknown keyframe mode"):
         get_mode("invalid")
+
+
+def test_get_mode_filters_unknown_kwargs():
+    """get_mode drops kwargs the dataclass doesn't declare so callers
+    can pass mode-specific extras without branching on mode name."""
+    mode = get_mode("first_frame", panels=99, irrelevant="x")
+    assert isinstance(mode, FirstFrameMode)
+    multi = get_mode("multi_ref", panels=4, irrelevant="x")
+    assert isinstance(multi, MultiRefMode)
+    assert multi.panels == 4
+
+
+# ── FirstLastMode ────────────────────────────────────────────────────
+
+
+def test_first_last_panels_per_frame_is_two():
+    assert FirstLastMode().panels_per_frame() == 2
+
+
+def test_first_last_prompt_pairs_panels_per_frame():
+    frames = [_frame("A 开门"), _frame("B 走出")]
+    prompt = FirstLastMode().build_composite_prompt(frames, "")
+
+    assert "4 格" in prompt
+    # Each frame produces an opening + closing panel pair
+    assert "Panel 1 (镜头 1 开场)" in prompt
+    assert "Panel 2 (镜头 1 落幅)" in prompt
+    assert "Panel 3 (镜头 2 开场)" in prompt
+    assert "Panel 4 (镜头 2 落幅)" in prompt
+
+
+def test_first_last_assigns_pairs():
+    frames = [_frame("A", id="f1"), _frame("B", id="f2")]
+    tiles = ["/t/0.png", "/t/1.png", "/t/2.png", "/t/3.png"]
+
+    out = FirstLastMode().tiles_to_assignments(tiles, frames)
+
+    assert out == {
+        "f1": ["/t/0.png", "/t/1.png"],
+        "f2": ["/t/2.png", "/t/3.png"],
+    }
+
+
+def test_first_last_handles_truncated_tile_list():
+    """If splitter returns fewer tiles than expected, drop incomplete frames."""
+    frames = [_frame("A", id="f1"), _frame("B", id="f2")]
+    tiles = ["/t/0.png", "/t/1.png", "/t/2.png"]  # f2 missing its closing
+
+    out = FirstLastMode().tiles_to_assignments(tiles, frames)
+
+    # f1 gets its pair, f2 gets just the opening (closing dropped)
+    assert out["f1"] == ["/t/0.png", "/t/1.png"]
+    assert out["f2"] == ["/t/2.png"]
+
+
+def test_first_last_slot_routing():
+    mode = FirstLastMode()
+    assert mode.tile_slot(0) == SLOT_MAIN
+    assert mode.tile_slot(1) == SLOT_END_FRAME
+
+
+# ── MultiRefMode ─────────────────────────────────────────────────────
+
+
+def test_multi_ref_default_panels():
+    assert MultiRefMode().panels_per_frame() == 3
+
+
+def test_multi_ref_custom_panels():
+    assert MultiRefMode(panels=4).panels_per_frame() == 4
+
+
+def test_multi_ref_prompt_emits_distinct_angle_hints():
+    frames = [_frame("A 走来")]
+    prompt = MultiRefMode(panels=3).build_composite_prompt(frames, "")
+
+    # 3 angle hints from the rotation table — verify they're distinct
+    assert "正面平视" in prompt
+    assert "侧面 45 度" in prompt
+    assert "俯视角度" in prompt
+
+
+def test_multi_ref_chunks_tiles_per_frame():
+    frames = [_frame("A", id="f1"), _frame("B", id="f2")]
+    tiles = [f"/t/{i}.png" for i in range(6)]
+
+    out = MultiRefMode(panels=3).tiles_to_assignments(tiles, frames)
+
+    assert out == {
+        "f1": ["/t/0.png", "/t/1.png", "/t/2.png"],
+        "f2": ["/t/3.png", "/t/4.png", "/t/5.png"],
+    }
+
+
+def test_multi_ref_all_slots_are_ref():
+    mode = MultiRefMode(panels=3)
+    for i in range(3):
+        assert mode.tile_slot(i) == SLOT_REF
+
+
+# ── Pipeline + new modes: slot routing ───────────────────────────────
+
+
+def test_pipeline_grid_routes_first_last_tiles_to_correct_slots(pipeline_fx, tmp_path):
+    """FirstLastMode → tile 0 to main, tile 1 to end_frame, per frame."""
+    script = _script_with_frames(2)
+    pipeline_fx.scripts[script.id] = script
+
+    def fake_generate(prompt, output_path, size=None, **kw):
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        # 4 panels → 2x2 layout → 200x200 composite gives 100x100 tiles
+        Image.new("RGB", (200, 200), color=(0, 0, 0)).save(output_path)
+        return (output_path, 0.1)
+    fake_adapter = MagicMock()
+    fake_adapter.generate.side_effect = fake_generate
+    pipeline_fx.storyboard_generator._route_for_call.return_value = fake_adapter
+
+    fake_inst = MagicMock(vendor_id="doubao")
+    with patch("src.apps.comic_gen.pipeline.scoped_instance") as scoped:
+        scoped.return_value.__enter__.return_value = fake_inst
+        scoped.return_value.__exit__.return_value = False
+        result = pipeline_fx.batch_generate_frame_keyframes(
+            script.id, ["f0", "f1"], mode="first_last",
+        )
+
+    assert result["method"] == "grid"
+    # Each frame gets 2 tiles (one main, one end_frame)
+    for fid in ["f0", "f1"]:
+        assert len(result["assignments"][fid]) == 2
+
+    # Verify storage routing
+    for frame in script.frames:
+        assert frame.rendered_image_asset.selected_id is not None
+        assert len(frame.rendered_image_asset.variants) == 1, \
+            "FirstLastMode writes ONE variant to main slot per frame"
+        assert frame.end_frame_asset is not None
+        assert frame.end_frame_asset.selected_id is not None
+        assert len(frame.end_frame_asset.variants) == 1, \
+            "FirstLastMode writes ONE variant to end_frame slot per frame"
+
+
+def test_pipeline_grid_routes_multi_ref_to_variants_pool(pipeline_fx, tmp_path):
+    """MultiRefMode → all tiles land as variants on rendered_image_asset."""
+    script = _script_with_frames(2)
+    pipeline_fx.scripts[script.id] = script
+
+    def fake_generate(prompt, output_path, size=None, **kw):
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        # 6 panels → 2x3 layout → 300x200 composite → 150x66 tiles (each ≥1px)
+        Image.new("RGB", (300, 200), color=(50, 50, 50)).save(output_path)
+        return (output_path, 0.1)
+    fake_adapter = MagicMock()
+    fake_adapter.generate.side_effect = fake_generate
+    pipeline_fx.storyboard_generator._route_for_call.return_value = fake_adapter
+
+    fake_inst = MagicMock(vendor_id="doubao")
+    with patch("src.apps.comic_gen.pipeline.scoped_instance") as scoped:
+        scoped.return_value.__enter__.return_value = fake_inst
+        scoped.return_value.__exit__.return_value = False
+        result = pipeline_fx.batch_generate_frame_keyframes(
+            script.id, ["f0", "f1"], mode="multi_ref",
+        )
+
+    assert result["method"] == "grid"
+    # Each frame gets 3 tiles (3 alternative angles)
+    for fid in ["f0", "f1"]:
+        assert len(result["assignments"][fid]) == 3
+
+    # All 3 tiles must land on rendered_image_asset.variants (not end_frame)
+    for frame in script.frames:
+        assert len(frame.rendered_image_asset.variants) == 3, \
+            "MultiRefMode appends N variants to the rendered_image_asset pool"
+        # No end_frame variants should be written
+        assert (frame.end_frame_asset is None
+                or len(frame.end_frame_asset.variants) == 0)
 
 
 # ── Pipeline orchestration ────────────────────────────────────────────

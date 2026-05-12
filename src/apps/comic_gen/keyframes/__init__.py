@@ -19,7 +19,17 @@ itself lives on ``ComicGenPipeline.batch_generate_frame_keyframes`` so it
 shares the existing instance/transaction plumbing.
 """
 from .capability import GRID_CAPABLE_VENDORS, GridCapability, get_grid_capability
-from .modes import FirstFrameMode, KeyframeMode, get_mode, register_mode
+from .modes import (
+    SLOT_END_FRAME,
+    SLOT_MAIN,
+    SLOT_REF,
+    FirstFrameMode,
+    FirstLastMode,
+    KeyframeMode,
+    MultiRefMode,
+    get_mode,
+    register_mode,
+)
 from .splitter import GridLayout, pick_layout, split_grid_image
 
 __all__ = [
@@ -31,6 +41,11 @@ __all__ = [
     "split_grid_image",
     "KeyframeMode",
     "FirstFrameMode",
+    "FirstLastMode",
+    "MultiRefMode",
+    "SLOT_MAIN",
+    "SLOT_END_FRAME",
+    "SLOT_REF",
     "get_mode",
     "register_mode",
 ]

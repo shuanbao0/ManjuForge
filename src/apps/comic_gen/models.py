@@ -244,6 +244,11 @@ class StoryboardFrame(BaseModel):
     image_asset: Optional[ImageAsset] = Field(default_factory=ImageAsset, description="Storyboard image asset container")
     rendered_image_url: Optional[str] = Field(None, description="URL of the high-fidelity rendered image (Legacy)")
     rendered_image_asset: Optional[ImageAsset] = Field(default_factory=ImageAsset, description="Rendered image asset container")
+    # Closing keyframe (last frame of the shot). Populated by FirstLastMode
+    # batch keyframe rendering; consumed by i2v backends that accept a
+    # start+end frame pair for smoother motion (Wan 2.2 i2v / Kling
+    # multi-shot). Always Optional — most modes only fill rendered_image_asset.
+    end_frame_asset: Optional[ImageAsset] = Field(default_factory=ImageAsset, description="Closing keyframe asset (for first+last i2v)")
     
     video_prompt: Optional[str] = Field(None, description="Optimized prompt for I2V")
     # Time-segmented version of ``video_prompt`` for long-shot backends that
