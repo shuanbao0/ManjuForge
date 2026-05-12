@@ -14,6 +14,7 @@ import { getAssetUrl, getAssetUrlWithTimestamp, extractErrorDetail } from "@/lib
 import { useTranslation } from "@/i18n";
 
 import StoryboardFrameEditor from "./StoryboardFrameEditor";
+import BatchKeyframesButton from "./huobao/BatchKeyframesButton";
 import { confirmDialog } from "@/components/common/dialogs";
 
 export default function StoryboardComposer() {
@@ -533,6 +534,10 @@ export default function StoryboardComposer() {
                                 : `${t("modules.storyboard.renderAllFrames", undefined, "渲染未生成")} (${pendingFrameCount})`
                         }
                     </button>
+                    <BatchKeyframesButton
+                        scriptId={currentProject?.id}
+                        frames={currentProject?.frames ?? []}
+                    />
                     <div className="w-px h-4 bg-white/10" />
                     <span className="text-xs text-gray-500 font-mono">
                         {t("modules.storyboard.framesCount", { count: currentProject?.frames?.length || 0 }, `${currentProject?.frames?.length || 0} Frames`)}
