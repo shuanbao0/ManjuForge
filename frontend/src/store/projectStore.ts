@@ -93,11 +93,24 @@ export interface Prop {
 
 export interface StoryboardFrame {
     id: string;
+    // huobao-parity metadata: short UI label + planned duration (seconds).
+    // Both optional so older project.json deserialises cleanly.
+    title?: string;
+    duration_seconds?: number;
     scene_id: string;
     image_url?: string;
     image_asset?: ImageAsset;
     rendered_image_url?: string;
     rendered_image_asset?: ImageAsset;
+    // Closing keyframe (populated by FirstLastMode batch keyframe generation).
+    end_frame_asset?: ImageAsset;
+    // Audio prompts emitted by the storyboard analyzer alongside visuals.
+    bgm_prompt?: string;
+    sfx_prompt?: string;
+    bgm_url?: string;
+    sfx_url?: string;
+    // Time-axis form of ``video_prompt`` for Seedance/Veo-style long-shot i2v.
+    video_prompt_timeline?: string;
     status?: string;
     locked?: boolean;
     // ... other fields
@@ -228,6 +241,14 @@ export interface Project {
     id: string;
     title: string;
     originalText: string;
+    // Screenplay-format rewrite produced by ``api.rewriteToScreenplay``.
+    // Downstream stages (analyze_to_storyboard) prefer this when present.
+    formatted_text?: string;
+    // Episode-scoped references into the Series catalog, populated by the
+    // incremental extractor (api.extractEntities, strategy="incremental").
+    used_character_ids?: string[];
+    used_scene_ids?: string[];
+    used_prop_ids?: string[];
     characters: Character[];
     scenes: Scene[];
     props: Prop[];

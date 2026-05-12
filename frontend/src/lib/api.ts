@@ -1022,6 +1022,72 @@ export const api = {
         const response = await axios.post(`${API_URL}/series/import/confirm`, data);
         return response.data;
     },
+
+    // ── huobao-pipeline parity (script_rewriter / extractor / voice_assigner /
+    //    video timeline slicer / batch keyframes). Each endpoint returns the
+    //    raw backend payload — callers map fields they need.
+
+    /** Novel → screenplay-format rewrite. Persists onto ``script.formatted_text``;
+     *  ``original_text`` stays untouched so users can revert / re-rewrite. */
+    rewriteToScreenplay: async (scriptId: string) => {
+        const res = await axios.post(`${API_URL}/projects/${scriptId}/script/rewrite-to-screenplay`);
+        return res.data;
+    },
+
+    /** Incremental entity extraction. Default ``"incremental"`` reuses
+     *  matching Series characters/scenes/props; ``"full"`` re-extracts from scratch. */
+    extractEntities: async (scriptId: string, strategy: 'incremental' | 'full' = 'incremental') => {
+        const res = await axios.post(`${API_URL}/projects/${scriptId}/entities/extract`, { strategy });
+        return res.data as {
+            strategy: string;
+            created: { characters: string[]; scenes: string[]; props: string[] };
+            reused: { characters: string[]; scenes: string[]; props: string[] };
+        };
+    },
+
+    /** Auto-assign voices via the chain (Locked → SeriesReuse → LLMMatch → DefaultPool).
+     *  Characters with an existing ``voice_id`` are left untouched. */
+    autoAssignVoices: async (scriptId: string) => {
+        const res = await axios.post(`${API_URL}/projects/${scriptId}/voices/auto-assign`);
+        return res.data as { assignments: Record<string, string>; skipped: string[] };
+    },
+
+    /** Slice a frame's ``video_prompt`` into time-axis form for Seedance/Veo-style
+     *  long-shot backends. Persists to ``frame.video_prompt_timeline``. */
+    sliceVideoTimeline: async (
+        scriptId: string,
+        frameId: string,
+        opts: { segmentSeconds?: number; durationOverride?: number } = {}
+    ) => {
+        const res = await axios.post(
+            `${API_URL}/projects/${scriptId}/frames/${frameId}/video/slice-timeline`,
+            {
+                segment_seconds: opts.segmentSeconds ?? 3,
+                duration_override: opts.durationOverride ?? null,
+            }
+        );
+        return res.data;
+    },
+
+    /** Batch keyframe generation. On grid-capable T2I vendors (Seedream)
+     *  one composite call yields N tiles; other vendors fall back to per-shot.
+     *  Same response shape on either path. */
+    batchKeyframes: async (
+        scriptId: string,
+        frameIds: string[],
+        opts: { mode?: 'first_frame' | 'first_last' | 'multi_ref'; forcePerShot?: boolean } = {}
+    ) => {
+        const res = await axios.post(`${API_URL}/projects/${scriptId}/frames/keyframes/batch`, {
+            frame_ids: frameIds,
+            mode: opts.mode ?? 'first_frame',
+            force_per_shot: opts.forcePerShot ?? false,
+        });
+        return res.data as {
+            method: 'grid' | 'per_shot';
+            vendor: string | null;
+            assignments: Record<string, string[]>;
+        };
+    },
 };
 
 // ============================================
